@@ -27,5 +27,8 @@ build/
 *.out
 *.toc
 
+# Private planning doc — personal scratchpad, not for the repo
+PLAN.md
+
 # OS
 .DS_Store
