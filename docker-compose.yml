@@ -8,7 +8,7 @@ x-backend-env: &backend-env
   CELERY_RESULT_BACKEND: redis://redis:6379/2
   SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env - generate with `openssl rand -base64 48`}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
   TEMPLATES_DIR: /app/templates
   ARTIFACTS_DIR: /app/artifacts
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}

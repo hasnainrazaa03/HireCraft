@@ -52,7 +52,11 @@ class Settings(BaseSettings):
 
     # --- LLM (Gemini) ---
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    # "gemini-flash-latest" is a stable alias that always resolves to the current
+    # Flash generation. Pinning "gemini-2.0-flash" was a trap: newer API keys get
+    # a zero free-tier quota on that specific model and every request 429s with
+    # "limit: 0", while the alias points at a model the key can actually use.
+    gemini_model: str = "gemini-flash-latest"
     llm_max_output_tokens: int = 8192
     llm_temperature: float = 0.2
     llm_timeout_seconds: int = 90

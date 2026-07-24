@@ -24,6 +24,7 @@ from tenacity import (
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.llm.schema import to_gemini_schema
 
 logger = get_logger(__name__)
 
@@ -157,7 +158,12 @@ class GeminiClient:
             client = self._ensure_client()
             config: dict[str, Any] = {
                 "response_mime_type": "application/json",
-                "response_schema": schema,
+                # A sanitized schema, not the Pydantic model. Gemini rejects the
+                # $ref/anyOf/default keywords Pydantic emits with a bare
+                # 400 INVALID_ARGUMENT; to_gemini_schema reduces the model to the
+                # subset Gemini accepts. The full model is still enforced by
+                # _parse on the way back, so nothing is lost.
+                "response_schema": to_gemini_schema(schema),
                 "temperature": (
                     temperature if temperature is not None else settings.llm_temperature
                 ),
