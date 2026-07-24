@@ -6,12 +6,12 @@ import {
   ApiError,
   type ApplicationDetail,
   type ApplicationStatus,
-  type DiffEntry,
   type GuardrailViolation,
   type BulletConfidence,
   type TrackerStatus,
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
+import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
 
 const ACTIVE = new Set([
   "pending",
@@ -251,7 +251,12 @@ export default function ApplicationPage() {
             </div>
 
             <div className="pt-5">
-              {tab === "diff" && <DiffView diff={application.diff ?? []} />}
+              {tab === "diff" && (
+                <DiffView
+                  diff={application.diff ?? []}
+                  emptyMessage="No changes were made — your resume already matched this posting."
+                />
+              )}
               {tab === "guardrails" && (
                 <GuardrailView
                   errors={errors}
@@ -324,72 +329,6 @@ function Stat({
   );
 }
 
-function DiffView({ diff }: { diff: DiffEntry[] }) {
-  if (diff.length === 0) {
-    return (
-      <p className="text-sm text-muted">
-        No changes were made — your resume already matched this posting.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {diff.map((entry, index) => (
-        <div key={index} className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/[0.08] bg-surface-2 px-4 py-2">
-            <span className="text-sm font-medium">{entry.label}</span>
-            <span className="text-xs uppercase tracking-wide text-subtle">
-              {entry.section} · {entry.change}
-            </span>
-          </div>
-          <div className="grid gap-px bg-white/[0.06] md:grid-cols-2">
-            <DiffSide title="Original" value={entry.before} tone="before" />
-            <DiffSide title="Tailored" value={entry.after} tone="after" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DiffSide({
-  title,
-  value,
-  tone,
-}: {
-  title: string;
-  value: string | string[] | null;
-  tone: "before" | "after";
-}) {
-  const items = Array.isArray(value) ? value : value ? [value] : [];
-  return (
-    <div className={`p-4 ${tone === "after" ? "bg-emerald/[0.05]" : "bg-surface"}`}>
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-subtle">
-        {title}
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm italic text-subtle">— removed —</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {items.map((item, index) => (
-            <li key={index} className="text-sm leading-relaxed text-content">
-              {item}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-const CONFIDENCE_META: Record<string, { label: string; badge: string; dot: string }> = {
-  verified: { label: "Verified", badge: "badge-emerald", dot: "bg-emerald" },
-  likely: { label: "Likely", badge: "badge-blue", dot: "bg-electric" },
-  needs_review: { label: "Review", badge: "badge-coral", dot: "bg-coral" },
-  blocked: { label: "Blocked", badge: "badge-danger", dot: "bg-danger" },
-};
-
 function GuardrailView({
   errors,
   warnings,
@@ -406,45 +345,14 @@ function GuardrailView({
   locks: string[];
 }) {
   const missing = requested.filter((k) => !verified.includes(k));
-  const counts = confidence.reduce<Record<string, number>>((acc, c) => {
-    acc[c.confidence] = (acc[c.confidence] ?? 0) + 1;
-    return acc;
-  }, {});
-  const survived = confidence.filter((c) => c.confidence !== "blocked");
 
   return (
     <div className="space-y-6">
       {/* Per-bullet confidence — Guardrails v2 */}
-      {confidence.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium">Bullet-by-bullet confidence</h3>
-          <p className="mt-1 text-xs text-subtle">
-            Every line in your tailored résumé, verified against your master résumé.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(["verified", "likely", "needs_review", "blocked"] as const).map((k) =>
-              counts[k] ? (
-                <span key={k} className={CONFIDENCE_META[k].badge}>
-                  {counts[k]} {CONFIDENCE_META[k].label}
-                </span>
-              ) : null,
-            )}
-          </div>
-          <div className="mt-3 space-y-1.5">
-            {survived.map((c, i) => (
-              <div key={i} className="flex items-start gap-2.5 rounded-xl border border-white/[0.06] bg-surface-2 px-3 py-2">
-                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${CONFIDENCE_META[c.confidence].dot}`} />
-                <div className="min-w-0">
-                  <div className="text-sm text-content">{c.text}</div>
-                  <div className="mt-0.5 text-xs text-subtle">
-                    {CONFIDENCE_META[c.confidence].label} · {c.reason} {c.label ? `· ${c.label}` : ""}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ConfidencePanel
+        confidence={confidence}
+        intro="Every line in your tailored résumé, verified against your master résumé."
+      />
 
       {/* What's locked */}
       {locks.length > 0 && (

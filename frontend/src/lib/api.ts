@@ -299,6 +299,23 @@ export interface ResumeParseResponse {
   source_filename: string;
 }
 
+export interface GuardrailReport {
+  violations: GuardrailViolation[];
+  keywords_requested: string[];
+  keywords_verified: string[];
+  bullet_confidence?: BulletConfidence[];
+  locks?: string[];
+}
+
+export interface ResumeRewriteResponse {
+  content: MasterResume;
+  diff: DiffEntry[];
+  guardrail_report: GuardrailReport;
+  score_before: number;
+  score_after: number;
+  cost_usd: number;
+}
+
 export interface ScoreMetric {
   key: string;
   label: string;
@@ -436,13 +453,7 @@ export interface ApplicationDetail {
   notes: string | null;
   tailored_resume: MasterResume | null;
   diff: DiffEntry[] | null;
-  guardrail_report: {
-    violations: GuardrailViolation[];
-    keywords_requested: string[];
-    keywords_verified: string[];
-    bullet_confidence?: BulletConfidence[];
-    locks?: string[];
-  } | null;
+  guardrail_report: GuardrailReport | null;
   total_input_tokens: number;
   total_output_tokens: number;
   total_cost_usd: number;

@@ -7,6 +7,7 @@ import {
   type ResumeProfileSummary,
   type ResumeVersionSummary,
   type ResumeParseResponse,
+  type ResumeRewriteResponse,
   type ResumeAnalysis,
   type TemplateInfo,
 } from "../lib/api";
@@ -14,8 +15,9 @@ import { Modal, Spinner } from "../components/ui";
 import { TagInput } from "../components/TagInput";
 import { ResumeBuilder, type ResumeContent } from "../components/ResumeBuilder";
 import { ScorePanel } from "../components/ScorePanel";
+import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
 import { useToast } from "../lib/toast";
-import { IconHistory, IconUpload, IconResume, IconChart } from "../components/icons";
+import { IconHistory, IconUpload, IconResume, IconChart, IconSparkles } from "../components/icons";
 
 const STARTER: ResumeContent = {
   basics: {
@@ -60,6 +62,7 @@ export default function ResumesPage() {
   const [historyFor, setHistoryFor] = useState<ResumeProfileSummary | null>(null);
   const [previewFor, setPreviewFor] = useState<ResumeProfileSummary | null>(null);
   const [scoreFor, setScoreFor] = useState<ResumeProfileSummary | null>(null);
+  const [rewriteFor, setRewriteFor] = useState<ResumeProfileSummary | null>(null);
   const [importing, setImporting] = useState(false);
 
   const { data: profiles = [], isLoading } = useQuery({
@@ -257,6 +260,9 @@ export default function ResumesPage() {
                 <button onClick={() => setScoreFor(p)} className="btn-ghost btn-sm">
                   <IconChart className="h-4 w-4" /> Score
                 </button>
+                <button onClick={() => setRewriteFor(p)} className="btn-ghost btn-sm text-brand">
+                  <IconSparkles className="h-4 w-4" /> Improve with AI
+                </button>
                 <button onClick={() => setPreviewFor(p)} className="btn-ghost btn-sm">Preview</button>
                 <ExportMenu profileId={p.id} name={p.name} />
                 {p.current_version > 1 && (
@@ -289,6 +295,175 @@ export default function ResumesPage() {
       )}
       {previewFor && <PreviewModal profile={previewFor} templates={templates} onClose={() => setPreviewFor(null)} />}
       {scoreFor && <ScoreModal profile={scoreFor} onClose={() => setScoreFor(null)} />}
+      {rewriteFor && (
+        <RewriteModal
+          profile={rewriteFor}
+          onClose={() => setRewriteFor(null)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ["resumes"] });
+            queryClient.invalidateQueries({ queryKey: ["analysis", rewriteFor.id] });
+            setRewriteFor(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RewriteModal({
+  profile,
+  onClose,
+  onSaved,
+}: {
+  profile: ResumeProfileSummary;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+
+  // The rewrite is one LLM call, so run it once when the modal opens and hold
+  // the result. The user then reviews before anything is written back.
+  const rewrite = useMutation({
+    mutationFn: () =>
+      api.post<ResumeRewriteResponse>(`/resumes/${profile.id}/rewrite`),
+    onError: (e) =>
+      toast.error(
+        "Couldn't rewrite",
+        e instanceof ApiError ? e.message : "Please try again in a moment.",
+      ),
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.patch(`/resumes/${profile.id}`, {
+        content: rewrite.data!.content,
+        version_label: "AI rewrite",
+      }),
+    onSuccess: () => {
+      toast.success("Saved", "The improved résumé is now a new version.");
+      onSaved();
+    },
+    onError: (e) =>
+      toast.error(
+        "Couldn't save",
+        e instanceof ApiError ? e.message : "Please try again.",
+      ),
+  });
+
+  // Kick off the rewrite exactly once.
+  useEffect(() => {
+    rewrite.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const result = rewrite.data;
+  const delta = result ? result.score_after - result.score_before : 0;
+  const confidence = result?.guardrail_report.bullet_confidence ?? [];
+  const blocked = confidence.filter((c) => c.confidence === "blocked").length;
+
+  return (
+    <Modal open onClose={onClose} title={`Improve with AI — ${profile.name}`} wide>
+      {rewrite.isPending ? (
+        <div className="py-16 text-center">
+          <Spinner className="mx-auto h-6 w-6" />
+          <p className="mt-3 text-sm text-subtle">
+            Rewriting for impact and clarity — every claim stays tied to your résumé.
+          </p>
+        </div>
+      ) : rewrite.isError || !result ? (
+        <div className="py-10 text-center">
+          <p className="text-sm text-danger">
+            {rewrite.error instanceof ApiError
+              ? rewrite.error.message
+              : "Couldn't rewrite this résumé."}
+          </p>
+          <button onClick={() => rewrite.mutate()} className="btn-secondary btn-sm mt-4">
+            Try again
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Score before/after */}
+          <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/[0.06] bg-surface-2 px-5 py-4">
+            <ScoreDelta label="Before" value={result.score_before} />
+            <span className="text-subtle">→</span>
+            <ScoreDelta label="After" value={result.score_after} highlight />
+            <span
+              className={`ml-auto text-sm font-medium ${
+                delta > 0 ? "text-emerald" : delta < 0 ? "text-coral" : "text-subtle"
+              }`}
+            >
+              {delta > 0 ? `+${delta}` : delta} points
+            </span>
+          </div>
+
+          {result.diff.length === 0 ? (
+            <p className="rounded-xl border border-emerald/30 bg-emerald/10 px-3 py-2.5 text-sm text-emerald">
+              Your résumé is already tight — the AI had nothing meaningful to improve.
+            </p>
+          ) : (
+            <>
+              <DiffView
+                diff={result.diff}
+                afterLabel="Improved"
+                emptyMessage="No changes were made."
+              />
+              <ConfidencePanel
+                confidence={confidence}
+                intro="Every improved line, verified against your original résumé."
+              />
+              {blocked > 0 && (
+                <p className="text-xs text-subtle">
+                  {blocked} suggestion{blocked === 1 ? "" : "s"} were blocked for making
+                  a claim your résumé doesn't support, and left out.
+                </p>
+              )}
+            </>
+          )}
+
+          <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+            <span className="text-xs text-subtle">
+              Costs ${result.cost_usd.toFixed(4)} · saved as a new version you can roll back
+            </span>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="btn-secondary">
+                Discard
+              </button>
+              <button
+                onClick={() => save.mutate()}
+                disabled={save.isPending || result.diff.length === 0}
+                className="btn-primary"
+              >
+                {save.isPending ? "Saving…" : "Accept & save version"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function ScoreDelta({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: number;
+  highlight?: boolean;
+}) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide text-subtle">{label}</div>
+      <div
+        className={`text-2xl font-semibold tabular-nums ${
+          highlight ? "text-brand" : "text-content"
+        }`}
+      >
+        {value}
+        <span className="ml-0.5 text-sm font-normal text-subtle">/100</span>
+      </div>
     </div>
   );
 }
