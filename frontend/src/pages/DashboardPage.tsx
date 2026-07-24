@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   api,
+  type AnalyticsOverview,
   type ApplicationSummary,
   type TrackerStats,
   type TrackerStatus,
@@ -10,6 +11,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { StatCard, PageLoader, EmptyState } from "../components/ui";
+import { ActivityFeed } from "./AnalyticsPage";
 import {
   IconApplications,
   IconChart,
@@ -63,6 +65,11 @@ export default function DashboardPage() {
   const { data: usage } = useQuery({
     queryKey: ["usage-mini"],
     queryFn: () => api.get<UsageSummary>("/analytics/usage?days=30"),
+  });
+
+  const { data: overview } = useQuery({
+    queryKey: ["analytics-overview"],
+    queryFn: () => api.get<AnalyticsOverview>("/analytics/overview"),
   });
 
   const grouped = useMemo(() => {
@@ -199,27 +206,28 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Side column: AI copilot teaser + quick actions + cost */}
+            {/* Side column: rates + activity + quick actions + cost */}
             <div className="space-y-5">
-              <div className="hero-card bg-hero-purple p-5">
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2">
-                    <IconSparkles className="h-5 w-5 text-white" />
-                    <span className="text-sm font-semibold text-white">AI Copilot</span>
-                    <span className="badge bg-white/20 text-white">Soon</span>
+              {overview && overview.funnel.submitted > 0 && (
+                <div className="card p-5">
+                  <h3 className="section-title text-base">Success rates</h3>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <RateChip label="Response" value={overview.funnel.response_rate} tone="text-electric" />
+                    <RateChip label="Interview" value={overview.funnel.interview_rate} tone="text-hotpink" />
+                    <RateChip label="Offer" value={overview.funnel.offer_rate} tone="text-emerald" />
                   </div>
-                  <p className="mt-2 text-xs text-white/80">
-                    Ask why a bullet was removed, how to raise your ATS score, or which
-                    keywords you're missing.
-                  </p>
-                  <button
-                    disabled
-                    className="mt-3 w-full cursor-not-allowed rounded-lg bg-white/15 py-2 text-xs font-semibold text-white/90"
-                  >
-                    Coming soon
-                  </button>
+                  <Link to="/analytics" className="mt-3 flex items-center justify-center gap-1 text-xs text-brand-300 hover:text-brand-200">
+                    Full analytics <IconArrowRight className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
-              </div>
+              )}
+
+              {overview && overview.activity.length > 0 && (
+                <div className="card p-5">
+                  <h3 className="section-title text-base">Recent activity</h3>
+                  <ActivityFeed items={overview.activity.slice(0, 5)} />
+                </div>
+              )}
 
               <div className="card p-5">
                 <h3 className="section-title text-base">Quick actions</h3>
@@ -269,6 +277,25 @@ export default function DashboardPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function RateChip({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-surface-2 py-2.5">
+      <div className={`text-lg font-semibold tabular-nums ${tone}`}>
+        {Math.round(value * 100)}%
+      </div>
+      <div className="text-[11px] text-subtle">{label}</div>
     </div>
   );
 }

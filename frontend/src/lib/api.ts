@@ -512,3 +512,53 @@ export interface TrackerStats {
   counts: Record<string, number>;
   total: number;
 }
+
+export interface FunnelStats {
+  total: number;
+  submitted: number;
+  active: number;
+  applied: number;
+  interviewing: number;
+  offers: number;
+  closed: number;
+  response_rate: number;
+  interview_rate: number;
+  offer_rate: number;
+}
+
+export interface ContentStats {
+  resume_count: number;
+  resume_versions: number;
+  tailored_resumes: number;
+  cover_letters: number;
+  avg_resume_score: number | null;
+}
+
+export interface NamedCount {
+  name: string;
+  count: number;
+}
+
+export interface TimePoint {
+  date: string;
+  count: number;
+}
+
+export interface ActivityItem {
+  kind: "application" | "completed" | "offer" | "resume_version";
+  title: string;
+  subtitle: string | null;
+  at: string;
+  ref: string | null;
+}
+
+export interface AnalyticsOverview {
+  funnel: FunnelStats;
+  content: ContentStats;
+  applications_over_time: TimePoint[];
+  top_companies: NamedCount[];
+  top_titles: NamedCount[];
+  top_keywords: NamedCount[];
+  best_resume: NamedCount | null;
+  activity: ActivityItem[];
+}
