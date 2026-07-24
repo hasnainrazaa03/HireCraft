@@ -597,6 +597,12 @@ class GuardrailEngine:
         )
         result.skills = self._merge_skills(tailored)
 
+        # Any final bullet not already judged reached the résumé unchanged from
+        # the master (the model didn't rewrite it, or the entry was untouched).
+        # Those are trivially verified — record them so the confidence report
+        # covers every line the user will actually send, not just rewrites.
+        self._backfill_verified(result)
+
         report = GuardrailReport(
             violations=self.violations,
             keywords_requested=(
@@ -606,6 +612,25 @@ class GuardrailEngine:
             bullet_confidence=self.confidence,
         )
         return result, report
+
+    def _backfill_verified(self, result: MasterResume) -> None:
+        """Add a Verified verdict for every final bullet not already judged."""
+        judged = {(c.entry_id, c.text) for c in self.confidence}
+        for section in (result.experience, result.projects, result.education):
+            for entry in section:
+                label = (
+                    getattr(entry, "company", None)
+                    or getattr(entry, "institution", None)
+                    or getattr(entry, "name", None)
+                    or entry.id
+                )
+                for bullet in entry.highlights:
+                    if (entry.id, bullet) not in judged:
+                        self._confidence(
+                            entry.id, str(label), bullet, "verified",
+                            "Unchanged from your résumé.",
+                        )
+                        judged.add((entry.id, bullet))
 
     def _verify_keywords(self, resume: MasterResume) -> list[str]:
         """Which requested keywords genuinely appear in the final resume text."""

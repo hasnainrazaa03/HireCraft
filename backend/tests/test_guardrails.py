@@ -272,6 +272,25 @@ class TestConfidence:
         assert report.locks  # employers, dates, schools, etc.
         assert any("Employers" in lock for lock in report.locks)
 
+    def test_untouched_bullets_are_still_verified(self, master):
+        """Regression: when the model rewrites nothing, the confidence report
+        must still cover every bullet in the final résumé (as Verified), not be
+        empty."""
+        resume, report = _apply(master, {})  # model returned nothing
+        final_bullets = [h for e in resume.experience for h in e.highlights]
+        assert final_bullets  # the master's bullets survive
+        assert len(report.bullet_confidence) == len(final_bullets)
+        assert all(c.confidence == "verified" for c in report.bullet_confidence)
+
+    def test_no_duplicate_verdicts_for_rewritten_bullet(self, master, experience_id):
+        """A bullet vetted during rewrite must not also be backfilled."""
+        _, report = _apply(
+            master,
+            {"experience": [{"id": experience_id, "highlights": ["Engineered a React dashboard used by 200 users"]}]},
+        )
+        texts = [c.text for c in report.bullet_confidence]
+        assert len(texts) == len(set(texts))  # no dupes
+
 
 class TestDiff:
     def test_detects_modified_highlights(self, master, experience_id):
