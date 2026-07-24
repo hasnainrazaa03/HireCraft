@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.application import Application
     from app.models.auth import AuthToken, Session
     from app.models.job import Job
+    from app.models.profile import CareerProfile
     from app.models.resume import ResumeProfile
 
 
@@ -43,6 +44,10 @@ class User(Base, TimestampMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Optional bring-your-own Gemini key, encrypted at rest (app.core.crypto).
+    # When set, the user's tailoring runs bill their key instead of the system's.
+    encrypted_gemini_key: Mapped[str | None] = mapped_column(String(500))
+
     # Account preferences.
     theme: Mapped[str] = mapped_column(String(10), default="dark", nullable=False)
     # JSONB on Postgres (production); JSON on SQLite so the unit tests, which run
@@ -67,6 +72,9 @@ class User(Base, TimestampMixin):
     )
     auth_tokens: Mapped[list[AuthToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    career_profile: Mapped[CareerProfile | None] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

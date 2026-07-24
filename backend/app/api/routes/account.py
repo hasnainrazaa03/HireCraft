@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.crypto import decrypt, encrypt
 from app.core.logging import get_logger
 from app.models.application import Application
 from app.models.job import Job
@@ -16,10 +18,18 @@ from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile
 from app.models.user import DEFAULT_NOTIFICATION_PREFS, User
 from app.schemas.api import AccountSettingsUpdate, MessageResponse, UserResponse
+from app.schemas.profile import ApiKeyStatus, ApiKeyUpdate
 from app.services import storage
+from app.services.llm.client import GeminiClient, LlmError
 
 router = APIRouter(prefix="/account", tags=["account"])
 logger = get_logger(__name__)
+
+
+class _ApiKeyProbe(BaseModel):
+    """Minimal schema for the key-validation probe call."""
+
+    ok: bool = True
 
 
 @router.patch("/settings", response_model=UserResponse)
@@ -40,6 +50,50 @@ def update_settings(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/api-key", response_model=ApiKeyStatus)
+def api_key_status(user: CurrentUser) -> ApiKeyStatus:
+    """Whether the user has their own key, and a last-4 hint — never the key."""
+    if not user.encrypted_gemini_key:
+        return ApiKeyStatus(configured=False)
+    try:
+        hint = decrypt(user.encrypted_gemini_key)[-4:]
+    except Exception:  # noqa: BLE001 - a stale ciphertext shouldn't 500 this
+        hint = None
+    return ApiKeyStatus(configured=True, hint=f"…{hint}" if hint else None)
+
+
+@router.put("/api-key", response_model=ApiKeyStatus)
+def set_api_key(payload: ApiKeyUpdate, user: CurrentUser, db: DbSession) -> ApiKeyStatus:
+    """Validate a Gemini key with a tiny live call, then store it encrypted."""
+    key = payload.api_key.strip()
+    try:
+        # A cheap generate confirms the key works before we save it, so a bad
+        # key fails here rather than silently on the user's next tailoring run.
+        GeminiClient(api_key=key).generate_structured(
+            prompt="Return the JSON {\"ok\": true}.",
+            schema=_ApiKeyProbe,
+            temperature=0.0,
+            max_output_tokens=32,
+        )
+    except LlmError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"That key didn't work: {exc}",
+        ) from exc
+
+    user.encrypted_gemini_key = encrypt(key)
+    db.commit()
+    logger.info("account.api_key_set", user_id=str(user.id))
+    return ApiKeyStatus(configured=True, hint=f"…{key[-4:]}")
+
+
+@router.delete("/api-key", response_model=MessageResponse)
+def clear_api_key(user: CurrentUser, db: DbSession) -> MessageResponse:
+    user.encrypted_gemini_key = None
+    db.commit()
+    return MessageResponse(message="Your API key has been removed. Runs use the shared key.")
 
 
 @router.get("/export")
