@@ -1,22 +1,24 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   api,
   type ApplicationSummary,
   type TrackerStats,
   type TrackerStatus,
+  type UsageSummary,
 } from "../lib/api";
-import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
-
-const COLUMNS: { status: TrackerStatus; label: string }[] = [
-  { status: "draft", label: "Draft" },
-  { status: "applied", label: "Applied" },
-  { status: "screening", label: "Screening" },
-  { status: "interviewing", label: "Interviewing" },
-  { status: "offer", label: "Offer" },
-  { status: "rejected", label: "Closed" },
-];
+import { useAuth } from "../lib/auth";
+import { StatCard, PageLoader, EmptyState } from "../components/ui";
+import {
+  IconApplications,
+  IconChart,
+  IconSparkles,
+  IconResume,
+  IconLetter,
+  IconShield,
+  IconArrowRight,
+} from "../components/icons";
 
 const ACTIVE_PIPELINE = new Set([
   "pending",
@@ -26,16 +28,29 @@ const ACTIVE_PIPELINE = new Set([
   "rendering",
 ]);
 
+const BOARD: { status: TrackerStatus; label: string; accent: string }[] = [
+  { status: "applied", label: "Applied", accent: "bg-electric" },
+  { status: "screening", label: "Screening", accent: "bg-brand-400" },
+  { status: "interviewing", label: "Interviewing", accent: "bg-hotpink" },
+  { status: "offer", label: "Offer", accent: "bg-emerald" },
+  { status: "rejected", label: "Closed", accent: "bg-danger" },
+];
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function DashboardPage() {
-  const queryClient = useQueryClient();
-  const [view, setView] = useState<"board" | "list">("board");
+  const { user } = useAuth();
 
   const { data: applications = [], isLoading } = useQuery({
     queryKey: ["applications"],
     queryFn: () => api.get<ApplicationSummary[]>("/applications?limit=200"),
-    // Poll while anything is still generating so the board self-updates.
-    refetchInterval: (query) =>
-      (query.state.data ?? []).some((a) => ACTIVE_PIPELINE.has(a.pipeline_status))
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((a) => ACTIVE_PIPELINE.has(a.pipeline_status))
         ? 3000
         : false,
   });
@@ -45,180 +60,214 @@ export default function DashboardPage() {
     queryFn: () => api.get<TrackerStats>("/analytics/tracker"),
   });
 
-  const move = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: TrackerStatus }) =>
-      api.patch(`/applications/${id}`, { tracker_status: status }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["tracker-stats"] });
-    },
+  const { data: usage } = useQuery({
+    queryKey: ["usage-mini"],
+    queryFn: () => api.get<UsageSummary>("/analytics/usage?days=30"),
   });
 
   const grouped = useMemo(() => {
     const map = new Map<string, ApplicationSummary[]>();
-    for (const column of COLUMNS) map.set(column.status, []);
-    for (const application of applications) {
-      // Terminal states share the "Closed" column.
-      const key = ["rejected", "ghosted", "withdrawn"].includes(
-        application.tracker_status,
-      )
+    for (const c of BOARD) map.set(c.status, []);
+    for (const a of applications) {
+      const key = ["rejected", "ghosted", "withdrawn"].includes(a.tracker_status)
         ? "rejected"
-        : application.tracker_status;
-      map.get(key)?.push(application);
+        : a.tracker_status === "draft"
+          ? "applied"
+          : a.tracker_status;
+      map.get(key)?.push(a);
     }
     return map;
   }, [applications]);
 
-  if (isLoading) {
-    return <div className="py-16 text-center text-ink-500">Loading applications…</div>;
-  }
+  const counts = stats?.counts ?? {};
+  const active = applications.filter((a) => ACTIVE_PIPELINE.has(a.pipeline_status)).length;
+  const interviews = counts.interviewing ?? 0;
+  const offers = counts.offer ?? 0;
 
-  if (applications.length === 0) {
-    return (
-      <div className="card mx-auto max-w-md p-10 text-center">
-        <h2 className="text-lg font-semibold">No applications yet</h2>
-        <p className="mt-2 text-sm text-ink-600">
-          Add your master resume, then paste a job posting to generate a tailored,
-          ATS-ready PDF.
-        </p>
-        <div className="mt-6 flex justify-center gap-3">
-          <Link to="/resumes" className="btn-secondary">
-            Add resume
-          </Link>
-          <Link to="/new" className="btn-primary">
-            New application
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <PageLoader label="Loading your dashboard…" />;
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
+    <div className="space-y-7">
+      {/* Greeting */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Applications</h1>
-          <p className="text-sm text-ink-600">
-            {stats?.total ?? applications.length} tracked
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {greeting()}, {user?.full_name?.split(" ")[0] || "there"} 👋
+          </h1>
+          <p className="mt-1 text-sm text-muted">Let's craft your next opportunity.</p>
         </div>
-        <div className="flex rounded-lg border border-ink-200 bg-white p-0.5">
-          {(["board", "list"] as const).map((option) => (
-            <button
-              key={option}
-              onClick={() => setView(option)}
-              className={`rounded-md px-3 py-1 text-sm font-medium capitalize transition ${
-                view === option ? "bg-ink-900 text-white" : "text-ink-600"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
+        <Link to="/new" className="btn-primary">
+          <IconSparkles className="h-4 w-4" />
+          Tailor a résumé
+        </Link>
       </div>
 
-      {view === "board" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {COLUMNS.map((column) => {
-            const items = grouped.get(column.status) ?? [];
-            return (
-              <div key={column.status} className="min-w-0">
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <span className="text-sm font-medium text-ink-800">
-                    {column.label}
-                  </span>
-                  <span className="text-xs text-ink-500">{items.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {items.map((application) => (
-                    <Link
-                      key={application.id}
-                      to={`/applications/${application.id}`}
-                      className="card block p-3 transition hover:border-ink-300 hover:shadow"
-                    >
-                      <div className="truncate text-sm font-medium">
-                        {application.job_title ?? "Untitled role"}
+      {applications.length === 0 ? (
+        <EmptyState
+          icon={<IconApplications className="h-6 w-6" />}
+          title="No applications yet"
+          description="Add your master résumé, then paste a job posting to generate a tailored, ATS-ready PDF in seconds."
+          action={
+            <>
+              <Link to="/resumes" className="btn-secondary">Add résumé</Link>
+              <Link to="/new" className="btn-primary">New application</Link>
+            </>
+          }
+        />
+      ) : (
+        <>
+          {/* Stat row */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard
+              label="Total applications"
+              value={String(applications.length)}
+              icon={<IconApplications className="h-5 w-5" />}
+              tone="brand"
+            />
+            <StatCard
+              label="In progress"
+              value={String(active)}
+              icon={<IconSparkles className="h-5 w-5" />}
+              tone="coral"
+            />
+            <StatCard
+              label="Interviewing"
+              value={String(interviews)}
+              icon={<IconChart className="h-5 w-5" />}
+              tone="pink"
+            />
+            <StatCard
+              label="Offers"
+              value={String(offers)}
+              icon={<IconShield className="h-5 w-5" />}
+              tone="emerald"
+              trend={offers > 0 ? { value: "🎉", positive: true } : undefined}
+            />
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-3">
+            {/* Pipeline board */}
+            <div className="card p-5 lg:col-span-2">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="section-title">Application pipeline</h2>
+                <Link
+                  to="/applications"
+                  className="flex items-center gap-1 text-sm text-brand-300 hover:text-brand-200"
+                >
+                  View all <IconArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                {BOARD.map((col) => {
+                  const items = grouped.get(col.status) ?? [];
+                  return (
+                    <div key={col.status} className="min-w-0">
+                      <div className="mb-2 flex items-center gap-2 px-1">
+                        <span className={`h-2 w-2 rounded-full ${col.accent}`} />
+                        <span className="text-xs font-medium text-muted">{col.label}</span>
+                        <span className="ml-auto text-xs text-subtle">{items.length}</span>
                       </div>
-                      <div className="truncate text-xs text-ink-600">
-                        {application.company ?? "Unknown company"}
+                      <div className="space-y-2">
+                        {items.slice(0, 4).map((a) => (
+                          <Link
+                            key={a.id}
+                            to={`/applications/${a.id}`}
+                            className="block rounded-xl border border-white/[0.06] bg-surface-2 p-2.5 transition hover:border-white/[0.14] hover:bg-surface-3"
+                          >
+                            <div className="truncate text-xs font-medium text-content">
+                              {a.job_title ?? "Untitled role"}
+                            </div>
+                            <div className="truncate text-[11px] text-subtle">
+                              {a.company ?? "—"}
+                            </div>
+                          </Link>
+                        ))}
+                        {items.length === 0 && (
+                          <div className="rounded-xl border border-dashed border-white/[0.07] py-4 text-center text-[11px] text-subtle">
+                            Empty
+                          </div>
+                        )}
+                        {items.length > 4 && (
+                          <div className="text-center text-[11px] text-subtle">
+                            +{items.length - 4} more
+                          </div>
+                        )}
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <PipelineBadge status={application.pipeline_status} />
-                        <span className="text-[11px] tabular-nums text-ink-500">
-                          ${application.total_cost_usd.toFixed(4)}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                  {items.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-ink-200 py-6 text-center text-xs text-ink-400">
-                      Empty
                     </div>
-                  )}
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Side column: AI copilot teaser + quick actions + cost */}
+            <div className="space-y-5">
+              <div className="hero-card bg-hero-purple p-5">
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2">
+                    <IconSparkles className="h-5 w-5 text-white" />
+                    <span className="text-sm font-semibold text-white">AI Copilot</span>
+                    <span className="badge bg-white/20 text-white">Soon</span>
+                  </div>
+                  <p className="mt-2 text-xs text-white/80">
+                    Ask why a bullet was removed, how to raise your ATS score, or which
+                    keywords you're missing.
+                  </p>
+                  <button
+                    disabled
+                    className="mt-3 w-full cursor-not-allowed rounded-lg bg-white/15 py-2 text-xs font-semibold text-white/90"
+                  >
+                    Coming soon
+                  </button>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-ink-200 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-600">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">Role</th>
-                  <th className="px-4 py-2.5 font-medium">Company</th>
-                  <th className="px-4 py-2.5 font-medium">Pipeline</th>
-                  <th className="px-4 py-2.5 font-medium">Stage</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100">
-                {applications.map((application) => (
-                  <tr key={application.id} className="hover:bg-ink-50">
-                    <td className="px-4 py-2.5">
-                      <Link
-                        to={`/applications/${application.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {application.job_title ?? "Untitled role"}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 text-ink-600">
-                      {application.company ?? "—"}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <PipelineBadge status={application.pipeline_status} />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <select
-                        value={application.tracker_status}
-                        onChange={(e) =>
-                          move.mutate({
-                            id: application.id,
-                            status: e.target.value as TrackerStatus,
-                          })
-                        }
-                        className={`badge cursor-pointer border-0 capitalize ${
-                          TRACKER_STYLES[application.tracker_status]
-                        }`}
-                      >
-                        {Object.keys(TRACKER_STYLES).map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-600">
-                      ${application.total_cost_usd.toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+              <div className="card p-5">
+                <h3 className="section-title text-base">Quick actions</h3>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Link to="/new" className="btn-secondary flex-col gap-1.5 !py-3 text-xs">
+                    <IconSparkles className="h-4 w-4 text-brand-300" />
+                    Tailor résumé
+                  </Link>
+                  <Link to="/resumes" className="btn-secondary flex-col gap-1.5 !py-3 text-xs">
+                    <IconResume className="h-4 w-4 text-electric" />
+                    My résumés
+                  </Link>
+                  <Link to="/applications" className="btn-secondary flex-col gap-1.5 !py-3 text-xs">
+                    <IconApplications className="h-4 w-4 text-hotpink" />
+                    Applications
+                  </Link>
+                  <Link to="/analytics" className="btn-secondary flex-col gap-1.5 !py-3 text-xs">
+                    <IconChart className="h-4 w-4 text-coral" />
+                    Analytics
+                  </Link>
+                </div>
+              </div>
+
+              {usage && (
+                <div className="card p-5">
+                  <div className="flex items-center justify-between">
+                    <h3 className="section-title text-base">This month</h3>
+                    <IconLetter className="h-4 w-4 text-subtle" />
+                  </div>
+                  <div className="mt-3 flex items-end justify-between">
+                    <div>
+                      <div className="text-2xl font-semibold tabular-nums text-gradient">
+                        ${usage.total_cost_usd.toFixed(4)}
+                      </div>
+                      <div className="text-xs text-muted">AI spend, 30 days</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-medium text-content">
+                        {usage.applications}
+                      </div>
+                      <div className="text-xs text-subtle">applications</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

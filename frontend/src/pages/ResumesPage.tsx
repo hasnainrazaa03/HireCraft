@@ -137,7 +137,7 @@ export default function ResumesPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Master resumes</h1>
-          <p className="text-sm text-ink-600">
+          <p className="text-sm text-muted">
             Your source of truth. Every tailored resume is derived from this.
           </p>
         </div>
@@ -191,7 +191,7 @@ export default function ResumesPage() {
           {error && (
             <div
               role="alert"
-              className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+              className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
             >
               {error}
             </div>
@@ -214,11 +214,11 @@ export default function ResumesPage() {
           </div>
         </div>
       ) : isLoading ? (
-        <div className="py-16 text-center text-ink-500">Loading…</div>
+        <div className="py-16 text-center text-subtle">Loading…</div>
       ) : profiles.length === 0 ? (
         <div className="card p-10 text-center">
           <h2 className="text-lg font-semibold">No master resume yet</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ink-600">
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted">
             Start from the template and replace it with your real experience. Include
             genuine metrics — the guardrails will not let the AI invent any.
           </p>
@@ -237,10 +237,10 @@ export default function ResumesPage() {
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{profile.name}</span>
                   {profile.is_default && (
-                    <span className="badge bg-ink-900 text-white">Default</span>
+                    <span className="badge bg-brand-600 text-white">Default</span>
                   )}
                 </div>
-                <div className="text-xs text-ink-500">
+                <div className="text-xs text-subtle">
                   Updated {new Date(profile.updated_at).toLocaleDateString()}
                 </div>
               </div>

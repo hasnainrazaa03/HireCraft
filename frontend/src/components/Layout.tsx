@@ -1,64 +1,216 @@
-import { NavLink, Link } from "react-router-dom";
-import type { ReactNode } from "react";
+import { NavLink, Link, useLocation } from "react-router-dom";
+import { useState, type ReactNode } from "react";
 import { useAuth } from "../lib/auth";
+import { useTheme } from "../lib/theme";
+import {
+  IconDashboard,
+  IconApplications,
+  IconResume,
+  IconLetter,
+  IconSearch,
+  IconChart,
+  IconSettings,
+  IconTemplate,
+  IconSparkles,
+  IconBell,
+  IconPlus,
+  IconSun,
+  IconMoon,
+  IconLogout,
+  IconChevronDown,
+} from "./icons";
 
 const NAV = [
-  { to: "/", label: "Applications", end: true },
-  { to: "/resumes", label: "Resumes", end: false },
-  { to: "/analytics", label: "Usage", end: false },
+  { to: "/", label: "Dashboard", icon: IconDashboard, end: true },
+  { to: "/applications", label: "Applications", icon: IconApplications, end: false },
+  { to: "/resumes", label: "Resumes", icon: IconResume, end: false },
+  { to: "/cover-letters", label: "Cover Letters", icon: IconLetter, end: false },
+  { to: "/jobs", label: "Job Search", icon: IconSearch, end: false },
+  { to: "/analytics", label: "Analytics", icon: IconChart, end: false },
+  { to: "/templates", label: "Templates", icon: IconTemplate, end: false },
 ];
+
+// Routes that exist today. Others render a "coming soon" placeholder so the nav
+// can show the full product shape without dead links.
+const LIVE_ROUTES = new Set(["/", "/applications", "/resumes", "/analytics", "/new"]);
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const { theme, toggle } = useTheme();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+
+  const initials = (user?.full_name || user?.email || "?")
+    .split(/[\s@.]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase())
+    .join("");
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-ink-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-          <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-ink-900 text-sm text-white">
-              H
-            </span>
-            HireCraft
-          </Link>
+    <div className="flex min-h-screen">
+      {/* ---- Sidebar ---- */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/[0.06] bg-canvas-raised/70 px-4 py-5 backdrop-blur-xl lg:flex">
+        <Link to="/" className="mb-7 flex items-center gap-2.5 px-2">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-strong">
+            <IconSparkles className="h-5 w-5" />
+          </span>
+          <span className="text-lg font-semibold tracking-tight">HireCraft</span>
+        </Link>
 
-          <nav className="flex items-center gap-1">
-            {NAV.map((item) => (
+        <nav className="flex flex-1 flex-col gap-1">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const live = LIVE_ROUTES.has(item.to);
+            return (
               <NavLink
                 key={item.to}
-                to={item.to}
+                to={live ? item.to : "#"}
                 end={item.end}
+                onClick={(e) => !live && e.preventDefault()}
                 className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    isActive
-                      ? "bg-ink-100 text-ink-900"
-                      : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+                  `nav-item ${isActive && live ? "nav-item-active" : ""} ${
+                    !live ? "cursor-default opacity-45 hover:bg-transparent hover:text-muted" : ""
                   }`
                 }
               >
-                {item.label}
+                <Icon className="h-[18px] w-[18px]" />
+                <span>{item.label}</span>
+                {!live && (
+                  <span className="ml-auto rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-subtle">
+                    soon
+                  </span>
+                )}
               </NavLink>
-            ))}
-          </nav>
+            );
+          })}
+        </nav>
 
-          <div className="ml-auto flex items-center gap-3">
-            <Link to="/new" className="btn-primary">
-              New application
-            </Link>
-            <div className="hidden text-right sm:block">
-              <div className="text-xs text-ink-500">{user?.email}</div>
-              <button
-                onClick={logout}
-                className="text-xs font-medium text-ink-700 hover:text-ink-900 hover:underline"
-              >
-                Sign out
-              </button>
+        {/* Upgrade / plan card — a small hero accent at the base of the rail. */}
+        <div className="hero-card mt-4 bg-hero-purple p-4">
+          <div className="relative z-10">
+            <div className="text-sm font-semibold text-white">Unlock Premium</div>
+            <p className="mt-1 text-xs text-white/75">
+              Unlimited tailoring, advanced analytics, and priority support.
+            </p>
+            <button className="mt-3 w-full rounded-lg bg-white/15 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-white/25">
+              Upgrade
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-white/[0.06] pt-3">
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500/20 text-xs font-semibold text-brand-200">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium text-content">
+                {user?.full_name || "Your account"}
+              </div>
+              <div className="truncate text-[11px] text-subtle">{user?.email}</div>
             </div>
           </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      {/* ---- Main column ---- */}
+      <div className="flex min-h-screen flex-1 flex-col lg:pl-64">
+        {/* Top bar */}
+        <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-white/[0.06] bg-canvas/70 px-5 py-3.5 backdrop-blur-xl">
+          <div className="relative hidden max-w-md flex-1 md:block">
+            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+            <input
+              className="input pl-9"
+              placeholder="Search jobs, resumes, companies…"
+            />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={toggle}
+              className="btn-ghost h-9 w-9 !p-0"
+              aria-label="Toggle theme"
+              title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+            >
+              {theme === "dark" ? (
+                <IconSun className="h-[18px] w-[18px]" />
+              ) : (
+                <IconMoon className="h-[18px] w-[18px]" />
+              )}
+            </button>
+
+            <button className="btn-ghost relative h-9 w-9 !p-0" aria-label="Notifications">
+              <IconBell className="h-[18px] w-[18px]" />
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-hotpink" />
+            </button>
+
+            <Link to="/new" className="btn-primary">
+              <IconPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">New Application</span>
+            </Link>
+
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-surface-2 py-1.5 pl-1.5 pr-2.5 transition hover:border-white/[0.12]"
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/20 text-xs font-semibold text-brand-200">
+                  {initials}
+                </span>
+                <IconChevronDown className="h-4 w-4 text-subtle" />
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div className="glass absolute right-0 z-20 mt-2 w-52 animate-fade-in p-1.5">
+                    <div className="border-b border-white/[0.06] px-3 py-2">
+                      <div className="truncate text-sm font-medium text-content">
+                        {user?.full_name || "Signed in"}
+                      </div>
+                      <div className="truncate text-xs text-subtle">{user?.email}</div>
+                    </div>
+                    <button className="nav-item mt-1 w-full opacity-45" disabled>
+                      <IconSettings className="h-[18px] w-[18px]" />
+                      Settings
+                      <span className="ml-auto text-[10px] text-subtle">soon</span>
+                    </button>
+                    <button
+                      onClick={logout}
+                      className="nav-item w-full text-danger hover:bg-danger/10 hover:text-danger"
+                    >
+                      <IconLogout className="h-[18px] w-[18px]" />
+                      Sign out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Mobile nav strip */}
+        <nav className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
+          {NAV.filter((n) => LIVE_ROUTES.has(n.to)).map((item) => {
+            const Icon = item.icon;
+            const active = item.end
+              ? location.pathname === item.to
+              : location.pathname.startsWith(item.to);
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={`nav-item shrink-0 ${active ? "nav-item-active" : ""}`}
+              >
+                <Icon className="h-[18px] w-[18px]" />
+                <span className="text-xs">{item.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        <main className="mx-auto w-full max-w-7xl flex-1 px-5 py-7">{children}</main>
+      </div>
     </div>
   );
 }

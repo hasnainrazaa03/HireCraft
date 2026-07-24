@@ -76,7 +76,7 @@ export default function ApplicationPage() {
   });
 
   if (isLoading || !application) {
-    return <div className="py-16 text-center text-ink-500">Loading…</div>;
+    return <div className="py-16 text-center text-subtle">Loading…</div>;
   }
 
   const pipeline = status?.pipeline_status ?? application.pipeline_status;
@@ -91,7 +91,7 @@ export default function ApplicationPage() {
 
   return (
     <div>
-      <Link to="/" className="text-sm text-ink-600 hover:text-ink-900 hover:underline">
+      <Link to="/" className="text-sm text-muted hover:text-content hover:underline">
         ← All applications
       </Link>
 
@@ -100,7 +100,7 @@ export default function ApplicationPage() {
           <h1 className="text-xl font-semibold tracking-tight">
             {application.job?.title ?? "Untitled role"}
           </h1>
-          <p className="text-sm text-ink-600">
+          <p className="text-sm text-muted">
             {application.job?.company ?? "Unknown company"}
             {application.job?.location ? ` · ${application.job.location}` : ""}
           </p>
@@ -127,17 +127,17 @@ export default function ApplicationPage() {
 
       {busy && (
         <div className="card mt-6 flex items-center gap-3 p-4">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-ink-200 border-t-ink-900" />
-          <span className="text-sm text-ink-700">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/[0.08] border-t-brand-400" />
+          <span className="text-sm text-muted">
             {status?.stage_message ?? "Working…"}
           </span>
         </div>
       )}
 
       {pipeline === "failed" && (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
-          <div className="font-medium text-red-900">This run failed</div>
-          <p className="mt-1 text-sm text-red-800">
+        <div className="mt-6 rounded-xl border border-danger/30 bg-danger/10 p-4">
+          <div className="font-medium text-danger">This run failed</div>
+          <p className="mt-1 text-sm text-danger">
             {application.error_message ?? "An unknown error occurred."}
           </p>
           <button
@@ -204,19 +204,19 @@ export default function ApplicationPage() {
           {downloadError && (
             <div
               role="alert"
-              className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+              className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
             >
               {downloadError}
             </div>
           )}
 
           {errors.length > 0 && (
-            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <div className="font-medium text-amber-900">
+            <div className="mt-6 rounded-xl border border-coral/30 bg-coral/10 p-4">
+              <div className="font-medium text-coral">
                 HireCraft blocked {errors.length} unsupported{" "}
                 {errors.length === 1 ? "claim" : "claims"}
               </div>
-              <p className="mt-1 text-sm text-amber-800">
+              <p className="mt-1 text-sm text-coral">
                 The AI tried to state something your master resume does not support.
                 Those edits were removed automatically — see the Guardrails tab.
               </p>
@@ -224,7 +224,7 @@ export default function ApplicationPage() {
           )}
 
           <div className="mt-8">
-            <div className="flex gap-1 border-b border-ink-200">
+            <div className="flex gap-1 border-b border-white/[0.08]">
               {(
                 [
                   ["diff", `Changes (${application.diff?.length ?? 0})`],
@@ -240,8 +240,8 @@ export default function ApplicationPage() {
                   onClick={() => setTab(value)}
                   className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition ${
                     tab === value
-                      ? "border-ink-900 text-ink-900"
-                      : "border-transparent text-ink-500 hover:text-ink-800"
+                      ? "border-brand-600 text-content"
+                      : "border-transparent text-subtle hover:text-content"
                   }`}
                 >
                   {label}
@@ -284,7 +284,7 @@ export default function ApplicationPage() {
         />
       </div>
 
-      <div className="mt-10 border-t border-ink-200 pt-5">
+      <div className="mt-10 border-t border-white/[0.08] pt-5">
         <button
           onClick={() => {
             if (confirm("Delete this application and its generated files?")) {
@@ -310,10 +310,10 @@ function Stat({
   tone?: "neutral" | "ok" | "warn";
 }) {
   const toneClass =
-    tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-emerald-700" : "";
+    tone === "warn" ? "text-coral" : tone === "ok" ? "text-emerald" : "";
   return (
     <div className="card p-3">
-      <div className="text-xs text-ink-500">{label}</div>
+      <div className="text-xs text-subtle">{label}</div>
       <div className={`mt-0.5 text-lg font-semibold tabular-nums ${toneClass}`}>
         {value}
       </div>
@@ -324,7 +324,7 @@ function Stat({
 function DiffView({ diff }: { diff: DiffEntry[] }) {
   if (diff.length === 0) {
     return (
-      <p className="text-sm text-ink-600">
+      <p className="text-sm text-muted">
         No changes were made — your resume already matched this posting.
       </p>
     );
@@ -334,13 +334,13 @@ function DiffView({ diff }: { diff: DiffEntry[] }) {
     <div className="space-y-4">
       {diff.map((entry, index) => (
         <div key={index} className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-ink-200 bg-ink-50 px-4 py-2">
+          <div className="flex items-center justify-between border-b border-white/[0.08] bg-surface-2 px-4 py-2">
             <span className="text-sm font-medium">{entry.label}</span>
-            <span className="text-xs uppercase tracking-wide text-ink-500">
+            <span className="text-xs uppercase tracking-wide text-subtle">
               {entry.section} · {entry.change}
             </span>
           </div>
-          <div className="grid gap-px bg-ink-100 md:grid-cols-2">
+          <div className="grid gap-px bg-white/[0.06] md:grid-cols-2">
             <DiffSide title="Original" value={entry.before} tone="before" />
             <DiffSide title="Tailored" value={entry.after} tone="after" />
           </div>
@@ -361,16 +361,16 @@ function DiffSide({
 }) {
   const items = Array.isArray(value) ? value : value ? [value] : [];
   return (
-    <div className={`bg-white p-4 ${tone === "after" ? "md:bg-emerald-50/40" : ""}`}>
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-500">
+    <div className={`p-4 ${tone === "after" ? "bg-emerald/[0.05]" : "bg-surface"}`}>
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-subtle">
         {title}
       </div>
       {items.length === 0 ? (
-        <p className="text-sm italic text-ink-400">— removed —</p>
+        <p className="text-sm italic text-subtle">— removed —</p>
       ) : (
         <ul className="space-y-1.5">
           {items.map((item, index) => (
-            <li key={index} className="text-sm leading-relaxed text-ink-800">
+            <li key={index} className="text-sm leading-relaxed text-content">
               {item}
             </li>
           ))}
@@ -397,44 +397,44 @@ function GuardrailView({
     <div className="space-y-6">
       <div>
         <h3 className="text-sm font-medium">ATS keyword coverage</h3>
-        <p className="mt-1 text-xs text-ink-500">
+        <p className="mt-1 text-xs text-subtle">
           Verified against the text actually in your resume — not what the model
           claimed.
         </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {verified.map((keyword) => (
-            <span key={keyword} className="badge bg-emerald-100 text-emerald-800">
+            <span key={keyword} className="badge-emerald">
               {keyword}
             </span>
           ))}
           {missing.map((keyword) => (
             <span
               key={keyword}
-              className="badge border border-dashed border-ink-300 bg-white text-ink-500"
+              className="badge border border-dashed border-white/[0.14] text-subtle"
               title="Not present in your resume — HireCraft will not add a claim you cannot back up."
             >
               {keyword}
             </span>
           ))}
           {requested.length === 0 && (
-            <span className="text-sm text-ink-500">No keywords extracted.</span>
+            <span className="text-sm text-subtle">No keywords extracted.</span>
           )}
         </div>
       </div>
 
       {errors.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-red-800">
+          <h3 className="text-sm font-medium text-danger">
             Blocked ({errors.length})
           </h3>
-          <p className="mt-1 text-xs text-ink-500">
+          <p className="mt-1 text-xs text-subtle">
             Removed from your resume because your master resume does not support them.
           </p>
           <ul className="mt-3 space-y-2">
             {errors.map((violation, index) => (
               <li
                 key={index}
-                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+                className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
               >
                 {violation.detail}
               </li>
@@ -445,14 +445,14 @@ function GuardrailView({
 
       {warnings.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-amber-800">
+          <h3 className="text-sm font-medium text-coral">
             Review before sending ({warnings.length})
           </h3>
           <ul className="mt-3 space-y-2">
             {warnings.map((violation, index) => (
               <li
                 key={index}
-                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                className="rounded-xl border border-coral/30 bg-coral/10 px-3 py-2.5 text-sm text-coral"
               >
                 {violation.detail}
               </li>
@@ -462,7 +462,7 @@ function GuardrailView({
       )}
 
       {errors.length === 0 && warnings.length === 0 && (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <p className="rounded-xl border border-emerald/30 bg-emerald/10 px-3 py-2.5 text-sm text-emerald">
           Every tailored statement traces back to your master resume.
         </p>
       )}
@@ -478,14 +478,14 @@ function RequirementsView({
     : NonNullable<ApplicationDetail["job"]>["requirements"];
 }) {
   if (!requirements) {
-    return <p className="text-sm text-ink-600">No requirements extracted.</p>;
+    return <p className="text-sm text-muted">No requirements extracted.</p>;
   }
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <Section title="Required skills">
         <div className="flex flex-wrap gap-1.5">
           {requirements.required_skills.map((skill) => (
-            <span key={skill.name} className="badge bg-ink-100 text-ink-800">
+            <span key={skill.name} className="badge bg-white/[0.06] text-content">
               {skill.name}
             </span>
           ))}
@@ -494,21 +494,21 @@ function RequirementsView({
       <Section title="Preferred skills">
         <div className="flex flex-wrap gap-1.5">
           {requirements.preferred_skills.map((skill) => (
-            <span key={skill.name} className="badge bg-ink-50 text-ink-600">
+            <span key={skill.name} className="badge bg-surface-2 text-muted">
               {skill.name}
             </span>
           ))}
         </div>
       </Section>
       <Section title="Responsibilities">
-        <ul className="list-disc space-y-1 pl-4 text-sm text-ink-700">
+        <ul className="list-disc space-y-1 pl-4 text-sm text-muted">
           {requirements.responsibilities.map((item, index) => (
             <li key={index}>{item}</li>
           ))}
         </ul>
       </Section>
       <Section title="Qualifications">
-        <ul className="list-disc space-y-1 pl-4 text-sm text-ink-700">
+        <ul className="list-disc space-y-1 pl-4 text-sm text-muted">
           {requirements.qualifications.map((item, index) => (
             <li key={index}>{item}</li>
           ))}

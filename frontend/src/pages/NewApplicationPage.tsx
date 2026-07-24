@@ -44,7 +44,7 @@ export default function NewApplicationPage() {
     return (
       <div className="card mx-auto max-w-md p-10 text-center">
         <h2 className="text-lg font-semibold">Add a master resume first</h2>
-        <p className="mt-2 text-sm text-ink-600">
+        <p className="mt-2 text-sm text-muted">
           HireCraft tailors an existing resume. It never invents experience, so it
           needs your real one as the source of truth.
         </p>
@@ -58,7 +58,7 @@ export default function NewApplicationPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="text-xl font-semibold tracking-tight">New application</h1>
-      <p className="mt-1 text-sm text-ink-600">
+      <p className="mt-1 text-sm text-muted">
         Paste a job posting and HireCraft will tailor your resume to it.
       </p>
 
@@ -84,7 +84,7 @@ export default function NewApplicationPage() {
 
         <div>
           <span className="label">Job source</span>
-          <div className="mb-3 flex rounded-lg border border-ink-200 bg-white p-0.5">
+          <div className="segment mb-3 flex w-full">
             {(
               [
                 ["url", "From URL"],
@@ -95,8 +95,8 @@ export default function NewApplicationPage() {
                 key={value}
                 type="button"
                 onClick={() => setMode(value)}
-                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  mode === value ? "bg-ink-900 text-white" : "text-ink-600"
+                className={`segment-item flex-1 ${
+                  mode === value ? "segment-item-active" : ""
                 }`}
               >
                 {label}
@@ -114,7 +114,7 @@ export default function NewApplicationPage() {
                 onChange={(e) => setUrl(e.target.value)}
                 required
               />
-              <p className="mt-1.5 text-xs text-ink-500">
+              <p className="mt-1.5 text-xs text-subtle">
                 Some boards (LinkedIn, Workday) block automated access. If the fetch
                 fails, switch to “Paste text”.
               </p>
@@ -151,11 +151,11 @@ export default function NewApplicationPage() {
             type="checkbox"
             checked={coverLetter}
             onChange={(e) => setCoverLetter(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-ink-300 text-ink-900 focus:ring-ink-900"
+            className="mt-0.5 h-4 w-4 rounded border-white/[0.12] text-content focus:ring-brand-500"
           />
           <span>
             Also draft a cover letter
-            <span className="block text-xs text-ink-500">
+            <span className="block text-xs text-subtle">
               Adds one more LLM call to the cost.
             </span>
           </span>
@@ -164,7 +164,7 @@ export default function NewApplicationPage() {
         {error && (
           <div
             role="alert"
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
           >
             {error}
           </div>

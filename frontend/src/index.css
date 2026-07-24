@@ -1,48 +1,310 @@
+/* Inter, bundled locally so the app needs no network at runtime. */
+@import "@fontsource-variable/inter";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   Semantic theme variables. Channels are space-separated RGB triples so
+   Tailwind's `rgb(var(--x) / <alpha-value>)` can apply opacity. Dark is the
+   primary theme (the whole design language is neo-dark); light is a restrained
+   companion, not an afterthought.
+   ========================================================================== */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: 10 11 18; /* #0A0B12 - deepest charcoal, blue undertone */
+  --canvas-raised: 13 16 24; /* #0D1018 */
+  --surface: 20 24 36; /* #141824 - cards */
+  --surface-2: 23 27 40; /* #171B28 - nested/hover */
+  --surface-3: 26 31 45; /* #1A1F2D - inputs, deeper wells */
+
+  --content: 237 240 248; /* near-white primary text */
+  --muted: 154 162 184; /* secondary text */
+  --subtle: 106 114 138; /* tertiary / placeholder */
+
+  --hairline: 255 255 255; /* used at low alpha for borders */
+  --hairline-alpha: 0.07;
+
+  --ring: 124 92 255; /* brand focus ring */
+  --shadow-soft: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --canvas: 244 246 251; /* soft off-white, faint blue */
+  --canvas-raised: 255 255 255;
+  --surface: 255 255 255;
+  --surface-2: 248 250 253;
+  --surface-3: 242 245 250;
+
+  --content: 22 26 40;
+  --muted: 82 92 116;
+  --subtle: 130 140 162;
+
+  --hairline: 15 20 40;
+  --hairline-alpha: 0.09;
+
+  --ring: 109 74 255;
+  --shadow-soft: 0 8px 30px rgba(30, 30, 60, 0.1);
+}
+
 @layer base {
+  * {
+    border-color: rgb(var(--hairline) / var(--hairline-alpha));
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
   }
+
   body {
-    @apply bg-ink-50 text-ink-950;
+    @apply bg-canvas text-content font-sans antialiased;
+    /* Ambient purple glow bleeding from the top — the room's LED lighting. */
+    background-image:
+      radial-gradient(
+        70% 55% at 15% -5%,
+        rgba(110, 70, 255, 0.12) 0%,
+        rgba(110, 70, 255, 0) 60%
+      ),
+      radial-gradient(
+        60% 50% at 100% 0%,
+        rgba(76, 201, 240, 0.08) 0%,
+        rgba(76, 201, 240, 0) 55%
+      );
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-semibold tracking-tight text-content;
+  }
+
+  /* Thin, unobtrusive scrollbars that match the surfaces. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--hairline) / 0.12);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--hairline) / 0.2);
+    background-clip: content-box;
+  }
+
+  ::selection {
+    background: rgba(124, 92, 255, 0.35);
   }
 }
 
 @layer components {
+  /* -- Surfaces -------------------------------------------------------- */
+
+  /* The workhorse card: barely lighter than the canvas, hairline border,
+     soft shadow. Blends in rather than popping. */
   .card {
-    @apply rounded-xl border border-ink-200 bg-white shadow-sm;
+    @apply rounded-2xl border border-white/[0.07] bg-surface shadow-card;
   }
+  .card-hover {
+    @apply transition duration-200 hover:border-white/[0.12] hover:shadow-soft;
+  }
+
+  /* Glassmorphism for overlays and floating panels. */
+  .glass {
+    @apply rounded-2xl border border-white/[0.08] shadow-soft;
+    background: rgb(var(--surface) / 0.72);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+
+  /* The vibrant focal card. Gradient background, ambient glow. Use sparingly. */
+  .hero-card {
+    @apply relative overflow-hidden rounded-hero shadow-glow;
+  }
+
+  /* -- Buttons --------------------------------------------------------- */
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
-           text-sm font-medium transition
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-900
-           focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
-  }
-  .btn-primary {
-    @apply btn bg-ink-900 text-white hover:bg-ink-800;
-  }
-  .btn-secondary {
-    @apply btn border border-ink-200 bg-white text-ink-800 hover:bg-ink-50;
-  }
-  .btn-danger {
-    @apply btn border border-red-200 bg-white text-red-700 hover:bg-red-50;
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl
+           px-4 py-2.5 text-sm font-medium transition-all duration-200
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60
+           focus-visible:ring-offset-2 focus-visible:ring-offset-canvas
+           disabled:cursor-not-allowed disabled:opacity-50;
   }
 
+  /* Primary: purple gradient with a soft glow that lifts on hover. */
+  .btn-primary {
+    @apply btn text-white shadow-[0_4px_20px_rgba(91,54,255,0.35)]
+           hover:-translate-y-px hover:shadow-glow-strong;
+    background-image: linear-gradient(135deg, #7c5cff 0%, #5b36ff 100%);
+  }
+  .btn-primary:hover {
+    background-image: linear-gradient(135deg, #8b6bff 0%, #6b46ff 100%);
+  }
+
+  .btn-secondary {
+    @apply btn border border-white/[0.08] bg-surface-2 text-content
+           hover:border-white/[0.16] hover:bg-surface-3;
+  }
+
+  .btn-ghost {
+    @apply btn text-muted hover:bg-white/[0.05] hover:text-content;
+  }
+
+  .btn-danger {
+    @apply btn border border-danger/30 bg-danger/10 text-danger
+           hover:bg-danger/20;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+  .btn-lg {
+    @apply px-5 py-3 text-base;
+  }
+
+  /* -- Inputs ---------------------------------------------------------- */
+
   .input {
-    @apply w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm
-           placeholder:text-ink-400
-           focus:border-ink-900 focus:outline-none focus:ring-1 focus:ring-ink-900;
+    @apply w-full rounded-xl border border-white/[0.08] bg-surface-3 px-3.5 py-2.5
+           text-sm text-content placeholder:text-subtle transition
+           focus:border-brand-500/60 focus:outline-none
+           focus:ring-2 focus:ring-brand-500/25;
+  }
+  .input-error {
+    @apply border-danger/50 focus:border-danger/70 focus:ring-danger/20;
   }
 
   .label {
-    @apply mb-1.5 block text-sm font-medium text-ink-800;
+    @apply mb-1.5 block text-sm font-medium text-muted;
   }
 
+  .field-error {
+    @apply mt-1.5 text-xs text-danger;
+  }
+
+  /* -- Badges ---------------------------------------------------------- */
+
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs
+           font-medium;
+  }
+  .badge-brand {
+    @apply badge bg-brand-500/15 text-brand-300;
+  }
+  .badge-emerald {
+    @apply badge text-emerald;
+    background-color: rgb(45 212 191 / 0.14);
+  }
+  .badge-blue {
+    @apply badge text-electric;
+    background-color: rgb(76 201 240 / 0.14);
+  }
+  .badge-pink {
+    @apply badge text-hotpink;
+    background-color: rgb(255 79 216 / 0.14);
+  }
+  .badge-coral {
+    @apply badge text-coral;
+    background-color: rgb(255 159 67 / 0.14);
+  }
+  .badge-danger {
+    @apply badge text-danger;
+    background-color: rgb(255 92 122 / 0.14);
+  }
+  .badge-muted {
+    @apply badge bg-white/[0.06] text-muted;
+  }
+
+  /* -- Chips / segmented controls ------------------------------------- */
+
+  .segment {
+    @apply inline-flex rounded-xl border border-white/[0.07] bg-surface-2 p-0.5;
+  }
+  .segment-item {
+    @apply rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition
+           hover:text-content;
+  }
+  .segment-item-active {
+    @apply bg-brand-gradient text-white shadow-[0_2px_12px_rgba(91,54,255,0.35)];
+  }
+
+  /* -- Nav ------------------------------------------------------------- */
+
+  .nav-item {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium
+           text-muted transition duration-150
+           hover:bg-white/[0.05] hover:text-content;
+  }
+  .nav-item-active {
+    @apply text-white;
+    background-image: linear-gradient(
+      135deg,
+      rgba(124, 92, 255, 0.9) 0%,
+      rgba(91, 54, 255, 0.9) 100%
+    );
+    box-shadow: 0 4px 18px rgba(91, 54, 255, 0.3);
+  }
+
+  /* -- Tables ---------------------------------------------------------- */
+
+  .table-head {
+    @apply border-b border-white/[0.07] text-left text-xs font-medium uppercase
+           tracking-wide text-subtle;
+  }
+  .table-row {
+    @apply border-b border-white/[0.05] transition hover:bg-white/[0.03];
+  }
+
+  /* -- Skeleton loader ------------------------------------------------- */
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-lg bg-white/[0.06];
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--hairline) / 0.08),
+      transparent
+    );
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* -- Section headings ------------------------------------------------ */
+
+  .section-title {
+    @apply text-lg font-semibold tracking-tight text-content;
+  }
+  .section-subtitle {
+    @apply text-sm text-muted;
+  }
+}
+
+@layer utilities {
+  /* Gradient text for hero numbers and accents. */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #8b5cf6 0%, #4cc9f0 100%);
+  }
+  .text-gradient-warm {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #9d4edd 0%, #ff9f43 100%);
+  }
+
+  /* A thin hairline divider that respects the theme. */
+  .hairline {
+    @apply border-white/[0.07];
   }
 }
