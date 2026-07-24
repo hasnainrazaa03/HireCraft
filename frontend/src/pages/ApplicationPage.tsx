@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  ApiError,
   type ApplicationDetail,
   type ApplicationStatus,
   type DiffEntry,
@@ -26,6 +27,20 @@ export default function ApplicationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("diff");
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // A rejected download would otherwise be an unhandled promise rejection: the
+  // button appears to do nothing and the user has no idea why.
+  async function download(kind: string, fallbackName: string) {
+    setDownloadError(null);
+    try {
+      await api.download(`/applications/${id}/download/${kind}`, fallbackName);
+    } catch (err) {
+      setDownloadError(
+        err instanceof ApiError ? err.message : "Download failed. Please retry.",
+      );
+    }
+  }
 
   // Cheap status poll drives the progress UI; the full record is refetched only
   // when the pipeline actually finishes.
@@ -158,30 +173,21 @@ export default function ApplicationPage() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
-              onClick={() =>
-                api.download(`/applications/${id}/download/resume_pdf`, "resume.pdf")
-              }
+              onClick={() => void download("resume_pdf", "resume.pdf")}
               className="btn-primary"
             >
               Download resume PDF
             </button>
             {application.artifacts.some((a) => a.kind === "cover_letter_pdf") && (
               <button
-                onClick={() =>
-                  api.download(
-                    `/applications/${id}/download/cover_letter_pdf`,
-                    "cover_letter.pdf",
-                  )
-                }
+                onClick={() => void download("cover_letter_pdf", "cover_letter.pdf")}
                 className="btn-secondary"
               >
                 Cover letter PDF
               </button>
             )}
             <button
-              onClick={() =>
-                api.download(`/applications/${id}/download/resume_tex`, "resume.tex")
-              }
+              onClick={() => void download("resume_tex", "resume.tex")}
               className="btn-secondary"
             >
               LaTeX source
@@ -194,6 +200,15 @@ export default function ApplicationPage() {
               Regenerate
             </button>
           </div>
+
+          {downloadError && (
+            <div
+              role="alert"
+              className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              {downloadError}
+            </div>
+          )}
 
           {errors.length > 0 && (
             <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">

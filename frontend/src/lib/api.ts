@@ -128,26 +128,46 @@ export const api = {
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 
-  /** Downloads use a blob so the Authorization header is still applied. */
-  async download(path: string, fallbackName: string) {
-    const res = await fetch(`${API}${path}`, {
-      headers: { Authorization: `Bearer ${tokens.access ?? ""}` },
-    });
-    if (!res.ok) throw await parseError(res);
-
-    const blob = await res.blob();
-    const disposition = res.headers.get("content-disposition") ?? "";
-    const match = disposition.match(/filename="?([^"';]+)"?/);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = match?.[1] ?? fallbackName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  },
+  download: downloadFile,
 };
+
+/**
+ * Downloads go through fetch directly rather than request<T>(), because the
+ * response is a binary blob rather than JSON. That means the refresh-on-401
+ * handling has to be repeated here: without it, an expired access token turns
+ * "Download PDF" into a dead button after the TTL elapses, even though every
+ * other call on the page silently refreshes and succeeds.
+ */
+async function downloadFile(
+  path: string,
+  fallbackName: string,
+  retry = true,
+): Promise<void> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${tokens.access ?? ""}` },
+  });
+
+  if (res.status === 401 && retry && tokens.refresh) {
+    if (await tryRefresh()) return downloadFile(path, fallbackName, false);
+    tokens.clear();
+    window.dispatchEvent(new Event("hirecraft:logout"));
+    throw new ApiError("Your session expired. Please sign in again.", 401);
+  }
+
+  if (!res.ok) throw await parseError(res);
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename="?([^"';]+)"?/);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = match?.[1] ?? fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 // --- Types mirroring the backend schemas ------------------------------------
 
