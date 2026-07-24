@@ -23,7 +23,10 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
+# Use 127.0.0.1, not localhost: busybox wget resolves localhost to ::1 first,
+# but nginx here listens only on IPv4, so "localhost" fails with connection
+# refused and marks a perfectly healthy container unhealthy.
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD wget -qO- http://localhost/ >/dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
