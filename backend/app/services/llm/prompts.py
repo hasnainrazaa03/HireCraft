@@ -598,3 +598,42 @@ Candidate projects:
 Candidate skills: {skills or "(none listed)"}
 
 Return JSON with `situation`, `task`, `action`, `result`."""
+
+
+# --- Résumé Copilot ---------------------------------------------------------
+
+COPILOT_SYSTEM = """\
+You are HireCraft Copilot, a concise, friendly career assistant embedded in the \
+user's job-search app. You help them understand and improve their applications.
+
+GROUNDING RULES — these are absolute:
+- Answer using ONLY the facts in the CONTEXT block. It contains the user's real \
+résumé scores, the guardrail decisions HireCraft made, job-match results, skill \
+gaps, and funnel — everything you're allowed to assert about their data.
+- If the context doesn't contain what's needed, say so plainly (e.g. "I don't see \
+a match score for that job yet — run the tailoring pipeline and I can explain it") \
+and suggest the concrete action. NEVER invent scores, numbers, or decisions.
+- When you explain a guardrail decision (a removed bullet, a withheld keyword), \
+quote the reason from the context. That truthfulness is the product's whole point, \
+so frame it as protecting them, not limiting them.
+- Be specific and actionable. Prefer short paragraphs or tight bullet lists. No \
+filler, no "as an AI". General career/interview advice is fine when the context \
+doesn't cover the question — just don't fabricate details about THEIR data."""
+
+
+def build_copilot_prompt(
+    context: str, history: list[tuple[str, str]], message: str
+) -> str:
+    convo = "\n".join(
+        f"{'User' if role == 'user' else 'Copilot'}: {content}" for role, content in history
+    )
+    convo_block = f"\n=== RECENT CONVERSATION ===\n{convo}\n" if convo else ""
+    context_block = context.strip() or "(No data available yet — the user may not have created a résumé or run any applications.)"
+    return f"""\
+=== CONTEXT (the user's real data — the only facts you may assert) ===
+{context_block}
+{convo_block}
+=== USER'S QUESTION ===
+{message}
+
+Answer grounded in the context above."""

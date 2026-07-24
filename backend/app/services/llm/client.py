@@ -75,6 +75,14 @@ class LlmResult[TModel: BaseModel]:
     raw_text: str
 
 
+@dataclass(frozen=True)
+class TextResult:
+    """Free-form (non-JSON) generation result."""
+
+    text: str
+    usage: Usage
+
+
 def _strip_fence(text: str) -> str:
     if match := _JSON_FENCE.search(text):
         return match.group(1)
@@ -287,6 +295,72 @@ class GeminiClient:
         if not isinstance(payload, dict):
             raise LlmResponseError("Expected a JSON object from Gemini.")
         return payload, usage, text
+
+    def generate_text(
+        self,
+        *,
+        prompt: str,
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
+    ) -> TextResult:
+        """Free-form text generation (no JSON schema) — for conversational replies.
+
+        Same transport, retry, and cost accounting as the structured path, minus
+        the response_schema/JSON mime that would force structured output.
+        """
+
+        @retry(
+            retry=retry_if_exception_type(LlmTransientError),
+            stop=stop_after_attempt(settings.llm_max_retries),
+            wait=wait_exponential(multiplier=1, min=2, max=20),
+            reraise=True,
+        )
+        def _call() -> tuple[str, int, int]:
+            client = self._ensure_client()
+            config: dict[str, Any] = {
+                "temperature": (
+                    temperature if temperature is not None else settings.llm_temperature
+                ),
+                "max_output_tokens": max_output_tokens or settings.llm_max_output_tokens,
+            }
+            if system_instruction:
+                config["system_instruction"] = system_instruction
+            if settings.llm_thinking_budget > 0:
+                config["thinking_config"] = {"thinking_budget": settings.llm_thinking_budget}
+
+            try:
+                response = client.models.generate_content(
+                    model=self.model, contents=prompt, config=config
+                )
+            except Exception as exc:
+                error = _classify(exc)
+                logger.warning(
+                    "llm.call_failed",
+                    model=self.model,
+                    retryable=isinstance(error, LlmTransientError),
+                    error=str(exc)[:300],
+                )
+                raise error from exc
+
+            text = getattr(response, "text", None) or ""
+            meta = getattr(response, "usage_metadata", None)
+            prompt_tokens = getattr(meta, "prompt_token_count", 0) or 0
+            output_tokens = getattr(meta, "candidates_token_count", 0) or 0
+            if not text.strip():
+                raise LlmResponseError("Gemini returned an empty response.")
+            return text, prompt_tokens, output_tokens
+
+        started = time.perf_counter()
+        text, prompt_tokens, output_tokens = _call()
+        usage = Usage(
+            input_tokens=prompt_tokens,
+            output_tokens=output_tokens,
+            model=self.model,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+        )
+        logger.info("llm.text_succeeded", model=self.model, cost_usd=usage.cost_usd)
+        return TextResult(text=text.strip(), usage=usage)
 
     @staticmethod
     def _parse(text: str, schema: type[T]) -> T:
