@@ -11,9 +11,23 @@ from sqlalchemy import func, select
 from app.api.deps import CurrentUser, DbSession
 from app.models.application import Application
 from app.models.llm_usage import LlmUsage
-from app.schemas.api import TrackerStats, UsagePoint, UsageSummary
+from app.schemas.api import (
+    AnalyticsOverview,
+    TrackerStats,
+    UsagePoint,
+    UsageSummary,
+)
+from app.services.dashboard import build_overview
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+
+@router.get("/overview", response_model=AnalyticsOverview)
+def analytics_overview(user: CurrentUser, db: DbSession) -> AnalyticsOverview:
+    """The dashboard aggregate: funnel + rates, content stats, leaderboards,
+    applications-over-time, and a recent-activity feed. All derived from the
+    user's own data — no external calls, no LLM."""
+    return build_overview(db, user.id)
 
 
 @router.get("/usage", response_model=UsageSummary)

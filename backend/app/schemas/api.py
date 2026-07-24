@@ -311,6 +311,67 @@ class TrackerStats(ApiModel):
     total: int = 0
 
 
+# --- Dashboard analytics overview -------------------------------------------
+
+
+class FunnelStats(ApiModel):
+    """The job-search funnel and the rates derived from it.
+
+    Rates are over *submitted* applications (anything past draft). Because the
+    tracker stores only the current stage, `interviewing` and `offers` include
+    everyone who reached that stage or beyond; a rejection still counts as a
+    response.
+    """
+
+    total: int = 0
+    submitted: int = 0
+    active: int = 0  # still running through the pipeline
+    applied: int = 0
+    interviewing: int = 0
+    offers: int = 0
+    closed: int = 0  # rejected + ghosted + withdrawn
+    response_rate: float = 0.0
+    interview_rate: float = 0.0
+    offer_rate: float = 0.0
+
+
+class ContentStats(ApiModel):
+    resume_count: int = 0
+    resume_versions: int = 0
+    tailored_resumes: int = 0
+    cover_letters: int = 0
+    avg_resume_score: int | None = None
+
+
+class NamedCount(ApiModel):
+    name: str
+    count: int
+
+
+class TimePoint(ApiModel):
+    date: str
+    count: int
+
+
+class ActivityItem(ApiModel):
+    kind: Literal["application", "completed", "offer", "resume_version"]
+    title: str
+    subtitle: str | None = None
+    at: datetime
+    ref: str | None = None  # id the UI can link to
+
+
+class AnalyticsOverview(ApiModel):
+    funnel: FunnelStats
+    content: ContentStats
+    applications_over_time: list[TimePoint] = Field(default_factory=list)
+    top_companies: list[NamedCount] = Field(default_factory=list)
+    top_titles: list[NamedCount] = Field(default_factory=list)
+    top_keywords: list[NamedCount] = Field(default_factory=list)
+    best_resume: NamedCount | None = None
+    activity: list[ActivityItem] = Field(default_factory=list)
+
+
 # --- Preview (synchronous, no persistence) ----------------------------------
 
 
