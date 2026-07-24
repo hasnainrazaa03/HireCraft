@@ -15,6 +15,7 @@ from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile, ResumeVersion
+from app.schemas.analysis import ResumeAnalysis
 from app.schemas.api import (
     ResumeParseResponse,
     ResumeProfileCreate,
@@ -27,6 +28,7 @@ from app.schemas.api import (
 )
 from app.schemas.resume import MasterResume
 from app.services import resume_versions, storage
+from app.services.analysis import analyze_resume
 from app.services.export.docx import resume_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
 from app.services.latex.renderer import render_resume
@@ -246,6 +248,24 @@ def resume_json_schema() -> dict:
 def list_templates() -> list[TemplateInfo]:
     """The available résumé templates a user can pick from."""
     return [TemplateInfo(id=t.id, name=t.name, description=t.description) for t in TEMPLATES]
+
+
+@router.post("/analyze", response_model=ResumeAnalysis)
+def analyze_content(payload: MasterResume, user: CurrentUser) -> ResumeAnalysis:
+    """Score arbitrary résumé content — used by the builder for live feedback.
+
+    Fully deterministic (no LLM), so it's instant and free to call on every edit.
+    """
+    return analyze_resume(payload)
+
+
+@router.get("/{profile_id}/analysis", response_model=ResumeAnalysis)
+def analyze_profile(
+    profile_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> ResumeAnalysis:
+    """Score a saved résumé: overall grade, per-metric breakdown, findings, ATS."""
+    profile = _get_owned(db, user.id, profile_id)
+    return analyze_resume(MasterResume.model_validate(profile.content))
 
 
 @router.get("/{profile_id}/render.{fmt}")
