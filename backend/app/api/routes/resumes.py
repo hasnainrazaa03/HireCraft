@@ -11,14 +11,17 @@ from sqlalchemy import select, update
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import settings
-from app.models.resume import ResumeProfile
+from app.models.resume import ResumeProfile, ResumeVersion
 from app.schemas.api import (
     ResumeProfileCreate,
     ResumeProfileResponse,
     ResumeProfileSummary,
     ResumeProfileUpdate,
+    ResumeVersionDetail,
+    ResumeVersionSummary,
 )
 from app.schemas.resume import MasterResume
+from app.services import resume_versions
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -82,6 +85,7 @@ def create_profile(
         name=payload.name,
         content=payload.content.model_dump(mode="json"),
         is_default=is_default,
+        tags=_clean_tags(payload.tags),
     )
     db.add(profile)
     db.flush()
@@ -162,12 +166,54 @@ def update_profile(
 
     if payload.name is not None:
         profile.name = payload.name
+    if payload.tags is not None:
+        profile.tags = _clean_tags(payload.tags)
     if payload.content is not None:
-        profile.content = payload.content.model_dump(mode="json")
+        # Snapshot the old content before overwriting, so the edit is undoable.
+        resume_versions.update_content(
+            db,
+            profile,
+            payload.content.model_dump(mode="json"),
+            label=payload.version_label,
+        )
     if payload.is_default:
         _clear_other_defaults(db, user.id, profile.id)
         profile.is_default = True
 
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+# --- Version history --------------------------------------------------------
+
+
+@router.get("/{profile_id}/versions", response_model=list[ResumeVersionSummary])
+def list_versions(
+    profile_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> list[ResumeVersion]:
+    profile = _get_owned(db, user.id, profile_id)
+    return list(profile.versions)  # already ordered newest-first by the relationship
+
+
+@router.get("/{profile_id}/versions/{version}", response_model=ResumeVersionDetail)
+def get_version(
+    profile_id: uuid.UUID, version: int, user: CurrentUser, db: DbSession
+) -> ResumeVersion:
+    profile = _get_owned(db, user.id, profile_id)
+    snapshot = next((v for v in profile.versions if v.version == version), None)
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    return snapshot
+
+
+@router.post("/{profile_id}/versions/{version}/restore", response_model=ResumeProfileResponse)
+def restore_version(
+    profile_id: uuid.UUID, version: int, user: CurrentUser, db: DbSession
+) -> ResumeProfile:
+    profile = _get_owned(db, user.id, profile_id)
+    if not resume_versions.rollback(db, profile, version):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
     db.commit()
     db.refresh(profile)
     return profile
@@ -186,3 +232,16 @@ def delete_profile(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> N
         )
     db.delete(profile)
     db.commit()
+
+
+def _clean_tags(tags: list[str]) -> list[str]:
+    """Trim, drop blanks, de-dupe (case-insensitive), preserve order."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for tag in tags:
+        cleaned = tag.strip()[:40]
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen.add(key)
+            out.append(cleaned)
+    return out[:20]

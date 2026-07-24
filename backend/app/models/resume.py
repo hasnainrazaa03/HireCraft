@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,8 +41,54 @@ class ResumeProfile(Base, TimestampMixin):
     content: Mapped[dict[str, Any]] = mapped_column(JsonB, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Free-form tags for the résumé library ("SWE", "ML", "New Grad", …).
+    tags: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
+    # Monotonic version counter; the latest saved content is this number, and
+    # each prior content is preserved as a ResumeVersion snapshot.
+    current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
     user: Mapped[User] = relationship(back_populates="resume_profiles")
     applications: Mapped[list[Application]] = relationship(back_populates="resume_profile")
+    versions: Mapped[list[ResumeVersion]] = relationship(
+        back_populates="resume_profile",
+        cascade="all, delete-orphan",
+        order_by="ResumeVersion.version.desc()",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<ResumeProfile {self.name}>"
+
+
+class ResumeVersion(Base, TimestampMixin):
+    """An immutable snapshot of a résumé's content at a point in time.
+
+    A new snapshot is written *before* each edit, so the version list is the
+    history you can roll back to. Rolling back writes the current content as a
+    fresh snapshot first, so a rollback is itself reversible.
+    """
+
+    __tablename__ = "resume_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "resume_profile_id", "version", name="uq_resume_version_profile_version"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    resume_profile_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("resume_profiles.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[dict[str, Any]] = mapped_column(JsonB, nullable=False)
+    # Short human note, e.g. "before AI rewrite" or "restored v3".
+    label: Mapped[str | None] = mapped_column(Text)
+
+    resume_profile: Mapped[ResumeProfile] = relationship(back_populates="versions")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<ResumeVersion v{self.version} of {self.resume_profile_id}>"

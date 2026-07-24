@@ -103,12 +103,16 @@ class ResumeProfileCreate(ApiModel):
     name: Annotated[str, Field(min_length=1, max_length=120)]
     content: MasterResume
     is_default: bool = False
+    tags: list[str] = Field(default_factory=list, max_length=20)
 
 
 class ResumeProfileUpdate(ApiModel):
     name: Annotated[str, Field(min_length=1, max_length=120)] | None = None
     content: MasterResume | None = None
     is_default: bool | None = None
+    tags: list[str] | None = Field(default=None, max_length=20)
+    # Optional note attached to the snapshot this edit creates.
+    version_label: str | None = Field(default=None, max_length=200)
 
 
 class ResumeProfileResponse(ApiModel):
@@ -116,6 +120,8 @@ class ResumeProfileResponse(ApiModel):
     name: str
     content: dict[str, Any]
     is_default: bool
+    tags: list[str]
+    current_version: int
     created_at: datetime
     updated_at: datetime
 
@@ -124,7 +130,20 @@ class ResumeProfileSummary(ApiModel):
     id: uuid.UUID
     name: str
     is_default: bool
+    tags: list[str]
+    current_version: int
     updated_at: datetime
+
+
+class ResumeVersionSummary(ApiModel):
+    id: uuid.UUID
+    version: int
+    label: str | None
+    created_at: datetime
+
+
+class ResumeVersionDetail(ResumeVersionSummary):
+    content: dict[str, Any]
 
 
 # --- Jobs -------------------------------------------------------------------

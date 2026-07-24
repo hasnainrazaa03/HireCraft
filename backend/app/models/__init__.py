@@ -14,7 +14,7 @@ from app.models.auth import AuthToken, AuthTokenPurpose, Session
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
 from app.models.profile import CareerProfile
-from app.models.resume import ResumeProfile
+from app.models.resume import ResumeProfile, ResumeVersion
 from app.models.user import User
 
 __all__ = [
@@ -27,6 +27,7 @@ __all__ = [
     "LlmUsage",
     "PipelineStatus",
     "ResumeProfile",
+    "ResumeVersion",
     "Session",
     "TrackerStatus",
     "User",
