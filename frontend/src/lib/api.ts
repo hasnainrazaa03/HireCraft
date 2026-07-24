@@ -760,3 +760,20 @@ export interface AnswerResponse {
   warnings: string[];
   cost_usd: number;
 }
+
+// --- Notifications ----------------------------------------------------------
+
+export interface NotificationItem {
+  id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationList {
+  items: NotificationItem[];
+  unread_count: number;
+}

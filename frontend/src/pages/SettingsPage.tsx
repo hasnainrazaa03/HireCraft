@@ -433,10 +433,10 @@ function DataSection() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
 
-  async function exportData() {
+  async function exportFile(path: string, filename: string) {
     try {
-      await api.download("/account/export", "hirecraft-export.json");
-      toast.success("Export ready", "Your data has been downloaded.");
+      await api.download(path, filename);
+      toast.success("Export ready", "Your download has started.");
     } catch (e) {
       toast.error("Export failed", e instanceof ApiError ? e.message : undefined);
     }
@@ -453,8 +453,27 @@ function DataSection() {
 
   return (
     <>
-      <Card title="Export your data" description="Download everything HireCraft holds for you as a JSON file.">
-        <button onClick={exportData} className="btn-secondary">Download my data</button>
+      <Card title="Export center" description="Take your data anywhere. Nothing here leaves your control.">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => exportFile("/export/account.zip", "hirecraft_backup.zip")}
+            className="btn-secondary"
+          >
+            Full account backup (.zip)
+          </button>
+          <button
+            onClick={() => exportFile("/export/applications.csv", "applications.csv")}
+            className="btn-secondary"
+          >
+            Application history (.csv)
+          </button>
+          <button
+            onClick={() => exportFile("/account/export", "hirecraft-export.json")}
+            className="btn-secondary"
+          >
+            Account data (.json)
+          </button>
+        </div>
       </Card>
 
       <div className="card mb-5 border-danger/20 p-6">

@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { IconShield } from "./icons";
 import { Wordmark } from "./Logo";
+import NotificationBell from "./NotificationBell";
 import {
   IconDashboard,
   IconApplications,
@@ -16,7 +17,6 @@ import {
   IconTarget,
   IconSettings,
   IconTemplate,
-  IconBell,
   IconPlus,
   IconSun,
   IconMoon,
@@ -186,10 +186,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               )}
             </button>
 
-            <button className="btn-ghost relative h-9 w-9 !p-0" aria-label="Notifications">
-              <IconBell className="h-[18px] w-[18px]" />
-              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-hotpink" />
-            </button>
+            <NotificationBell />
 
             <Link to="/new" className="btn-primary">
               <IconPlus className="h-4 w-4" />
