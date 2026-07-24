@@ -270,44 +270,6 @@ def retry_application(
     return _to_detail(application)
 
 
-@router.get("/{application_id}/download/{kind}")
-def download_artifact(
-    application_id: uuid.UUID, kind: str, user: CurrentUser, db: DbSession
-) -> Response:
-    if kind not in _ARTIFACT_MEDIA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown artifact kind {kind!r}.",
-        )
-
-    application = _get_owned(db, user.id, application_id)
-    artifact = next((a for a in application.artifacts if a.kind.value == kind), None)
-    if artifact is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No {kind} has been generated for this application yet.",
-        )
-
-    media_type, default_name = _ARTIFACT_MEDIA[kind]
-    company = (application.job.company if application.job else None) or "application"
-    filename = storage.safe_filename(
-        f"{company}_{default_name}".replace(" ", "_"), fallback=default_name
-    )
-
-    try:
-        path = storage.resolve_path(artifact.storage_path)
-    except storage.StorageError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact is unavailable."
-        ) from exc
-    if not path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file is missing."
-        )
-
-    return FileResponse(path=path, media_type=media_type, filename=filename)
-
-
 def _build_report(application: Application) -> str:
     """A plain-text application report: what was tailored and what was verified."""
     job = application.job
@@ -423,6 +385,47 @@ def download_package(
             "Content-Disposition": f'attachment; filename="{base}_package.zip"'
         },
     )
+
+
+@router.get("/{application_id}/download/{kind}")
+def download_artifact(
+    application_id: uuid.UUID, kind: str, user: CurrentUser, db: DbSession
+) -> Response:
+    # NB: this catch-all `{kind}` route is declared AFTER the literal
+    # `/download/package` route above, so "package" is matched by that handler
+    # rather than falling in here as an unknown kind.
+    if kind not in _ARTIFACT_MEDIA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown artifact kind {kind!r}.",
+        )
+
+    application = _get_owned(db, user.id, application_id)
+    artifact = next((a for a in application.artifacts if a.kind.value == kind), None)
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {kind} has been generated for this application yet.",
+        )
+
+    media_type, default_name = _ARTIFACT_MEDIA[kind]
+    company = (application.job.company if application.job else None) or "application"
+    filename = storage.safe_filename(
+        f"{company}_{default_name}".replace(" ", "_"), fallback=default_name
+    )
+
+    try:
+        path = storage.resolve_path(artifact.storage_path)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact is unavailable."
+        ) from exc
+    if not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file is missing."
+        )
+
+    return FileResponse(path=path, media_type=media_type, filename=filename)
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
