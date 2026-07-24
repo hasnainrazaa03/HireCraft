@@ -16,6 +16,7 @@ from app.models.llm_usage import LlmUsage
 from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile, ResumeVersion
 from app.models.user import User
+from app.models.writing import WritingProfile, WritingSample, WritingSampleKind
 
 __all__ = [
     "Application",
@@ -31,4 +32,7 @@ __all__ = [
     "Session",
     "TrackerStatus",
     "User",
+    "WritingProfile",
+    "WritingSample",
+    "WritingSampleKind",
 ]

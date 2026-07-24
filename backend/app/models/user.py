@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.job import Job
     from app.models.profile import CareerProfile
     from app.models.resume import ResumeProfile
+    from app.models.writing import WritingProfile
 
 
 DEFAULT_NOTIFICATION_PREFS: dict[str, bool] = {
@@ -74,6 +75,9 @@ class User(Base, TimestampMixin):
         back_populates="user", cascade="all, delete-orphan"
     )
     career_profile: Mapped[CareerProfile | None] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    writing_profile: Mapped[WritingProfile | None] = relationship(
         back_populates="user", cascade="all, delete-orphan", uselist=False
     )
 
