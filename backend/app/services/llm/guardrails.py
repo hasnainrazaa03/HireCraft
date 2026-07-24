@@ -363,6 +363,20 @@ class GuardrailEngine:
 
             new_entry = master_entry.model_copy(deep=True)
 
+            # The model kept this entry but returned no rewritten bullets, so the
+            # master wording stands. That is safe, but it means the entry was not
+            # actually tailored - surface it rather than leaving a silent no-op.
+            if not item.highlights and master_entry.highlights:
+                self._flag(
+                    "empty_entry",
+                    "warning",
+                    f"{label}: the optimizer returned no rewritten bullets, so your "
+                    f"original wording was kept for this entry.",
+                    entry_id=master_entry.id,
+                    field="highlights",
+                    action="reverted_to_master",
+                )
+
             if item.highlights:
                 original_count = len(master_entry.highlights)
 

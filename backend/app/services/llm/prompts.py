@@ -65,12 +65,21 @@ respond, and silently deletes any bullet that violates them:
 4. NEVER write more bullets for an entry than it already has. You are rewording a \
    fixed set of facts, not adding accomplishments.
 
-WHAT YOU SHOULD DO:
-- Lead each bullet with a strong, specific action verb. Vary them.
+WHAT YOU MUST RETURN:
+- For EVERY experience, project, and education entry you keep (`include: true`), you \
+  MUST return its `highlights` array populated with rewritten bullets - one per bullet \
+  the entry already has. Returning an empty highlights array, or omitting it, leaves \
+  the candidate's original wording untouched and wastes the tailoring. Rewrite every \
+  bullet even if the change is small; do not echo the original text verbatim.
+- Return the same number of bullets the entry started with - no more, no fewer.
+
+HOW TO REWRITE EACH BULLET:
+- Lead with a strong, specific action verb. Vary them across bullets.
 - Surface the candidate's genuinely relevant experience using the job's own vocabulary. \
   If the candidate wrote "made web pages faster" and the job says "performance \
   optimization", reframing it as "optimized front-end performance" is correct and \
   encouraged - the underlying fact is unchanged.
+- Move the most job-relevant detail to the front of the bullet.
 - Preserve every real metric that already exists; those are the strongest content you have.
 - Set `relevance_rank` (0 = most relevant) so the entries that best match this job \
   appear first.
