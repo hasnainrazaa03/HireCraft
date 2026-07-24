@@ -115,6 +115,37 @@ def test_rates_are_zero_with_no_submissions(db, user, resume):
     assert f.offer_rate == 0.0
 
 
+def test_v2_stages_map_into_the_funnel(db, user, resume):
+    # Pre-submit stages don't count as submitted.
+    _app(db, user, resume, tracker=TrackerStatus.WISHLIST)
+    _app(db, user, resume, tracker=TrackerStatus.SAVED)
+    _app(db, user, resume, tracker=TrackerStatus.PREPARING)
+    # Submitted, various depths.
+    _app(db, user, resume, tracker=TrackerStatus.ASSESSMENT)
+    _app(db, user, resume, tracker=TrackerStatus.TECHNICAL)  # interview+
+    _app(db, user, resume, tracker=TrackerStatus.BEHAVIORAL)  # interview+
+    _app(db, user, resume, tracker=TrackerStatus.ACCEPTED)  # offer+
+    _app(db, user, resume, tracker=TrackerStatus.ARCHIVED)  # closed
+
+    f = build_overview(db, user.id).funnel
+    assert f.total == 8
+    assert f.submitted == 5  # wishlist/saved/preparing excluded
+    assert f.interviewing == 3  # technical + behavioral + accepted
+    assert f.offers == 1  # accepted counts as an offer landed
+    assert f.closed == 1  # archived
+    # responded = assessment + technical + behavioral + accepted = 4 / 5 submitted
+    assert f.response_rate == round(4 / 5, 4)
+
+
+def test_best_resume_counts_deep_interview_stages(db, user):
+    a = ResumeProfile(user_id=user.id, name="Deep", content=MASTER_RESUME_FIXTURE)
+    db.add(a)
+    db.flush()
+    _app(db, user, a, tracker=TrackerStatus.FINAL)
+    best = build_overview(db, user.id).best_resume
+    assert best is not None and best.name == "Deep" and best.count == 1
+
+
 def test_active_pipeline_counted(db, user, resume):
     _app(db, user, resume, pipeline=PipelineStatus.OPTIMIZING)
     _app(db, user, resume, pipeline=PipelineStatus.COMPLETED)

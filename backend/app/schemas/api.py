@@ -233,6 +233,10 @@ class ApplicationCreate(ApiModel):
 class ApplicationUpdate(ApiModel):
     tracker_status: TrackerStatus | None = None
     notes: str | None = Field(default=None, max_length=4000)
+    # Nullable datetimes: the route uses ``model_fields_set`` to tell "not sent"
+    # from "explicitly cleared", so passing null actually clears the field.
+    interview_at: datetime | None = None
+    reminder_at: datetime | None = None
 
 
 class ArtifactResponse(ApiModel):
@@ -250,6 +254,9 @@ class ApplicationSummary(ApiModel):
     job_title: str | None = None
     company: str | None = None
     total_cost_usd: float
+    interview_at: datetime | None = None
+    reminder_at: datetime | None = None
+    has_notes: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -262,6 +269,8 @@ class ApplicationDetail(ApiModel):
     error_message: str | None
     include_cover_letter: bool
     notes: str | None
+    interview_at: datetime | None = None
+    reminder_at: datetime | None = None
     tailored_resume: dict[str, Any] | None
     diff: list[dict[str, Any]] | None
     guardrail_report: dict[str, Any] | None

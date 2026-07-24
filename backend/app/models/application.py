@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import enum
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,16 +33,35 @@ class PipelineStatus(str, enum.Enum):
 
 
 class TrackerStatus(str, enum.Enum):
-    """Where the human is in the hiring process. User-owned."""
+    """Where the human is in the hiring process. User-owned.
 
-    DRAFT = "draft"
+    A superset of the original eight stages — the legacy values (draft, applied,
+    screening, interviewing, offer, rejected, ghosted, withdrawn) are all kept so
+    existing rows stay valid, with the richer stages added around them. Stored as
+    a plain VARCHAR (``native_enum=False``), so widening the set is a code change
+    with no database migration.
+    """
+
+    # Pre-application
+    WISHLIST = "wishlist"
+    SAVED = "saved"
+    PREPARING = "preparing"
+    DRAFT = "draft"  # legacy default: created but not yet submitted
+    # Submitted
     APPLIED = "applied"
+    ASSESSMENT = "assessment"  # online assessment / take-home
     SCREENING = "screening"
     INTERVIEWING = "interviewing"
+    TECHNICAL = "technical"
+    BEHAVIORAL = "behavioral"
+    FINAL = "final"
+    # Terminal
     OFFER = "offer"
+    ACCEPTED = "accepted"
     REJECTED = "rejected"
     GHOSTED = "ghosted"
     WITHDRAWN = "withdrawn"
+    ARCHIVED = "archived"
 
 
 class ArtifactKind(str, enum.Enum):
@@ -101,6 +121,9 @@ class Application(Base, TimestampMixin):
 
     include_cover_letter: Mapped[bool] = mapped_column(default=False, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Tracker v2: a scheduled interview and an optional follow-up reminder.
+    interview_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Denormalized cost rollup; the authoritative per-call rows live in llm_usage.
     total_input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -48,14 +48,36 @@ _ACTIVE_PIPELINE = {
     PipelineStatus.OPTIMIZING,
     PipelineStatus.RENDERING,
 }
-_CLOSED = {TrackerStatus.REJECTED, TrackerStatus.GHOSTED, TrackerStatus.WITHDRAWN}
+# Stages that precede actually submitting an application.
+_PRE_SUBMIT = {
+    TrackerStatus.WISHLIST,
+    TrackerStatus.SAVED,
+    TrackerStatus.PREPARING,
+    TrackerStatus.DRAFT,
+}
+_CLOSED = {
+    TrackerStatus.REJECTED,
+    TrackerStatus.GHOSTED,
+    TrackerStatus.WITHDRAWN,
+    TrackerStatus.ARCHIVED,
+}
+# Reached the interview stage or beyond.
+_INTERVIEW_PLUS = {
+    TrackerStatus.INTERVIEWING,
+    TrackerStatus.TECHNICAL,
+    TrackerStatus.BEHAVIORAL,
+    TrackerStatus.FINAL,
+    TrackerStatus.OFFER,
+    TrackerStatus.ACCEPTED,
+}
+_OFFERS = {TrackerStatus.OFFER, TrackerStatus.ACCEPTED}
 # A response is any signal back from the employer — a rejection counts, a
 # ghosting explicitly does not.
 _RESPONDED = {
+    TrackerStatus.ASSESSMENT,
     TrackerStatus.SCREENING,
-    TrackerStatus.INTERVIEWING,
-    TrackerStatus.OFFER,
     TrackerStatus.REJECTED,
+    *_INTERVIEW_PLUS,
 }
 
 
@@ -109,14 +131,13 @@ def _funnel(apps: list) -> FunnelStats:
         if app.pipeline_status in _ACTIVE_PIPELINE:
             active += 1
         status = app.tracker_status
-        if status != TrackerStatus.DRAFT:
+        if status not in _PRE_SUBMIT:
             submitted += 1
         if status == TrackerStatus.APPLIED:
             applied += 1
-        # Reached interviewing or beyond.
-        if status in (TrackerStatus.INTERVIEWING, TrackerStatus.OFFER):
+        if status in _INTERVIEW_PLUS:
             interviewing += 1
-        if status == TrackerStatus.OFFER:
+        if status in _OFFERS:
             offers += 1
         if status in _CLOSED:
             closed += 1
@@ -246,7 +267,7 @@ def _best_resume(db: Session, apps: list) -> NamedCount | None:
         if app.resume_profile_id is None:
             continue
         usage[app.resume_profile_id] += 1
-        if app.tracker_status in (TrackerStatus.INTERVIEWING, TrackerStatus.OFFER):
+        if app.tracker_status in _INTERVIEW_PLUS:
             interviews[app.resume_profile_id] += 1
 
     ranking = interviews if interviews else usage
@@ -280,7 +301,7 @@ def _activity(db: Session, user_id: uuid.UUID, apps: list) -> list[ActivityItem]
                 ref=str(app.id),
             )
         )
-        if app.tracker_status == TrackerStatus.OFFER:
+        if app.tracker_status in _OFFERS:
             items.append(
                 ActivityItem(
                     kind="offer",
