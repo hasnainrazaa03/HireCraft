@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -454,6 +454,14 @@ function PreviewModal({ profile, templates, onClose }: { profile: ResumeProfileS
     },
     staleTime: 0,
   });
+
+  // Release the object URL when it's replaced (template change) or the modal
+  // unmounts, so previewing several templates doesn't leak blobs.
+  useEffect(() => {
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [url]);
 
   return (
     <Modal open onClose={onClose} title={`Preview — ${profile.name}`} wide>
