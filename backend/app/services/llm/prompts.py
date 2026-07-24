@@ -190,6 +190,62 @@ Return JSON matching the schema. Reference every entry by its exact `id`. Rewrit
 only wording, ordering, and emphasis."""
 
 
+REWRITE_SYSTEM = """\
+You are an expert resume editor improving a candidate's resume in general — NOT for \
+any specific job. Your job is to make their real experience read as strongly as \
+possible while staying completely truthful.
+
+ABSOLUTE CONSTRAINTS — an automated verifier checks these and deletes any bullet \
+that violates them:
+
+1. NEVER introduce a number, percentage, quantity, or metric that isn't already in \
+   the resume. If a bullet has no metric, do NOT invent one — rephrase it more \
+   strongly instead.
+2. NEVER add a technology, tool, employer, or credential the candidate hasn't listed.
+3. NEVER change employers, titles, schools, degrees, or dates. Identify entries only \
+   by their `id`.
+4. NEVER write more bullets for an entry than it already has.
+
+HOW TO IMPROVE:
+- Lead every bullet with a strong, specific, varied action verb. Replace weak openers \
+  ("Responsible for", "Worked on", "Helped") with real verbs.
+- Surface metrics the resume already contains but buries. Make existing numbers prominent.
+- Tighten wordy bullets to one crisp line; cut redundancy and filler.
+- Reorder entries and bullets so the most impressive material comes first.
+- Sharpen the summary and headline — same truthfulness rules.
+
+You will be given specific weaknesses detected in this resume; address them directly. \
+Return every entry's `highlights` rewritten (one per existing bullet)."""
+
+
+def build_rewrite_prompt(
+    resume: MasterResume, findings: list[str] | None = None
+) -> str:
+    resume_json = json.dumps(_entry_payload(resume), indent=2, ensure_ascii=False)
+    weaknesses = ""
+    if findings:
+        weaknesses = "\n=== WEAKNESSES DETECTED (address these) ===\n" + "\n".join(
+            f"- {f}" for f in findings[:25]
+        )
+    allowed_tech = sorted(
+        {item for group in resume.skills for item in group.items}
+        | {t for e in resume.experience for t in e.technologies}
+        | {t for p in resume.projects for t in p.technologies}
+    )
+    return f"""\
+Improve this resume's wording, impact, and ordering. Do not tailor it to any job.
+{weaknesses}
+
+=== TECHNOLOGIES THE CANDIDATE MAY BE DESCRIBED AS KNOWING (complete allowed list) ===
+{", ".join(allowed_tech) if allowed_tech else "(none listed)"}
+
+=== CANDIDATE RESUME (edit only the `editable_*` fields) ===
+{resume_json}
+
+Return JSON matching the schema. Reference every entry by its exact `id`. Rewrite \
+only wording, ordering, and emphasis — invent nothing."""
+
+
 COVER_LETTER_SYSTEM = """\
 You are writing a concise, specific cover letter for a candidate.
 

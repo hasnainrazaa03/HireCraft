@@ -22,6 +22,7 @@ from app.schemas.api import (
     ResumeProfileResponse,
     ResumeProfileSummary,
     ResumeProfileUpdate,
+    ResumeRewriteResponse,
     ResumeVersionDetail,
     ResumeVersionSummary,
     TemplateInfo,
@@ -36,6 +37,7 @@ from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
 from app.services.llm.client import GeminiClient, LlmError, LlmResponseError
 from app.services.parsing.extract import ExtractionError, extract
 from app.services.parsing.structure import ParsingError, structure_resume
+from app.services.pipeline import UsageLedger, rewrite_resume
 
 logger = get_logger(__name__)
 
@@ -273,6 +275,85 @@ def analyze_profile(
     """Score a saved résumé: overall grade, per-metric breakdown, findings, ATS."""
     profile = _get_owned(db, user.id, profile_id)
     return analyze_resume(MasterResume.model_validate(profile.content))
+
+
+@router.post("/{profile_id}/rewrite", response_model=ResumeRewriteResponse)
+def rewrite_profile(
+    profile_id: uuid.UUID, user: GenerationUser, db: DbSession
+) -> ResumeRewriteResponse:
+    """AI-improve a résumé's wording, impact, and ordering — no target job.
+
+    The deterministic analyzer first finds concrete weaknesses (weak openers,
+    buried metrics, wordy bullets); those are fed to the model so it fixes real
+    problems. The same guardrail engine that protects tailoring runs here, so the
+    rewrite can never invent numbers, skills, or facts. Nothing is saved — the
+    client reviews the diff and before/after scores, then saves as a new version.
+    Costs one LLM call; the tighter generation rate limit applies.
+    """
+    profile = _get_owned(db, user.id, profile_id)
+    master = MasterResume.model_validate(profile.content)
+
+    before = analyze_resume(master)
+
+    client = None
+    if user.encrypted_gemini_key:
+        try:
+            client = GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
+        except Exception:  # noqa: BLE001 - fall back to the shared key
+            client = None
+
+    ledger = UsageLedger()
+    try:
+        improved, report, diff = rewrite_resume(
+            master,
+            findings=[f"{f.title}: {f.detail}" for f in before.findings],
+            client=client,
+            ledger=ledger,
+        )
+    except LlmResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "The AI returned an incomplete rewrite. Please try again in a moment."
+            ),
+        ) from exc
+    except LlmError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"The AI service is unavailable right now: {exc}",
+        ) from exc
+
+    after = analyze_resume(improved)
+
+    for purpose, usage in ledger.entries:
+        db.add(
+            LlmUsage(
+                user_id=user.id,
+                purpose=purpose,
+                model=usage.model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cost_usd=usage.cost_usd,
+                latency_ms=usage.latency_ms,
+            )
+        )
+    db.commit()
+    logger.info(
+        "resume.rewritten",
+        user_id=str(user.id),
+        profile_id=str(profile_id),
+        score_before=before.overall_score,
+        score_after=after.overall_score,
+        cost_usd=ledger.cost_usd,
+    )
+    return ResumeRewriteResponse(
+        content=improved,
+        diff=diff,
+        guardrail_report=report,
+        score_before=before.overall_score,
+        score_after=after.overall_score,
+        cost_usd=ledger.cost_usd,
+    )
 
 
 @router.get("/{profile_id}/render.{fmt}")

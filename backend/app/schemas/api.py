@@ -164,6 +164,21 @@ class ResumeParseResponse(ApiModel):
     source_filename: str
 
 
+class ResumeRewriteResponse(ApiModel):
+    """Result of an AI rewrite pass — job-agnostic résumé improvement.
+
+    The improved content is NOT saved; the client reviews the diff and scores,
+    then saves it as a new version through the normal update endpoint.
+    """
+
+    content: MasterResume
+    diff: list[DiffEntry]
+    guardrail_report: GuardrailReport
+    score_before: int
+    score_after: int
+    cost_usd: float
+
+
 # --- Jobs -------------------------------------------------------------------
 
 

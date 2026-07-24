@@ -26,9 +26,11 @@ from app.services.llm.prompts import (
     COVER_LETTER_SYSTEM,
     EXTRACTOR_SYSTEM,
     OPTIMIZER_SYSTEM,
+    REWRITE_SYSTEM,
     build_cover_letter_prompt,
     build_extractor_prompt,
     build_optimizer_prompt,
+    build_rewrite_prompt,
 )
 
 logger = get_logger(__name__)
@@ -147,6 +149,42 @@ def optimize_resume(
             kinds=sorted({v.kind for v in errors}),
         )
     return tailored, report, diff
+
+
+def rewrite_resume(
+    master: MasterResume,
+    *,
+    findings: list[str] | None = None,
+    client: GeminiClient | None = None,
+    ledger: UsageLedger | None = None,
+) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
+    """Improve a résumé's wording without a target job.
+
+    Same machinery as tailoring, but the prompt is job-agnostic and the guardrail
+    engine runs with no requirements — so there is no keyword-injection concern,
+    only the truthfulness checks (no invented numbers, no unclaimed skills, no
+    altered facts). ``findings`` are the deterministic analysis weaknesses, fed
+    in so the model targets real problems.
+    """
+    client = client or get_client()
+    result: LlmResult[TailoringResult] = client.generate_structured(
+        prompt=build_rewrite_prompt(master, findings),
+        schema=TailoringResult,
+        system_instruction=REWRITE_SYSTEM,
+        temperature=settings.llm_temperature,
+    )
+    if ledger is not None:
+        ledger.record("rewrite_resume", result.usage)
+
+    # No job -> requirements=None -> no keyword-injection check, truthfulness only.
+    improved, report = GuardrailEngine(master, None).apply(result.data)
+    diff = build_diff(master, improved)
+    logger.info(
+        "pipeline.rewrote",
+        changed_fields=len(diff),
+        errors=len([v for v in report.violations if v.severity == "error"]),
+    )
+    return improved, report, diff
 
 
 def draft_cover_letter(
