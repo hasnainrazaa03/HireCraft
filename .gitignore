@@ -3,13 +3,22 @@ __pycache__/
 *.py[cod]
 *.class
 venv/
+.venv/
 .env
+.env.*
+!.env.example
+.pytest_cache/
+.ruff_cache/
+
+# Generated resumes and cover letters
+backend/artifacts/
 
 # Node/React
 node_modules/
 dist/
 build/
 .eslintcache
+*.tsbuildinfo
 
 # LaTeX/PDF
 *.aux

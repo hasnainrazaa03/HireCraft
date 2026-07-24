@@ -1,0 +1,42 @@
+# --- Web framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.17
+
+# --- Config & validation ---
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+email-validator>=2.2.0
+
+# --- Database ---
+sqlalchemy>=2.0.36
+alembic>=1.14.0
+psycopg[binary]>=3.2.3
+
+# --- Async processing ---
+celery[redis]>=5.4.0
+redis>=5.2.0
+
+# --- Auth & security ---
+pyjwt>=2.10.0
+argon2-cffi>=23.1.0
+
+# --- Scraping ---
+httpx>=0.28.0
+trafilatura>=1.12.0
+beautifulsoup4>=4.12.3
+lxml>=5.3.0
+
+# --- LLM ---
+google-genai>=0.3.0
+
+# --- Templating & typesetting ---
+jinja2>=3.1.4
+
+# --- Observability & resilience ---
+structlog>=24.4.0
+tenacity>=9.0.0
+
+# --- Testing ---
+pytest>=8.3.0
+pytest-asyncio>=0.24.0

@@ -1,0 +1,33 @@
+[project]
+name = "hirecraft-backend"
+version = "0.1.0"
+description = "AI-driven resume and cover letter tailoring pipeline"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: tests that invoke the LaTeX engine or the network",
+    "integration: tests that require Postgres or Redis",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 95
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+    "B008",  # FastAPI's Depends()/File() defaults are the documented idiom
+    "E501",  # long lines are handled by the formatter, not the linter
+    # UP042 wants enum.StrEnum. The (str, Enum) form is deliberate: SQLAlchemy's
+    # Enum type and Pydantic serialization are both already pinned to this
+    # behaviour, and switching would change what is persisted.
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
