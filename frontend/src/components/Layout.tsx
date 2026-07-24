@@ -85,6 +85,7 @@ const LIVE_ROUTES = new Set([
   "/resumes",
   "/profile",
   "/writing",
+  "/cover-letters",
   "/analytics",
   "/new",
 ]);

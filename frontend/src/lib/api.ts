@@ -138,6 +138,8 @@ export const api = {
 
   download: downloadFile,
   blob: fetchBlob,
+  /** POST a JSON body and download the binary response as a file. */
+  downloadPost: downloadPostFile,
 };
 
 /**
@@ -173,6 +175,43 @@ async function downloadFile(
 
   if (res.status === 401 && retry && tokens.refresh) {
     if (await tryRefresh()) return downloadFile(path, fallbackName, false);
+    tokens.clear();
+    window.dispatchEvent(new Event("hirecraft:logout"));
+    throw new ApiError("Your session expired. Please sign in again.", 401);
+  }
+
+  if (!res.ok) throw await parseError(res);
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename="?([^"';]+)"?/);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = match?.[1] ?? fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadPostFile(
+  path: string,
+  body: unknown,
+  fallbackName: string,
+  retry = true,
+): Promise<void> {
+  const res = await fetch(`${API}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${tokens.access ?? ""}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+
+  if (res.status === 401 && retry && tokens.refresh) {
+    if (await tryRefresh()) return downloadPostFile(path, body, fallbackName, false);
     tokens.clear();
     window.dispatchEvent(new Event("hirecraft:logout"));
     throw new ApiError("Your session expired. Please sign in again.", 401);
@@ -575,4 +614,35 @@ export interface AnalyticsOverview {
   top_keywords: NamedCount[];
   best_resume: NamedCount | null;
   activity: ActivityItem[];
+}
+
+// --- Writing studio: cover letters + outreach -------------------------------
+
+export interface ToneInfo {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface OutreachKindInfo {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface CoverLetterResult {
+  paragraphs: string[];
+  guardrail_report: GuardrailReport;
+  tone: string;
+  used_voice: boolean;
+  cost_usd: number;
+}
+
+export interface OutreachResult {
+  kind: string;
+  subject: string;
+  body: string;
+  used_voice: boolean;
+  cost_usd: number;
+  warnings: string[];
 }

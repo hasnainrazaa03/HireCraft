@@ -15,6 +15,7 @@ import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
 import ProfilePage from "./pages/ProfilePage";
 import WritingPage from "./pages/WritingPage";
+import CoverLettersPage from "./pages/CoverLettersPage";
 
 function AuthedApp() {
   return (
@@ -27,6 +28,7 @@ function AuthedApp() {
         <Route path="/resumes" element={<ResumesPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/writing" element={<WritingPage />} />
+        <Route path="/cover-letters" element={<CoverLettersPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
