@@ -162,3 +162,38 @@ export const IconUpload = (p: IconProps) => (
     <path d="M17 8l-5-5-5 5M12 3v12" />
   </Base>
 );
+
+export const IconUser = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </Base>
+);
+
+export const IconPen = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </Base>
+);
+
+export const IconHistory = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3 3v5h5" />
+    <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+    <path d="M12 7v5l4 2" />
+  </Base>
+);
+
+export const IconKey = (p: IconProps) => (
+  <Base {...p}>
+    <circle cx="7.5" cy="15.5" r="4.5" />
+    <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" />
+  </Base>
+);
+
+export const IconTrash = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+  </Base>
+);

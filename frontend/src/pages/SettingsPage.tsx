@@ -1,11 +1,11 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, type SessionInfo, type User } from "../lib/api";
+import { api, ApiError, type ApiKeyStatus, type SessionInfo, type User } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
 import { useToast } from "../lib/toast";
 import { Modal, Spinner } from "../components/ui";
-import { IconCheck, IconShield, IconLogout } from "../components/icons";
+import { IconCheck, IconShield, IconLogout, IconKey } from "../components/icons";
 
 type Tab = "profile" | "security" | "sessions" | "notifications" | "data";
 
@@ -230,7 +230,82 @@ function SecuritySection() {
           </button>
         </form>
       </Card>
+
+      <ApiKeySection />
     </>
+  );
+}
+
+// --- Bring-your-own Gemini key ----------------------------------------------
+
+function ApiKeySection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [key, setKey] = useState("");
+
+  const { data: status } = useQuery({
+    queryKey: ["api-key"],
+    queryFn: () => api.get<ApiKeyStatus>("/account/api-key"),
+  });
+
+  const save = useMutation({
+    mutationFn: () => api.put<ApiKeyStatus>("/account/api-key", { api_key: key }),
+    onSuccess: (s) => {
+      queryClient.setQueryData(["api-key"], s);
+      setKey("");
+      toast.success("API key saved", "Your runs now use your own Gemini quota.");
+    },
+    onError: (e) => toast.error("Key rejected", e instanceof ApiError ? e.message : undefined),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.delete("/account/api-key"),
+    onSuccess: () => {
+      queryClient.setQueryData(["api-key"], { configured: false, hint: null });
+      toast.success("API key removed");
+    },
+  });
+
+  return (
+    <Card
+      title="Your Gemini API key"
+      description="Optional. Bring your own key and your tailoring runs bill your quota instead of the shared one. Stored encrypted; we validate it before saving."
+    >
+      {status?.configured ? (
+        <div className="flex items-center justify-between rounded-xl border border-emerald/30 bg-emerald/5 p-4">
+          <div className="flex items-center gap-2.5 text-sm">
+            <IconKey className="h-4 w-4 text-emerald" />
+            <span>Your key is active <span className="font-mono text-muted">({status.hint})</span></span>
+          </div>
+          <button onClick={() => remove.mutate()} className="btn-ghost btn-sm text-danger hover:bg-danger/10">
+            Remove
+          </button>
+        </div>
+      ) : (
+        <div className="max-w-md">
+          <label className="label" htmlFor="apikey">Gemini API key</label>
+          <input
+            id="apikey"
+            type="password"
+            className="input font-mono"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="AIza…"
+            autoComplete="off"
+          />
+          <p className="mt-1.5 text-xs text-subtle">
+            Get one free at aistudio.google.com/apikey.
+          </p>
+          <button
+            onClick={() => save.mutate()}
+            disabled={save.isPending || key.trim().length < 10}
+            className="btn-primary mt-3"
+          >
+            {save.isPending ? "Validating…" : "Save key"}
+          </button>
+        </div>
+      )}
+    </Card>
   );
 }
 

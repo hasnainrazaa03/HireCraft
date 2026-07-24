@@ -13,6 +13,8 @@ import ApplicationPage from "./pages/ApplicationPage";
 import ResumesPage from "./pages/ResumesPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
+import ProfilePage from "./pages/ProfilePage";
+import WritingPage from "./pages/WritingPage";
 
 function AuthedApp() {
   return (
@@ -23,6 +25,8 @@ function AuthedApp() {
         <Route path="/applications" element={<ApplicationsPage />} />
         <Route path="/applications/:id" element={<ApplicationPage />} />
         <Route path="/resumes" element={<ResumesPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/writing" element={<WritingPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />

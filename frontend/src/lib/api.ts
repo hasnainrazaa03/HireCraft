@@ -124,6 +124,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
@@ -194,12 +196,72 @@ export interface ResumeProfileSummary {
   id: string;
   name: string;
   is_default: boolean;
+  tags: string[];
+  current_version: number;
   updated_at: string;
 }
 
 export interface ResumeProfile extends ResumeProfileSummary {
   content: MasterResume;
   created_at: string;
+}
+
+export interface ResumeVersionSummary {
+  id: string;
+  version: number;
+  label: string | null;
+  created_at: string;
+}
+
+export interface CareerProfile {
+  headline: string | null;
+  phone: string | null;
+  location: string | null;
+  linkedin_url: string | null;
+  github_url: string | null;
+  portfolio_url: string | null;
+  website_url: string | null;
+  work_authorization: string | null;
+  visa_status: string | null;
+  years_experience: number | null;
+  preferred_roles: string[];
+  preferred_industries: string[];
+  preferred_locations: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string;
+  work_arrangement: "remote" | "hybrid" | "onsite" | "flexible" | null;
+  open_to_relocation: boolean;
+}
+
+export interface VoiceProfile {
+  tone: string;
+  formality: string;
+  sentence_style: string;
+  vocabulary: string[];
+  habits: string[];
+  avoid: string[];
+  summary: string;
+}
+
+export interface WritingSample {
+  id: string;
+  kind: "cover_letter" | "email" | "sop" | "other";
+  title: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface WritingProfile {
+  voice: VoiceProfile | null;
+  analyzed_at: string | null;
+  sample_count: number;
+  samples: WritingSample[];
+}
+
+export interface ApiKeyStatus {
+  configured: boolean;
+  hint: string | null;
 }
 
 export interface MasterResume {

@@ -21,6 +21,8 @@ import {
   IconMoon,
   IconLogout,
   IconChevronDown,
+  IconUser,
+  IconPen,
 } from "./icons";
 
 function VerifyBanner() {
@@ -67,6 +69,8 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: IconDashboard, end: true },
   { to: "/applications", label: "Applications", icon: IconApplications, end: false },
   { to: "/resumes", label: "Resumes", icon: IconResume, end: false },
+  { to: "/profile", label: "Career Profile", icon: IconUser, end: false },
+  { to: "/writing", label: "Writing Voice", icon: IconPen, end: false },
   { to: "/cover-letters", label: "Cover Letters", icon: IconLetter, end: false },
   { to: "/jobs", label: "Job Search", icon: IconSearch, end: false },
   { to: "/analytics", label: "Analytics", icon: IconChart, end: false },
@@ -75,7 +79,15 @@ const NAV = [
 
 // Routes that exist today. Others render a "coming soon" placeholder so the nav
 // can show the full product shape without dead links.
-const LIVE_ROUTES = new Set(["/", "/applications", "/resumes", "/analytics", "/new"]);
+const LIVE_ROUTES = new Set([
+  "/",
+  "/applications",
+  "/resumes",
+  "/profile",
+  "/writing",
+  "/analytics",
+  "/new",
+]);
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
