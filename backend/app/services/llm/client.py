@@ -180,6 +180,12 @@ class GeminiClient:
             }
             if system_instruction:
                 config["system_instruction"] = system_instruction
+            # Cap internal reasoning so it can't consume the output budget and
+            # truncate the JSON. Sent only when set, since some models reject 0.
+            if settings.llm_thinking_budget > 0:
+                config["thinking_config"] = {
+                    "thinking_budget": settings.llm_thinking_budget
+                }
 
             try:
                 response = client.models.generate_content(

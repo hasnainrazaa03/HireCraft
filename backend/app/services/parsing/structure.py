@@ -129,6 +129,69 @@ class ParsingError(Exception):
     """Raised when text can't be structured into a valid résumé."""
 
 
+# Optional string fields on an entry that can simply be nulled when invalid.
+_NULLABLE_ENTRY_FIELDS = {
+    "start_date", "end_date", "location", "gpa", "field_of_study", "url",
+    "description", "phone", "website", "linkedin", "github", "headline", "summary",
+}
+
+
+def _coerce_valid(payload: dict) -> MasterResume:
+    """Validate, salvaging what we can rather than rejecting the whole import.
+
+    Résumé parsing is best-effort: if one field or entry won't fit the schema,
+    drop just that piece and try again, so the user gets a mostly-complete draft
+    to finish in the builder instead of nothing. Bounded so it always terminates.
+    """
+    for _ in range(12):
+        try:
+            return MasterResume.model_validate(payload)
+        except ValidationError as exc:
+            if not _drop_offending(payload, exc):
+                logger.warning("parsing.unsalvageable", errors=exc.error_count())
+                raise ParsingError(
+                    "We read your résumé but couldn't fit it into the schema. "
+                    "Use the builder to finish it."
+                ) from exc
+    raise ParsingError("We couldn't fully structure that résumé. Use the builder.")
+
+
+def _drop_offending(payload: dict, exc: ValidationError) -> bool:
+    """Remove the fields/entries the validator complained about. Returns True if
+    it changed anything (so the caller should retry)."""
+    changed = False
+    # Handle deepest paths first so list indices stay valid as we delete.
+    for error in sorted(exc.errors(), key=lambda e: -len(e["loc"])):
+        loc = error["loc"]
+        if not loc:
+            continue
+        # ("experience", 0, "start_date")  -> null the field, or drop the entry.
+        if len(loc) >= 3 and isinstance(loc[1], int):
+            section, idx, field = loc[0], loc[1], loc[2]
+            entries = payload.get(section)
+            if isinstance(entries, list) and 0 <= idx < len(entries):
+                entry = entries[idx]
+                if isinstance(entry, dict) and field in _NULLABLE_ENTRY_FIELDS:
+                    entry.pop(field, None)
+                    changed = True
+                else:
+                    entries.pop(idx)  # required field bad -> drop whole entry
+                    changed = True
+        # ("experience", 0) -> whole entry is malformed.
+        elif len(loc) == 2 and isinstance(loc[1], int):
+            entries = payload.get(loc[0])
+            if isinstance(entries, list) and 0 <= loc[1] < len(entries):
+                entries.pop(loc[1])
+                changed = True
+        # ("basics", "github") -> null an optional basics field.
+        elif len(loc) == 2 and loc[0] == "basics":
+            basics = payload.get("basics")
+            if isinstance(basics, dict) and loc[1] in _NULLABLE_ENTRY_FIELDS:
+                basics.pop(loc[1], None)
+                changed = True
+    return changed
+
+
 def structure_resume(
     text: str, *, client: GeminiClient | None = None
 ) -> tuple[MasterResume, Usage]:
@@ -148,14 +211,7 @@ def structure_resume(
     )
 
     payload = _repair(payload)
-    try:
-        resume = MasterResume.model_validate(payload)
-    except ValidationError as exc:
-        logger.warning("parsing.validation_failed", errors=exc.error_count())
-        raise ParsingError(
-            "We read your résumé but couldn't fit part of it into the schema "
-            f"({exc.error_count()} issue(s)). You can fix it in the builder."
-        ) from exc
+    resume = _coerce_valid(payload)
 
     logger.info(
         "parsing.structured",

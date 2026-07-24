@@ -143,3 +143,41 @@ class TestUrlAndSchemaRepair:
     def test_repair_drops_unusable_link(self):
         payload = {"basics": {"name": "X", "email": "x@y.co", "links": [{"label": "site", "url": "not a url"}]}}
         assert _repair(payload)["basics"]["links"] == []
+
+
+class TestSalvage:
+    """Import is best-effort: one bad field shouldn't reject the whole résumé."""
+
+    def test_nulls_a_bad_optional_field_and_keeps_the_entry(self):
+        from app.services.parsing.structure import _coerce_valid
+
+        payload = {
+            "basics": {"name": "Jane", "email": "jane@x.co", "github": "not a url"},
+            "experience": [
+                {"company": "Good", "title": "Eng", "start_date": "2024", "highlights": ["Built X for 5 teams"]},
+                {"company": "Bad", "title": "Eng", "start_date": "sometime last year", "highlights": ["did stuff"]},
+            ],
+        }
+        resume = _coerce_valid(payload)
+        assert len(resume.experience) == 2  # bad date nulled, entry kept
+        assert resume.basics.github is None
+
+    def test_drops_entry_when_a_required_field_is_bad(self):
+        from app.services.parsing.structure import _coerce_valid
+
+        payload = {
+            "basics": {"name": "Jane", "email": "jane@x.co"},
+            "experience": [
+                {"company": "Good", "title": "Eng", "start_date": "2024", "highlights": ["Built X for 5 teams"]},
+                {"title": "Eng", "start_date": "2024", "highlights": ["orphan, no company"]},  # missing required company
+            ],
+        }
+        resume = _coerce_valid(payload)
+        assert len(resume.experience) == 1
+        assert resume.experience[0].company == "Good"
+
+    def test_unsalvageable_raises_parsing_error(self):
+        from app.services.parsing.structure import ParsingError, _coerce_valid
+
+        with pytest.raises(ParsingError):
+            _coerce_valid({"basics": {"name": "X"}})  # no email, no content

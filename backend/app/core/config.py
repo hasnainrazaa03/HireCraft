@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_timeout_seconds: int = 90
     llm_max_retries: int = 3
+    # Cap the model's internal "thinking" tokens. Flash-class models default to
+    # unlimited thinking, which on a large résumé eats the whole output budget
+    # and truncates the JSON (a slow 502). A small budget leaves room for the
+    # actual answer, is faster, and is cheaper. 0 disables the cap (some models
+    # reject a budget of 0, so we send the config only when this is > 0).
+    llm_thinking_budget: int = 512
 
     # Cost tracking: USD per 1M tokens. Defaults track Gemini Flash pricing.
     llm_input_cost_per_mtok: float = 0.10

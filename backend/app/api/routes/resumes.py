@@ -33,7 +33,7 @@ from app.services.export.docx import resume_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
 from app.services.latex.renderer import render_resume
 from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
-from app.services.llm.client import GeminiClient, LlmError
+from app.services.llm.client import GeminiClient, LlmError, LlmResponseError
 from app.services.parsing.extract import ExtractionError, extract
 from app.services.parsing.structure import ParsingError, structure_resume
 
@@ -210,14 +210,21 @@ async def parse_resume(
 
     try:
         resume, usage = structure_resume(text, client=client)
-    except ParsingError as exc:
+    except (ParsingError, LlmResponseError) as exc:
+        # Couldn't fit the model's output into a valid résumé (or it came back
+        # truncated). Recoverable: send them to the builder to finish by hand.
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "We read your file but couldn't structure all of it automatically. "
+                "Try the builder to finish it, or paste the text instead."
+            ),
         ) from exc
     except LlmError as exc:
+        # A genuine provider outage or quota exhaustion — nothing the user can fix.
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Couldn't parse your résumé right now: {exc}",
+            detail=f"The AI service is unavailable right now: {exc}",
         ) from exc
 
     db.add(
