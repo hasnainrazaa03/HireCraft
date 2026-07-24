@@ -9,6 +9,7 @@ import {
   type GuardrailViolation,
   type BulletConfidence,
   type TrackerStatus,
+  type JobMatch,
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
@@ -22,7 +23,7 @@ const ACTIVE = new Set([
   "rendering",
 ]);
 
-type Tab = "diff" | "guardrails" | "requirements";
+type Tab = "diff" | "match" | "guardrails" | "requirements";
 
 export default function ApplicationPage() {
   const { id = "" } = useParams();
@@ -56,6 +57,14 @@ export default function ApplicationPage() {
   const { data: application, isLoading } = useQuery({
     queryKey: ["application", id, status?.pipeline_status],
     queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`),
+  });
+
+  // Deterministic fit score — only meaningful once the job has been analysed.
+  const { data: match } = useQuery({
+    queryKey: ["match", id],
+    queryFn: () => api.get<JobMatch>(`/insights/applications/${id}/match`),
+    enabled: !!application?.job?.requirements,
+    retry: false,
   });
 
   const update = useMutation({
@@ -243,6 +252,7 @@ export default function ApplicationPage() {
               {(
                 [
                   ["diff", `Changes (${application.diff?.length ?? 0})`],
+                  ["match", match ? `Match · ${match.overall_score}` : "Match"],
                   [
                     "guardrails",
                     `Guardrails (${report?.violations.length ?? 0})`,
@@ -271,6 +281,7 @@ export default function ApplicationPage() {
                   emptyMessage="No changes were made — your resume already matched this posting."
                 />
               )}
+              {tab === "match" && <MatchView match={match} />}
               {tab === "guardrails" && (
                 <GuardrailView
                   errors={errors}
@@ -497,6 +508,91 @@ function GuardrailView({
         <p className="rounded-xl border border-emerald/30 bg-emerald/10 px-3 py-2.5 text-sm text-emerald">
           Every tailored statement traces back to your master resume.
         </p>
+      )}
+    </div>
+  );
+}
+
+const VERDICT_TONE: Record<JobMatch["verdict"], string> = {
+  "Strong match": "text-emerald",
+  "Good match": "text-electric",
+  "Fair match": "text-coral",
+  Reach: "text-hotpink",
+};
+
+function MatchView({ match }: { match: JobMatch | undefined }) {
+  if (!match) {
+    return (
+      <p className="text-sm text-muted">
+        A fit score appears once the job has been analysed (run the tailoring pipeline).
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-6">
+      {/* Score + verdict */}
+      <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-white/[0.06] bg-surface-2 px-5 py-4">
+        <div className="text-4xl font-semibold tabular-nums text-gradient">
+          {match.overall_score}
+          <span className="ml-1 text-base font-normal text-subtle">/100</span>
+        </div>
+        <div className={`text-lg font-semibold ${VERDICT_TONE[match.verdict]}`}>
+          {match.verdict}
+        </div>
+      </div>
+
+      {/* Sub-scores */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {match.subscores.map((s) => (
+          <div key={s.key} className="card p-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium">{s.label}</span>
+              <span className="tabular-nums text-muted">{s.score}</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="h-full rounded-full bg-brand-600" style={{ width: `${s.score}%` }} />
+            </div>
+            <p className="mt-1.5 text-xs text-subtle">{s.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Strengths + gaps */}
+      <div className="grid gap-5 md:grid-cols-2">
+        <div className="card p-5">
+          <h3 className="section-title text-emerald">Strengths</h3>
+          <ul className="mt-3 space-y-2">
+            {match.strengths.map((s, i) => (
+              <li key={i} className="text-sm text-content">✓ {s}</li>
+            ))}
+            {match.strengths.length === 0 && <li className="text-sm text-subtle">—</li>}
+          </ul>
+        </div>
+        <div className="card p-5">
+          <h3 className="section-title text-coral">Gaps</h3>
+          <ul className="mt-3 space-y-2">
+            {match.gaps.map((g, i) => (
+              <li key={i} className="text-sm text-content">• {g}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* Skill chips */}
+      {(match.matched_skills.length > 0 || match.missing_skills.length > 0) && (
+        <div className="card p-5">
+          <h3 className="section-title">Skills</h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {match.matched_skills.map((s) => (
+              <span key={s.name} className="badge-emerald">{s.name}</span>
+            ))}
+            {match.missing_skills.map((s) => (
+              <span key={s.name} className="badge border border-dashed border-white/[0.14] text-subtle">
+                {s.name}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

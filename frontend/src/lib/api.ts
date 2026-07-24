@@ -679,3 +679,84 @@ export interface CompanyBriefResponse {
   cost_usd: number;
   disclaimer: string;
 }
+
+// --- Career insights: match + skill gaps ------------------------------------
+
+export interface SubScore {
+  key: string;
+  label: string;
+  score: number;
+  weight: number;
+  detail: string;
+}
+
+export interface SkillHit {
+  name: string;
+  importance: number;
+  have: boolean;
+}
+
+export interface JobMatch {
+  overall_score: number;
+  verdict: "Strong match" | "Good match" | "Fair match" | "Reach";
+  subscores: SubScore[];
+  matched_skills: SkillHit[];
+  missing_skills: SkillHit[];
+  matched_keywords: string[];
+  missing_keywords: string[];
+  strengths: string[];
+  gaps: string[];
+}
+
+export interface SkillDemand {
+  name: string;
+  demand: number;
+  avg_importance: number;
+  have: boolean;
+}
+
+export interface SkillGapReport {
+  jobs_analyzed: number;
+  average_match: number | null;
+  top_missing: SkillDemand[];
+  high_demand: SkillDemand[];
+  covered: SkillDemand[];
+}
+
+// --- Interview prep ---------------------------------------------------------
+
+export type QuestionCategory =
+  | "behavioral"
+  | "technical"
+  | "resume"
+  | "project"
+  | "company"
+  | "system_design"
+  | "coding"
+  | "general";
+
+export interface InterviewQuestion {
+  category: QuestionCategory;
+  question: string;
+  why: string;
+  tip: string;
+}
+
+export interface QuestionsResponse {
+  questions: InterviewQuestion[];
+  cost_usd: number;
+}
+
+export interface StarAnswer {
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+}
+
+export interface AnswerResponse {
+  star: StarAnswer;
+  used_voice: boolean;
+  warnings: string[];
+  cost_usd: number;
+}

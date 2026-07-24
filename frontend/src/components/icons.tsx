@@ -91,6 +91,14 @@ export const IconSparkles = (p: IconProps) => (
   </Base>
 );
 
+export const IconTarget = (p: IconProps) => (
+  <Base {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="5" />
+    <circle cx="12" cy="12" r="1" />
+  </Base>
+);
+
 export const IconTemplate = (p: IconProps) => (
   <Base {...p}>
     <rect x="3" y="3" width="18" height="18" rx="2" />

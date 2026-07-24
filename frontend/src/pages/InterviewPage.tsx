@@ -1,0 +1,332 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  api,
+  ApiError,
+  type ResumeProfileSummary,
+  type QuestionCategory,
+  type InterviewQuestion,
+  type QuestionsResponse,
+  type AnswerResponse,
+  type SkillGapReport,
+} from "../lib/api";
+import { PageLoader, EmptyState } from "../components/ui";
+import { IconSparkles, IconResume } from "../components/icons";
+import { useToast } from "../lib/toast";
+
+const CATEGORIES: { id: QuestionCategory; label: string }[] = [
+  { id: "behavioral", label: "Behavioral" },
+  { id: "technical", label: "Technical" },
+  { id: "resume", label: "Résumé-specific" },
+  { id: "project", label: "Project" },
+  { id: "company", label: "Company" },
+  { id: "system_design", label: "System design" },
+  { id: "coding", label: "Coding" },
+];
+
+const CAT_LABEL: Record<QuestionCategory, string> = {
+  behavioral: "Behavioral",
+  technical: "Technical",
+  resume: "Résumé",
+  project: "Project",
+  company: "Company",
+  system_design: "System design",
+  coding: "Coding",
+  general: "General",
+};
+
+export default function InterviewPage() {
+  const { data: resumes, isLoading } = useQuery({
+    queryKey: ["resumes"],
+    queryFn: () => api.get<ResumeProfileSummary[]>("/resumes"),
+  });
+
+  if (isLoading) return <PageLoader label="Loading…" />;
+
+  return (
+    <div className="space-y-7">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Interview prep</h1>
+        <p className="mt-1 text-sm text-muted">
+          Practice questions tailored to your résumé and role, STAR answers grounded
+          in your real experience, and the skills worth shoring up.
+        </p>
+      </div>
+
+      {!resumes || resumes.length === 0 ? (
+        <EmptyState
+          icon={<IconResume className="h-6 w-6" />}
+          title="Add a résumé first"
+          description="Interview prep is built around your real experience. Create a résumé to begin."
+          action={<Link to="/resumes" className="btn-primary">Add résumé</Link>}
+        />
+      ) : (
+        <>
+          <QuestionStudio resumes={resumes} />
+          <SkillGaps resumes={resumes} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
+  const toast = useToast();
+  const [resumeId, setResumeId] = useState(resumes[0].id);
+  const [role, setRole] = useState("");
+  const [company, setCompany] = useState("");
+  const [selected, setSelected] = useState<Set<QuestionCategory>>(new Set());
+  const [questions, setQuestions] = useState<InterviewQuestion[] | null>(null);
+
+  const generate = useMutation({
+    mutationFn: () =>
+      api.post<QuestionsResponse>("/interview/questions", {
+        resume_profile_id: resumeId,
+        role: role || null,
+        company: company || null,
+        categories: Array.from(selected),
+        count: 8,
+      }),
+    onSuccess: (r) => setQuestions(r.questions),
+    onError: (e) =>
+      toast.error("Couldn't generate", e instanceof ApiError ? e.message : "Please try again."),
+  });
+
+  function toggle(cat: QuestionCategory) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-4 p-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <label className="label">Résumé</label>
+            <select className="input" value={resumeId} onChange={(e) => setResumeId(e.target.value)}>
+              {resumes.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Role (optional)</label>
+            <input className="input" placeholder="Backend Engineer" value={role} onChange={(e) => setRole(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Company (optional)</label>
+            <input className="input" placeholder="Globex" value={company} onChange={(e) => setCompany(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="label">Focus areas (optional — leave blank for a mix)</label>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => toggle(c.id)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  selected.has(c.id)
+                    ? "border-brand-500/60 bg-brand-500/15 text-brand-200"
+                    : "border-white/[0.08] bg-surface-2 text-muted hover:text-content"
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button onClick={() => generate.mutate()} disabled={generate.isPending} className="btn-primary">
+          <IconSparkles className="h-4 w-4" />
+          {generate.isPending ? "Generating…" : "Generate questions"}
+        </button>
+      </div>
+
+      {questions && (
+        <div className="space-y-3">
+          {questions.map((q, i) => (
+            <QuestionCard key={i} question={q} resumeId={resumeId} catLabel={CAT_LABEL[q.category]} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionCard({
+  question,
+  resumeId,
+  catLabel,
+}: {
+  question: InterviewQuestion;
+  resumeId: string;
+  catLabel: string;
+}) {
+  const toast = useToast();
+  const [answer, setAnswer] = useState<AnswerResponse | null>(null);
+
+  const draft = useMutation({
+    mutationFn: () =>
+      api.post<AnswerResponse>("/interview/answer", {
+        resume_profile_id: resumeId,
+        question: question.question,
+        use_voice: true,
+      }),
+    onSuccess: setAnswer,
+    onError: (e) =>
+      toast.error("Couldn't draft", e instanceof ApiError ? e.message : "Please try again."),
+  });
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="badge-muted mb-2">{catLabel}</span>
+          <p className="text-sm font-medium text-content">{question.question}</p>
+          {question.why && <p className="mt-1.5 text-xs text-subtle">Why they ask: {question.why}</p>}
+          {question.tip && <p className="mt-1 text-xs text-brand-300">💡 {question.tip}</p>}
+        </div>
+      </div>
+
+      {!answer && (
+        <button
+          onClick={() => draft.mutate()}
+          disabled={draft.isPending}
+          className="btn-secondary btn-sm mt-3"
+        >
+          {draft.isPending ? "Drafting…" : "Draft a STAR answer"}
+        </button>
+      )}
+
+      {answer && (
+        <div className="mt-4 space-y-2 rounded-xl border border-white/[0.06] bg-surface-2 p-4">
+          {answer.warnings.map((w, i) => (
+            <div key={i} className="rounded-lg border border-coral/30 bg-coral/10 px-3 py-2 text-xs text-coral">
+              {w}
+            </div>
+          ))}
+          <StarField label="Situation" text={answer.star.situation} />
+          <StarField label="Task" text={answer.star.task} />
+          <StarField label="Action" text={answer.star.action} />
+          <StarField label="Result" text={answer.star.result} />
+          <div className="flex items-center justify-between pt-1">
+            {answer.used_voice ? (
+              <span className="text-[11px] text-subtle">In your voice</span>
+            ) : <span />}
+            <CopyButton
+              text={`Situation: ${answer.star.situation}\nTask: ${answer.star.task}\nAction: ${answer.star.action}\nResult: ${answer.star.result}`}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StarField({ label, text }: { label: string; text: string }) {
+  if (!text) return null;
+  return (
+    <div>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-300">{label}</span>
+      <p className="text-sm leading-relaxed text-content">{text}</p>
+    </div>
+  );
+}
+
+function SkillGaps({ resumes }: { resumes: ResumeProfileSummary[] }) {
+  const [resumeId, setResumeId] = useState(resumes[0].id);
+  const { data, isLoading } = useQuery({
+    queryKey: ["skill-gaps", resumeId],
+    queryFn: () => api.get<SkillGapReport>(`/insights/skill-gaps?resume_id=${resumeId}`),
+  });
+
+  return (
+    <div className="card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="section-title">Skill gaps across your saved jobs</h2>
+        <select
+          className="input max-w-[200px] py-1.5 text-sm"
+          value={resumeId}
+          onChange={(e) => setResumeId(e.target.value)}
+        >
+          {resumes.map((r) => (
+            <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-subtle">Analysing…</p>
+      ) : !data || data.jobs_analyzed === 0 ? (
+        <p className="mt-4 text-sm text-subtle">
+          Once you've saved a few applications, the most in-demand skills you're missing
+          will show up here.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-5">
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <div className="text-2xl font-semibold tabular-nums text-content">{data.jobs_analyzed}</div>
+              <div className="text-xs text-subtle">jobs analysed</div>
+            </div>
+            {data.average_match != null && (
+              <div>
+                <div className="text-2xl font-semibold tabular-nums text-gradient">{data.average_match}</div>
+                <div className="text-xs text-subtle">avg match</div>
+              </div>
+            )}
+          </div>
+
+          {data.top_missing.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-coral">Most impactful skills to learn</h3>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {data.top_missing.map((s) => (
+                  <span key={s.name} className="badge-coral" title={`Wanted by ${s.demand} job(s)`}>
+                    {s.name}<span className="ml-1 opacity-70">×{s.demand}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.covered.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-emerald">In-demand skills you already have</h3>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {data.covered.map((s) => (
+                  <span key={s.name} className="badge-emerald">{s.name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard unavailable */
+        }
+      }}
+      className="btn-ghost btn-sm"
+    >
+      {copied ? "Copied!" : "Copy answer"}
+    </button>
+  );
+}

@@ -13,6 +13,7 @@ import {
   IconLetter,
   IconSearch,
   IconChart,
+  IconTarget,
   IconSettings,
   IconTemplate,
   IconBell,
@@ -74,6 +75,7 @@ const NAV = [
   { to: "/writing", label: "Writing Voice", icon: IconPen, end: false },
   { to: "/cover-letters", label: "Cover Letters", icon: IconLetter, end: false },
   { to: "/companies", label: "Company Intel", icon: IconUsers, end: false },
+  { to: "/interview", label: "Interview Prep", icon: IconTarget, end: false },
   { to: "/jobs", label: "Job Search", icon: IconSearch, end: false },
   { to: "/analytics", label: "Analytics", icon: IconChart, end: false },
   { to: "/templates", label: "Templates", icon: IconTemplate, end: false },
@@ -89,6 +91,7 @@ const LIVE_ROUTES = new Set([
   "/writing",
   "/cover-letters",
   "/companies",
+  "/interview",
   "/analytics",
   "/new",
 ]);
