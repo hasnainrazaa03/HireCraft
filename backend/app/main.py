@@ -46,15 +46,17 @@ app = FastAPI(
     openapi_url=None if settings.is_production else "/openapi.json",
 )
 
+# MIDDLEWARE ORDER MATTERS. Starlette inserts each new middleware at the front
+# of the stack, so the LAST one registered is the OUTERMOST. CORS must therefore
+# be registered last: if it sits inside the rate limiter or the error handler,
+# a 429 or a 500 is returned without Access-Control-Allow-Origin, the browser
+# blocks it, and the frontend reports a generic network failure instead of the
+# real status. GZip is registered first so it stays innermost and only ever
+# compresses a fully-formed response.
+#
+# Resulting stack, outermost to innermost:
+#   CORS -> rate_limit -> request_context -> GZip -> routes
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-    max_age=600,
-)
 
 
 @app.middleware("http")
@@ -133,6 +135,19 @@ async def rate_limit(
     response.headers["X-RateLimit-Limit"] = str(result.limit)
     response.headers["X-RateLimit-Remaining"] = str(result.remaining)
     return response
+
+
+# Registered last so it wraps everything above; see the ordering note near the
+# top of this module.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After"],
+    max_age=600,
+)
 
 
 @app.exception_handler(RequestValidationError)
