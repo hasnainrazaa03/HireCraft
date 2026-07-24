@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { IconSparkles, IconCheck } from "../components/icons";
+import { IconCheck } from "../components/icons";
+import { Wordmark } from "../components/Logo";
 import { Spinner } from "../components/ui";
 
 type State = "verifying" | "ok" | "error";
@@ -46,10 +47,7 @@ export default function VerifyEmailPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm text-center">
         <div className="mb-8 flex items-center justify-center gap-2.5">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-strong">
-            <IconSparkles className="h-6 w-6" />
-          </span>
-          <span className="text-xl font-semibold tracking-tight">HireCraft</span>
+          <Wordmark size="text-xl" />
         </div>
 
         <div className="card p-8">

@@ -2,7 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { ApiError } from "../lib/api";
-import { IconSparkles, IconShield, IconCheck } from "../components/icons";
+import { IconShield, IconCheck } from "../components/icons";
+import { LogoMark, Wordmark } from "../components/Logo";
 import { Spinner } from "../components/ui";
 
 const HIGHLIGHTS = [
@@ -43,15 +44,18 @@ export default function LoginPage() {
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
           <div className="flex items-center gap-2.5 text-white">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 backdrop-blur">
-              <IconSparkles className="h-6 w-6" />
+              <LogoMark className="h-6 w-6" />
             </span>
             <span className="text-xl font-semibold tracking-tight">HireCraft</span>
           </div>
 
           <div className="max-w-md">
             <h1 className="text-4xl font-semibold leading-tight tracking-tight text-white">
-              Tailor your résumé to any job — without inventing a thing.
+              Craft your story.<br />Land your dream role.
             </h1>
+            <p className="mt-3 text-white/80">
+              Tailor your résumé to any job — without inventing a thing.
+            </p>
             <ul className="mt-8 space-y-3">
               {HIGHLIGHTS.map((h) => (
                 <li key={h} className="flex items-center gap-3 text-white/90">
@@ -75,12 +79,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
-            <div className="mb-3 flex items-center gap-2.5">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-strong">
-                <IconSparkles className="h-6 w-6" />
-              </span>
-              <span className="text-xl font-semibold tracking-tight">HireCraft</span>
-            </div>
+            <Wordmark size="text-xl" />
           </div>
 
           <h2 className="text-2xl font-semibold tracking-tight">

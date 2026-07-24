@@ -5,6 +5,7 @@ import { useTheme } from "../lib/theme";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { IconShield } from "./icons";
+import { Wordmark } from "./Logo";
 import {
   IconDashboard,
   IconApplications,
@@ -14,7 +15,6 @@ import {
   IconChart,
   IconSettings,
   IconTemplate,
-  IconSparkles,
   IconBell,
   IconPlus,
   IconSun,
@@ -106,11 +106,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen">
       {/* ---- Sidebar ---- */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/[0.06] bg-canvas-raised/70 px-4 py-5 backdrop-blur-xl lg:flex">
-        <Link to="/" className="mb-7 flex items-center gap-2.5 px-2">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-strong">
-            <IconSparkles className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">HireCraft</span>
+        <Link to="/" className="mb-7 px-2">
+          <Wordmark />
         </Link>
 
         <nav className="flex flex-1 flex-col gap-1">

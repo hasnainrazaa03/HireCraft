@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useToast } from "../lib/toast";
-import { IconSparkles } from "../components/icons";
+import { Wordmark } from "../components/Logo";
 import { Spinner } from "../components/ui";
 
 export default function ResetPasswordPage() {
@@ -39,10 +39,7 @@ export default function ResetPasswordPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center gap-2.5">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-strong">
-            <IconSparkles className="h-6 w-6" />
-          </span>
-          <span className="text-xl font-semibold tracking-tight">HireCraft</span>
+          <Wordmark size="text-xl" />
         </div>
 
         <h1 className="text-2xl font-semibold tracking-tight">Set a new password</h1>

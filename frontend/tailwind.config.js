@@ -28,19 +28,19 @@ export default {
         muted: "rgb(var(--muted) / <alpha-value>)",
         subtle: "rgb(var(--subtle) / <alpha-value>)",
 
-        // --- Brand: royal purple → electric violet → deep indigo ---
+        // --- Brand: purple, keyed to the brand-sheet primary #7C4DFF ---
         brand: {
-          50: "#F1EEFF",
-          100: "#E4DCFF",
-          200: "#C9B8FF",
-          300: "#AB90FF",
-          400: "#8B5CF6",
-          500: "#7C5CFF",
-          600: "#6D4AFF",
-          700: "#5B36FF",
-          800: "#4A2CD6",
-          900: "#3A22A8",
-          950: "#221463",
+          50: "#F1EDFF",
+          100: "#E4DBFF",
+          200: "#C9B5FF",
+          300: "#AC8CFF",
+          400: "#9268FF",
+          500: "#7C4DFF", // brand primary (brand sheet)
+          600: "#6A38F5",
+          700: "#5A2BDE",
+          800: "#4A24B4",
+          900: "#3A1E8C",
+          950: "#221056",
         },
         indigo: { DEFAULT: "#9D4EDD" },
 
@@ -53,8 +53,8 @@ export default {
       },
       fontFamily: {
         sans: [
-          "Inter",
-          "Inter var",
+          '"Plus Jakarta Sans Variable"',
+          '"Plus Jakarta Sans"',
           "SF Pro Display",
           "system-ui",
           "-apple-system",
@@ -80,15 +80,16 @@ export default {
         "glow-pink": "0 0 60px rgba(255,79,216,0.15)",
       },
       backgroundImage: {
-        // Primary button + focal gradients.
-        "brand-gradient": "linear-gradient(135deg, #7C5CFF 0%, #5B36FF 100%)",
-        "brand-gradient-hover": "linear-gradient(135deg, #8B6BFF 0%, #6B46FF 100%)",
+        // Primary button + focal gradients (brand purple).
+        "brand-gradient": "linear-gradient(135deg, #7C4DFF 0%, #5A2BDE 100%)",
+        "brand-gradient-hover": "linear-gradient(135deg, #8B63FF 0%, #6A38F5 100%)",
         // Large hero card: purple → indigo → blue → warm coral, airbrushed.
         "hero-gradient":
-          "linear-gradient(135deg, #6D4AFF 0%, #9D4EDD 38%, #4CC9F0 72%, #FF9F43 100%)",
+          "linear-gradient(135deg, #7C4DFF 0%, #9D4EDD 38%, #4CC9F0 72%, #FF9F43 100%)",
         "hero-purple":
-          "linear-gradient(135deg, #6D4AFF 0%, #8B5CF6 50%, #9D4EDD 100%)",
-        "hero-cool": "linear-gradient(135deg, #6D4AFF 0%, #4CC9F0 100%)",
+          "linear-gradient(135deg, #7C4DFF 0%, #8B5CF6 50%, #9D4EDD 100%)",
+        // The signature brand gradient — purple → blue (matches the logo).
+        "hero-cool": "linear-gradient(135deg, #7C4DFF 0%, #4CC9F0 100%)",
         "hero-warm": "linear-gradient(135deg, #9D4EDD 0%, #FF4FD8 55%, #FF9F43 100%)",
         // Subtle ambient radial glows layered behind sections.
         "ambient-purple":

@@ -1,5 +1,5 @@
-/* Inter, bundled locally so the app needs no network at runtime. */
-@import "@fontsource-variable/inter";
+/* Plus Jakarta Sans (brand face), bundled locally so the app needs no network. */
+@import "@fontsource-variable/plus-jakarta-sans";
 
 @tailwind base;
 @tailwind components;
@@ -28,7 +28,7 @@
   --hairline: 255 255 255; /* used at low alpha for borders */
   --hairline-alpha: 0.07;
 
-  --ring: 124 92 255; /* brand focus ring */
+  --ring: 124 77 255; /* brand focus ring */
   --shadow-soft: 0 10px 40px rgba(0, 0, 0, 0.35);
 }
 
@@ -68,8 +68,8 @@
     background-image:
       radial-gradient(
         70% 55% at 15% -5%,
-        rgba(110, 70, 255, 0.12) 0%,
-        rgba(110, 70, 255, 0) 60%
+        rgba(124, 77, 255, 0.13) 0%,
+        rgba(124, 77, 255, 0) 60%
       ),
       radial-gradient(
         60% 50% at 100% 0%,
@@ -103,7 +103,7 @@
   }
 
   ::selection {
-    background: rgba(124, 92, 255, 0.35);
+    background: rgba(124, 77, 255, 0.35);
   }
 }
 
@@ -145,10 +145,10 @@
   .btn-primary {
     @apply btn text-white shadow-[0_4px_20px_rgba(91,54,255,0.35)]
            hover:-translate-y-px hover:shadow-glow-strong;
-    background-image: linear-gradient(135deg, #7c5cff 0%, #5b36ff 100%);
+    background-image: linear-gradient(135deg, #7c4dff 0%, #5a2bde 100%);
   }
   .btn-primary:hover {
-    background-image: linear-gradient(135deg, #8b6bff 0%, #6b46ff 100%);
+    background-image: linear-gradient(135deg, #8b63ff 0%, #6a38f5 100%);
   }
 
   .btn-secondary {
@@ -249,8 +249,8 @@
     @apply text-white;
     background-image: linear-gradient(
       135deg,
-      rgba(124, 92, 255, 0.9) 0%,
-      rgba(91, 54, 255, 0.9) 100%
+      rgba(124, 77, 255, 0.95) 0%,
+      rgba(90, 43, 222, 0.95) 100%
     );
     box-shadow: 0 4px 18px rgba(91, 54, 255, 0.3);
   }

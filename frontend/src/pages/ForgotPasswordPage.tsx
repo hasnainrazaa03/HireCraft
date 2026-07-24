@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
-import { IconSparkles, IconLetter } from "../components/icons";
+import { IconLetter } from "../components/icons";
+import { Wordmark } from "../components/Logo";
 import { Spinner } from "../components/ui";
 
 export default function ForgotPasswordPage() {
@@ -28,10 +29,7 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center gap-2.5">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-gradient text-white shadow-glow-strong">
-            <IconSparkles className="h-6 w-6" />
-          </span>
-          <span className="text-xl font-semibold tracking-tight">HireCraft</span>
+          <Wordmark size="text-xl" />
         </div>
 
         {sent ? (
