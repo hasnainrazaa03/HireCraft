@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
+import { ALL_STAGES, trackerLabel } from "../lib/tracker";
 
 const ACTIVE = new Set([
   "pending",
@@ -58,11 +59,18 @@ export default function ApplicationPage() {
   });
 
   const update = useMutation({
-    mutationFn: (body: Partial<{ tracker_status: TrackerStatus; notes: string }>) =>
-      api.patch(`/applications/${id}`, body),
+    mutationFn: (
+      body: Partial<{
+        tracker_status: TrackerStatus;
+        notes: string;
+        interview_at: string | null;
+        reminder_at: string | null;
+      }>,
+    ) => api.patch(`/applications/${id}`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["application", id] });
       queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-overview"] });
     },
   });
 
@@ -113,13 +121,13 @@ export default function ApplicationPage() {
             onChange={(e) =>
               update.mutate({ tracker_status: e.target.value as TrackerStatus })
             }
-            className={`badge cursor-pointer border-0 capitalize ${
+            className={`badge cursor-pointer border-0 ${
               TRACKER_STYLES[application.tracker_status]
             }`}
           >
-            {Object.keys(TRACKER_STYLES).map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {ALL_STAGES.map((s) => (
+              <option key={s} value={s} className="bg-surface text-content">
+                {trackerLabel(s)}
               </option>
             ))}
           </select>
@@ -174,10 +182,16 @@ export default function ApplicationPage() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
-              onClick={() => void download("resume_pdf", "resume.pdf")}
+              onClick={() => void download("package", "application_package.zip")}
               className="btn-primary"
             >
-              Download resume PDF
+              Download package (.zip)
+            </button>
+            <button
+              onClick={() => void download("resume_pdf", "resume.pdf")}
+              className="btn-secondary"
+            >
+              Résumé PDF
             </button>
             {application.artifacts.some((a) => a.kind === "cover_letter_pdf") && (
               <button
@@ -275,7 +289,46 @@ export default function ApplicationPage() {
         </>
       )}
 
-      <div className="mt-10">
+      <div className="mt-10 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="label" htmlFor="interview_at">
+            Interview date
+          </label>
+          <input
+            id="interview_at"
+            type="datetime-local"
+            className="input"
+            defaultValue={toLocalInput(application.interview_at)}
+            onChange={(e) =>
+              update.mutate({
+                interview_at: e.target.value
+                  ? new Date(e.target.value).toISOString()
+                  : null,
+              })
+            }
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="reminder_at">
+            Follow-up reminder
+          </label>
+          <input
+            id="reminder_at"
+            type="datetime-local"
+            className="input"
+            defaultValue={toLocalInput(application.reminder_at)}
+            onChange={(e) =>
+              update.mutate({
+                reminder_at: e.target.value
+                  ? new Date(e.target.value).toISOString()
+                  : null,
+              })
+            }
+          />
+        </div>
+      </div>
+
+      <div className="mt-6">
         <label className="label" htmlFor="notes">
           Notes
         </label>
@@ -306,6 +359,14 @@ export default function ApplicationPage() {
       </div>
     </div>
   );
+}
+
+/** ISO (UTC) → the "YYYY-MM-DDTHH:mm" a datetime-local input expects, in local time. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
 function Stat({

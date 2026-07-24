@@ -5,12 +5,17 @@ import { api, type ApplicationSummary, type TrackerStatus } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { PageLoader, EmptyState } from "../components/ui";
 import { IconApplications, IconSearch } from "../components/icons";
+import { BOARD_COLUMNS, columnFor, ALL_STAGES, trackerLabel } from "../lib/tracker";
 
 const ACTIVE = new Set(["pending", "scraping", "extracting", "optimizing", "rendering"]);
+type View = "board" | "list";
 
 export default function ApplicationsPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<View>("board");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<TrackerStatus | null>(null);
 
   const { data: applications = [], isLoading } = useQuery({
     queryKey: ["applications"],
@@ -22,9 +27,22 @@ export default function ApplicationsPage() {
   const move = useMutation({
     mutationFn: ({ id, status }: { id: string; status: TrackerStatus }) =>
       api.patch(`/applications/${id}`, { tracker_status: status }),
-    onSuccess: () => {
+    // Optimistic: the card jumps columns instantly, then reconciles.
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: ["applications"] });
+      const prev = queryClient.getQueryData<ApplicationSummary[]>(["applications"]);
+      queryClient.setQueryData<ApplicationSummary[]>(["applications"], (old) =>
+        (old ?? []).map((a) => (a.id === id ? { ...a, tracker_status: status } : a)),
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["applications"], ctx.prev);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["applications"] });
       queryClient.invalidateQueries({ queryKey: ["tracker-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-overview"] });
     },
   });
 
@@ -37,6 +55,15 @@ export default function ApplicationsPage() {
     );
   });
 
+  function onDrop(status: TrackerStatus) {
+    setOverCol(null);
+    const id = dragId;
+    setDragId(null);
+    if (!id) return;
+    const app = applications.find((a) => a.id === id);
+    if (app && app.tracker_status !== status) move.mutate({ id, status });
+  }
+
   if (isLoading) return <PageLoader label="Loading applications…" />;
 
   return (
@@ -44,9 +71,24 @@ export default function ApplicationsPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Applications</h1>
-          <p className="text-sm text-muted">{applications.length} total</p>
+          <p className="text-sm text-muted">{applications.length} total · drag cards to move them</p>
         </div>
-        <Link to="/new" className="btn-primary">New application</Link>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-xl border border-white/[0.08] bg-surface-2 p-0.5">
+            {(["board", "list"] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition ${
+                  view === v ? "bg-brand-600 text-white" : "text-muted hover:text-content"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <Link to="/new" className="btn-primary">New application</Link>
+        </div>
       </div>
 
       {applications.length === 0 ? (
@@ -57,63 +99,162 @@ export default function ApplicationsPage() {
           action={<Link to="/new" className="btn-primary">New application</Link>}
         />
       ) : (
-        <div className="card overflow-hidden">
-          <div className="border-b border-white/[0.07] p-3">
-            <div className="relative max-w-xs">
-              <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
-              <input
-                className="input pl-9"
-                placeholder="Search role or company…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+        <>
+          <div className="mb-4 relative max-w-xs">
+            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+            <input
+              className="input pl-9"
+              placeholder="Search role or company…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+
+          {view === "board" ? (
+            <div className="-mx-1 flex gap-3 overflow-x-auto pb-4">
+              {BOARD_COLUMNS.map((col) => {
+                const items = filtered.filter((a) => columnFor(a.tracker_status) === col.status);
+                const isOver = overCol === col.status;
+                return (
+                  <div
+                    key={col.status}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (overCol !== col.status) setOverCol(col.status);
+                    }}
+                    onDragLeave={(e) => {
+                      // Only clear when truly leaving the column, not entering a child.
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverCol(null);
+                    }}
+                    onDrop={() => onDrop(col.status)}
+                    className={`flex w-64 shrink-0 flex-col rounded-2xl border p-2 transition ${
+                      isOver
+                        ? "border-brand-500/60 bg-brand-500/[0.06]"
+                        : "border-white/[0.06] bg-surface-2/50"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center gap-2 px-2 py-1">
+                      <span className={`h-2 w-2 rounded-full ${col.accent}`} />
+                      <span className="text-xs font-semibold text-muted">{col.label}</span>
+                      <span className="ml-auto text-xs text-subtle">{items.length}</span>
+                    </div>
+                    <div className="flex min-h-[3rem] flex-col gap-2">
+                      {items.map((a) => (
+                        <BoardCard
+                          key={a.id}
+                          app={a}
+                          onDragStart={() => setDragId(a.id)}
+                          onDragEnd={() => {
+                            setDragId(null);
+                            setOverCol(null);
+                          }}
+                          dragging={dragId === a.id}
+                        />
+                      ))}
+                      {items.length === 0 && (
+                        <div className="rounded-xl border border-dashed border-white/[0.07] py-6 text-center text-[11px] text-subtle">
+                          Drop here
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Role</th>
-                  <th className="px-4 py-3 font-medium">Company</th>
-                  <th className="px-4 py-3 font-medium">Pipeline</th>
-                  <th className="px-4 py-3 font-medium">Stage</th>
-                  <th className="px-4 py-3 text-right font-medium">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((a) => (
-                  <tr key={a.id} className="table-row">
-                    <td className="px-4 py-3">
-                      <Link to={`/applications/${a.id}`} className="font-medium hover:text-brand-300">
-                        {a.job_title ?? "Untitled role"}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-muted">{a.company ?? "—"}</td>
-                    <td className="px-4 py-3"><PipelineBadge status={a.pipeline_status} /></td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={a.tracker_status}
-                        onChange={(e) => move.mutate({ id: a.id, status: e.target.value as TrackerStatus })}
-                        className={`${TRACKER_STYLES[a.tracker_status]} cursor-pointer border-0 capitalize`}
-                      >
-                        {Object.keys(TRACKER_STYLES).map((s) => (
-                          <option key={s} value={s} className="bg-surface text-content">{s}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-muted">
-                      ${a.total_cost_usd.toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-subtle">No matches.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          ) : (
+            <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="table-head">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Role</th>
+                      <th className="px-4 py-3 font-medium">Company</th>
+                      <th className="px-4 py-3 font-medium">Pipeline</th>
+                      <th className="px-4 py-3 font-medium">Stage</th>
+                      <th className="px-4 py-3 text-right font-medium">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((a) => (
+                      <tr key={a.id} className="table-row">
+                        <td className="px-4 py-3">
+                          <Link to={`/applications/${a.id}`} className="font-medium hover:text-brand-300">
+                            {a.job_title ?? "Untitled role"}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-muted">{a.company ?? "—"}</td>
+                        <td className="px-4 py-3"><PipelineBadge status={a.pipeline_status} /></td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={a.tracker_status}
+                            onChange={(e) => move.mutate({ id: a.id, status: e.target.value as TrackerStatus })}
+                            className={`${TRACKER_STYLES[a.tracker_status]} cursor-pointer border-0`}
+                          >
+                            {ALL_STAGES.map((s) => (
+                              <option key={s} value={s} className="bg-surface text-content">
+                                {trackerLabel(s)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-muted">
+                          ${a.total_cost_usd.toFixed(4)}
+                        </td>
+                      </tr>
+                    ))}
+                    {filtered.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-subtle">No matches.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+function BoardCard({
+  app,
+  onDragStart,
+  onDragEnd,
+  dragging,
+}: {
+  app: ApplicationSummary;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  dragging: boolean;
+}) {
+  const interview = app.interview_at ? new Date(app.interview_at) : null;
+  const upcoming = interview && interview.getTime() > Date.now();
+  return (
+    <Link
+      to={`/applications/${app.id}`}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={`block cursor-grab rounded-xl border border-white/[0.07] bg-surface p-3 transition hover:border-white/[0.16] active:cursor-grabbing ${
+        dragging ? "opacity-40" : ""
+      }`}
+    >
+      <div className="truncate text-sm font-medium text-content">
+        {app.job_title ?? "Untitled role"}
+      </div>
+      <div className="truncate text-xs text-subtle">{app.company ?? "—"}</div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <PipelineBadge status={app.pipeline_status} />
+        {interview && (
+          <span
+            className={`badge text-[10px] ${upcoming ? "badge-brand" : "badge-muted"}`}
+            title={`Interview ${interview.toLocaleString()}`}
+          >
+            🗓 {interview.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          </span>
+        )}
+        {app.has_notes && <span className="text-xs text-subtle" title="Has notes">📝</span>}
+      </div>
+    </Link>
   );
 }

@@ -405,14 +405,23 @@ export type PipelineStatus =
   | "failed";
 
 export type TrackerStatus =
+  | "wishlist"
+  | "saved"
+  | "preparing"
   | "draft"
   | "applied"
+  | "assessment"
   | "screening"
   | "interviewing"
+  | "technical"
+  | "behavioral"
+  | "final"
   | "offer"
+  | "accepted"
   | "rejected"
   | "ghosted"
-  | "withdrawn";
+  | "withdrawn"
+  | "archived";
 
 export interface ApplicationSummary {
   id: string;
@@ -421,6 +430,9 @@ export interface ApplicationSummary {
   job_title: string | null;
   company: string | null;
   total_cost_usd: number;
+  interview_at: string | null;
+  reminder_at: string | null;
+  has_notes: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -451,6 +463,8 @@ export interface ApplicationDetail {
   error_message: string | null;
   include_cover_letter: boolean;
   notes: string | null;
+  interview_at: string | null;
+  reminder_at: string | null;
   tailored_resume: MasterResume | null;
   diff: DiffEntry[] | null;
   guardrail_report: GuardrailReport | null;

@@ -1,4 +1,5 @@
 import type { PipelineStatus, TrackerStatus } from "../lib/api";
+import { TRACKER_META, trackerLabel } from "../lib/tracker";
 
 // Each entry is a full badge class string built on the theme's accent tokens.
 const PIPELINE_STYLES: Record<PipelineStatus, string> = {
@@ -22,16 +23,10 @@ const PIPELINE_LABELS: Record<PipelineStatus, string> = {
 };
 
 // Tracker stages map onto the accent palette; terminal/negative use danger/muted.
-export const TRACKER_STYLES: Record<TrackerStatus, string> = {
-  draft: "badge-muted",
-  applied: "badge-blue",
-  screening: "badge-brand",
-  interviewing: "badge-brand",
-  offer: "badge-emerald",
-  rejected: "badge-danger",
-  ghosted: "badge-muted",
-  withdrawn: "badge-muted",
-};
+// Derived from the single source of truth in lib/tracker.
+export const TRACKER_STYLES = Object.fromEntries(
+  Object.entries(TRACKER_META).map(([status, meta]) => [status, meta.badge]),
+) as Record<TrackerStatus, string>;
 
 const IN_PROGRESS: PipelineStatus[] = [
   "pending",
@@ -52,5 +47,5 @@ export function PipelineBadge({ status }: { status: PipelineStatus }) {
 }
 
 export function TrackerBadge({ status }: { status: TrackerStatus }) {
-  return <span className={`${TRACKER_STYLES[status]} capitalize`}>{status}</span>;
+  return <span className={TRACKER_STYLES[status]}>{trackerLabel(status)}</span>;
 }

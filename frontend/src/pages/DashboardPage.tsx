@@ -73,16 +73,20 @@ export default function DashboardPage() {
   });
 
   const grouped = useMemo(() => {
+    // Fold the full tracker stage set into the dashboard's five summary columns.
+    const bucket: Record<TrackerStatus, TrackerStatus> = {
+      wishlist: "applied", saved: "applied", preparing: "applied",
+      draft: "applied", applied: "applied", assessment: "applied",
+      screening: "screening",
+      interviewing: "interviewing", technical: "interviewing",
+      behavioral: "interviewing", final: "interviewing",
+      offer: "offer", accepted: "offer",
+      rejected: "rejected", ghosted: "rejected",
+      withdrawn: "rejected", archived: "rejected",
+    };
     const map = new Map<string, ApplicationSummary[]>();
     for (const c of BOARD) map.set(c.status, []);
-    for (const a of applications) {
-      const key = ["rejected", "ghosted", "withdrawn"].includes(a.tracker_status)
-        ? "rejected"
-        : a.tracker_status === "draft"
-          ? "applied"
-          : a.tracker_status;
-      map.get(key)?.push(a);
-    }
+    for (const a of applications) map.get(bucket[a.tracker_status])?.push(a);
     return map;
   }, [applications]);
 
