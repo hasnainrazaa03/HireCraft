@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -24,7 +25,14 @@ class Settings(BaseSettings):
     # --- Server ---
     api_v1_prefix: str = "/api/v1"
     project_name: str = "HireCraft"
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    # NoDecode is required, not stylistic. Without it pydantic-settings tries to
+    # json.loads() any complex-typed value coming from an environment variable,
+    # before field validators run - so CORS_ORIGINS=http://localhost:5173 raises
+    # a SettingsError at import and the process never starts. NoDecode hands the
+    # raw string to _split_origins below instead.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:5173"]
+    )
 
     # --- Database ---
     database_url: str = "postgresql+psycopg://hirecraft:hirecraft@localhost:5432/hirecraft"
@@ -80,10 +88,29 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, v: object) -> object:
-        """Allow CORS_ORIGINS to be given as a comma-separated string."""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+        """Accept CORS_ORIGINS as either a JSON array or a comma-separated list.
+
+        NoDecode means this validator now receives the raw environment string,
+        so it owns both forms: the JSON array that pydantic-settings documents,
+        and the comma-separated form that is far easier to write in a .env file
+        or a Compose environment block.
+        """
+        if not isinstance(v, str):
+            return v
+
+        text = v.strip()
+        if text.startswith("["):
+            try:
+                decoded = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"CORS_ORIGINS looks like JSON but could not be parsed: {exc}"
+                ) from exc
+            if not isinstance(decoded, list):
+                raise ValueError("CORS_ORIGINS JSON must be an array of strings.")
+            return [str(origin).strip() for origin in decoded if str(origin).strip()]
+
+        return [origin.strip() for origin in text.split(",") if origin.strip()]
 
     @property
     def is_production(self) -> bool:
