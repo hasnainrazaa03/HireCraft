@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "basics": {
+    "name": "Jane Candidate",
+    "email": "jane@example.edu",
+    "phone": "+1 (213) 555-0142",
+    "location": "Los Angeles, CA",
+    "github": "https://github.com/janecandidate",
+    "linkedin": "https://linkedin.com/in/janecandidate",
+    "headline": "Computer Science student focused on backend systems",
+    "summary": "Computer Science student with internship experience building backend services and internal tooling. Comfortable across Python, TypeScript, and PostgreSQL."
+  },
+  "education": [
+    {
+      "institution": "University of Southern California",
+      "degree": "B.S.",
+      "field_of_study": "Computer Science",
+      "location": "Los Angeles, CA",
+      "start_date": "2022",
+      "end_date": "2026",
+      "gpa": "3.8",
+      "honors": ["Dean's List"],
+      "coursework": [
+        "Data Structures & Algorithms",
+        "Operating Systems",
+        "Database Systems",
+        "Computer Networks"
+      ]
+    }
+  ],
+  "experience": [
+    {
+      "company": "Northwind Logistics",
+      "title": "Software Engineering Intern",
+      "location": "Seattle, WA",
+      "start_date": "2025-05",
+      "end_date": "2025-08",
+      "highlights": [
+        "Built an internal shipment-tracking dashboard in React and FastAPI used by 40 operations staff",
+        "Reduced a nightly reconciliation job from 90 minutes to 12 minutes by replacing per-row queries with a batched PostgreSQL upsert",
+        "Added integration tests covering the 6 highest-traffic API endpoints, catching 3 regressions before release"
+      ],
+      "technologies": ["Python", "FastAPI", "React", "PostgreSQL", "Docker"]
+    },
+    {
+      "company": "USC Viterbi School of Engineering",
+      "title": "Undergraduate Course Assistant",
+      "location": "Los Angeles, CA",
+      "start_date": "2024-08",
+      "end_date": "2025-05",
+      "highlights": [
+        "Led weekly lab sections on data structures for 30 students",
+        "Wrote 8 autograded assignments and the accompanying test harness in Python"
+      ],
+      "technologies": ["Python", "Git"]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Transit Delay Predictor",
+      "description": "Predicts bus arrival delays from historical GTFS feeds",
+      "url": "https://github.com/janecandidate/transit-delay",
+      "start_date": "2025-01",
+      "end_date": "2025-04",
+      "highlights": [
+        "Trained a gradient-boosted model on 2 years of GTFS data, reaching 4.1 minute mean absolute error",
+        "Served predictions through a FastAPI endpoint with a 95th-percentile latency of 60 ms"
+      ],
+      "technologies": ["Python", "scikit-learn", "FastAPI", "PostgreSQL"]
+    }
+  ],
+  "skills": [
+    {
+      "category": "Languages",
+      "items": ["Python", "TypeScript", "JavaScript", "SQL", "Java", "C++"]
+    },
+    {
+      "category": "Frameworks",
+      "items": ["FastAPI", "React", "Flask", "Node.js", "pytest"]
+    },
+    {
+      "category": "Tools & Infrastructure",
+      "items": ["PostgreSQL", "Redis", "Docker", "Git", "Linux", "GitHub Actions"]
+    }
+  ],
+  "certifications": [],
+  "awards": [
+    {
+      "title": "1st Place, HackSC",
+      "issuer": "University of Southern California",
+      "date": "2024",
+      "description": "Team project on accessible campus navigation"
+    }
+  ],
+  "publications": [],
+  "section_order": [
+    "summary",
+    "education",
+    "experience",
+    "projects",
+    "skills",
+    "awards"
+  ]
+}
