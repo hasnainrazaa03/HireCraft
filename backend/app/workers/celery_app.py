@@ -42,6 +42,16 @@ celery_app.conf.beat_schedule = {
         "task": "hirecraft.housekeeping",
         "schedule": 60 * 60 * 24,  # once a day
     },
+    # Reminders are idempotent (dedupe keys), so scanning several times a day
+    # just means nudges surface promptly without ever duplicating.
+    "scan-reminders": {
+        "task": "hirecraft.scan_reminders",
+        "schedule": 60 * 60 * 6,  # every 6 hours
+    },
+    "weekly-summary": {
+        "task": "hirecraft.weekly_summary",
+        "schedule": 60 * 60 * 24,  # daily check; the weekly dedupe key gates it
+    },
 }
 
 

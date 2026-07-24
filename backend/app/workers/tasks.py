@@ -279,11 +279,77 @@ def send_email_task(self, to: str, subject: str, html: str, text: str) -> dict[s
 
 @celery_app.task(name="hirecraft.housekeeping")
 def housekeeping_task() -> dict[str, int]:
-    """Daily maintenance slot, driven by Celery beat.
-
-    Placeholder for now: it proves the beat scheduler is wired end to end and
-    gives Phase 11's reminders a home to grow into. Returns a small summary so
-    the scheduled run is visible in the result backend.
-    """
+    """Daily maintenance slot, driven by Celery beat."""
     logger.info("task.housekeeping_ran")
     return {"ok": 1}
+
+
+@celery_app.task(name="hirecraft.scan_reminders")
+def scan_reminders_task() -> dict[str, int]:
+    """Daily: create due reminders (interview soon, follow-up, stale) per user.
+
+    Idempotent via each reminder's dedupe key, so re-running the same day is a
+    no-op rather than a spam generator.
+    """
+    from sqlalchemy import select
+
+    from app.models.user import User
+    from app.services.notifications import scan_user
+
+    created = 0
+    scanned = 0
+    with session_scope() as db:
+        users = list(db.scalars(select(User).where(User.is_active.is_(True))))
+        for user in users:
+            scanned += 1
+            created += scan_user(db, user)
+        db.commit()
+    logger.info("task.reminders_scanned", users=scanned, created=created)
+    return {"users": scanned, "created": created}
+
+
+@celery_app.task(name="hirecraft.weekly_summary")
+def weekly_summary_task() -> dict[str, int]:
+    """Weekly: a job-search summary notification per active user."""
+    from sqlalchemy import select
+
+    from app.models.user import User
+    from app.services.dashboard import build_overview
+    from app.services.notifications import notify
+
+    sent = 0
+    now = _utcnow()
+    week_key = f"weekly:{now.isocalendar().year}-W{now.isocalendar().week}"
+    with session_scope() as db:
+        users = list(db.scalars(select(User).where(User.is_active.is_(True))))
+        for user in users:
+            overview = build_overview(db, user.id)
+            f = overview.funnel
+            if f.total == 0:
+                continue  # nothing to summarise yet
+            body = (
+                f"This week: {f.active} in progress, {f.interviewing} interviewing, "
+                f"{f.offers} offer(s). Response rate {round(f.response_rate * 100)}%. "
+                f"Keep the momentum going."
+            )
+            made = notify(
+                db,
+                user,
+                kind="weekly_summary",
+                title="Your weekly job-search summary",
+                body=body,
+                link="/analytics",
+                dedupe_key=week_key,
+                email=True,
+            )
+            if made is not None:
+                sent += 1
+        db.commit()
+    logger.info("task.weekly_summary_sent", sent=sent)
+    return {"sent": sent}
+
+
+def _utcnow():
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC)

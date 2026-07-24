@@ -13,6 +13,7 @@ from app.models.application import (
 from app.models.auth import AuthToken, AuthTokenPurpose, Session
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
+from app.models.notification import Notification
 from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile, ResumeVersion
 from app.models.user import User
@@ -26,6 +27,7 @@ __all__ = [
     "CareerProfile",
     "Job",
     "LlmUsage",
+    "Notification",
     "PipelineStatus",
     "ResumeProfile",
     "ResumeVersion",

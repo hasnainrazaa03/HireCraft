@@ -100,3 +100,16 @@ def password_reset_email(to: str, token: str, name: str | None = None) -> Email:
         f"If you didn't request it, ignore this email.\n"
     )
     return Email(to=to, subject="Reset your HireCraft password", html=html, text=text)
+
+
+def notification_email(to: str, title: str, body: str, link: str | None = None) -> Email:
+    """A generic notification/reminder email (follow-ups, interview nudges,
+    the weekly summary). The link, when present, deep-links into the app."""
+    url = f"{settings.frontend_base_url}{link}" if link else settings.frontend_base_url
+    html = _layout(
+        heading=title,
+        body_html=body or "You have a new update in HireCraft.",
+        button=("Open HireCraft", url),
+    )
+    text = f"{title}\n\n{body}\n\n{url}\n"
+    return Email(to=to, subject=f"HireCraft — {title}", html=html, text=text)

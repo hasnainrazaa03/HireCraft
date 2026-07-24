@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.application import Application
     from app.models.auth import AuthToken, Session
     from app.models.job import Job
+    from app.models.notification import Notification
     from app.models.profile import CareerProfile
     from app.models.resume import ResumeProfile
     from app.models.writing import WritingProfile
@@ -79,6 +80,9 @@ class User(Base, TimestampMixin):
     )
     writing_profile: Mapped[WritingProfile | None] = relationship(
         back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    notifications: Mapped[list[Notification]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
