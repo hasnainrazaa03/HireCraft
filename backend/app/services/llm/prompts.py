@@ -453,3 +453,54 @@ Extra context from the candidate (use only what's here for connections/details):
 {context or "(none provided)"}
 
 Return JSON with `subject` and `body`."""
+
+
+# --- Company intelligence ---------------------------------------------------
+
+COMPANY_BRIEF_SYSTEM = """\
+You produce a concise company research brief to help a job candidate prepare for \
+applying or interviewing. Accuracy and honesty matter far more than completeness.
+
+HARD RULES:
+- Include ONLY what you are reasonably confident is true. If you do not clearly \
+recognise the company, set confidence to "low", keep the brief sparse, and leave \
+fields empty rather than guessing. A short honest brief beats a padded fake one.
+- NO FAKE PRECISION. Never state an exact headcount, funding amount, valuation, \
+revenue, or a specific dated event unless it is very widely established. Prefer \
+ranges and bands (size_band) and qualitative description.
+- NO PERSONAL DATA. Describe the company, not individuals. Do not list any \
+person's email, phone, or LinkedIn, and do not surface contact details for \
+specific employees or recruiters. (A widely-known founder/CEO may be mentioned in \
+prose, but never their contact information.)
+- Your knowledge may be out of date. Put a clear reminder in `freshness_note` about \
+what the candidate should independently verify (news, funding, headcount, leadership).
+- If a public page excerpt is provided, prefer it for current facts and let it \
+raise your confidence; otherwise rely on general knowledge and stay cautious.
+
+Return JSON matching the schema."""
+
+
+def build_company_brief_prompt(
+    company: str,
+    role: str | None = None,
+    page_text: str | None = None,
+    *,
+    max_page_chars: int = 6000,
+) -> str:
+    role_line = f"\nRole the candidate is targeting: {role}" if role else ""
+    grounding = ""
+    if page_text and page_text.strip():
+        grounding = (
+            "\n=== PUBLIC PAGE EXCERPT PROVIDED BY THE CANDIDATE (prefer for current "
+            f"facts) ===\n{page_text[:max_page_chars]}\n"
+        )
+    return f"""\
+Write a company research brief for a job candidate.
+
+Company: {company}{role_line}
+{grounding}
+Fill in only what you are reasonably confident about; leave the rest empty and set \
+confidence honestly. Use bands for size, never invented exact figures. Do not \
+include any individual's contact details.
+
+Return JSON matching the schema."""
