@@ -229,6 +229,50 @@ class TestHonestTailoring:
         assert len(master.experience) == 1
 
 
+class TestConfidence:
+    """Guardrails v2 — the per-bullet truthfulness verdict."""
+
+    def test_verbatim_bullet_is_verified(self, master, experience_id):
+        # Keep one master bullet exactly as-is.
+        original = master.experience[0].highlights[0]
+        _, report = _apply(
+            master, {"experience": [{"id": experience_id, "highlights": [original]}]}
+        )
+        verdicts = {c.text: c.confidence for c in report.bullet_confidence}
+        assert verdicts[original] == "verified"
+
+    def test_clean_rewrite_is_likely(self, master, experience_id):
+        _, report = _apply(
+            master,
+            {"experience": [{"id": experience_id, "highlights": ["Engineered a React dashboard used by 200 users"]}]},
+        )
+        assert any(c.confidence == "likely" for c in report.bullet_confidence)
+
+    def test_fabricated_bullet_is_blocked(self, master, experience_id):
+        _, report = _apply(
+            master,
+            {"experience": [{"id": experience_id, "highlights": ["Scaled to 9000000 requests per second"]}]},
+        )
+        blocked = [c for c in report.bullet_confidence if c.confidence == "blocked"]
+        assert blocked and "9000000" in blocked[0].reason
+
+    def test_injected_keyword_is_blocked(self, master, experience_id, requirements):
+        _, report = _apply(
+            master,
+            {"experience": [{"id": experience_id, "highlights": ["Deployed services on Kubernetes"]}]},
+            requirements,
+        )
+        assert any(
+            c.confidence == "blocked" and "Kubernetes" in c.reason
+            for c in report.bullet_confidence
+        )
+
+    def test_report_lists_locked_facts(self, master):
+        _, report = _apply(master, {})
+        assert report.locks  # employers, dates, schools, etc.
+        assert any("Employers" in lock for lock in report.locks)
+
+
 class TestDiff:
     def test_detects_modified_highlights(self, master, experience_id):
         resume, _ = _apply(

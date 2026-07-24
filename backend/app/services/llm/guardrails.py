@@ -31,6 +31,7 @@ from app.schemas.resume import (
     Project,
 )
 from app.schemas.tailoring import (
+    BulletConfidence,
     DiffEntry,
     GuardrailReport,
     GuardrailViolation,
@@ -199,6 +200,21 @@ class GuardrailEngine:
                 if not self._claimed_in_master(kw)
             ]
         self.violations: list[GuardrailViolation] = []
+        # Per-bullet truthfulness verdicts for the final résumé (Guardrails v2).
+        self.confidence: list[BulletConfidence] = []
+
+    def _confidence(
+        self, entry_id: str, label: str, text: str, level: str, reason: str
+    ) -> None:
+        self.confidence.append(
+            BulletConfidence(
+                entry_id=entry_id,
+                label=label,
+                text=text,
+                confidence=level,  # type: ignore[arg-type]
+                reason=reason,
+            )
+        )
 
     def _claimed_in_master(self, term: str) -> bool:
         """Does the candidate's own resume support this term?"""
@@ -252,8 +268,14 @@ class GuardrailEngine:
         candidate_bullets: list[str],
         source_entry: Experience | Education | Project,
     ) -> list[str]:
-        """Return only the bullets that survive numeric and vocabulary checks."""
+        """Return only the bullets that survive numeric and vocabulary checks.
+
+        Alongside filtering, records a per-bullet confidence verdict: dropped
+        bullets are Blocked, a kept bullet with a caution is Needs-Review, one
+        identical to the master is Verified, and a clean rewrite is Likely.
+        """
         entry_numbers = _entry_metric_numbers(source_entry)
+        original = set(source_entry.highlights)
         kept: list[str] = []
 
         for bullet in candidate_bullets:
@@ -271,7 +293,13 @@ class GuardrailEngine:
                     field="highlights",
                     action="dropped",
                 )
+                self._confidence(
+                    entry_id, label, bullet, "blocked",
+                    f"Invented the number(s) {', '.join(sorted(invented))}.",
+                )
                 continue
+
+            caution: str | None = None
 
             # Present in the resume, but borrowed from a different entry.
             displaced = bullet_numbers - entry_numbers
@@ -286,6 +314,7 @@ class GuardrailEngine:
                     field="highlights",
                     action="flagged",
                 )
+                caution = f"Uses {', '.join(sorted(displaced))} from a different entry — verify it fits here."
 
             # The highest-risk failure: the model borrowed a technology straight
             # from the job description that the candidate has never claimed. This
@@ -303,6 +332,10 @@ class GuardrailEngine:
                     field="highlights",
                     action="dropped",
                 )
+                self._confidence(
+                    entry_id, label, bullet, "blocked",
+                    f"Claimed {', '.join(sorted(injected))} from the job posting, not your résumé.",
+                )
                 continue
 
             unknown_terms = _suspicious_tokens(bullet, self.vocab)
@@ -316,6 +349,21 @@ class GuardrailEngine:
                     entry_id=entry_id,
                     field="highlights",
                     action="flagged",
+                )
+                term_note = f"Mentions {', '.join(sorted(set(unknown_terms)))}, not found in your résumé."
+                caution = f"{caution} {term_note}".strip() if caution else term_note
+
+            # Classify the surviving bullet.
+            if caution:
+                self._confidence(entry_id, label, bullet, "needs_review", caution)
+            elif bullet in original:
+                self._confidence(
+                    entry_id, label, bullet, "verified", "Unchanged from your résumé.",
+                )
+            else:
+                self._confidence(
+                    entry_id, label, bullet, "likely",
+                    "Reworded; every number and named thing traces to your résumé.",
                 )
 
             kept.append(bullet)
@@ -555,6 +603,7 @@ class GuardrailEngine:
                 self.requirements.all_keywords() if self.requirements else []
             ),
             keywords_verified=self._verify_keywords(result),
+            bullet_confidence=self.confidence,
         )
         return result, report
 

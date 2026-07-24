@@ -69,10 +69,45 @@ class GuardrailViolation(TailoringModel):
     action: Literal["rejected", "reverted_to_master", "dropped", "flagged"] = "flagged"
 
 
+Confidence = Literal["verified", "likely", "needs_review", "blocked"]
+
+
+class BulletConfidence(TailoringModel):
+    """The truthfulness verdict for one bullet in the tailored résumé.
+
+    - verified: identical to a bullet in your master résumé.
+    - likely: reworded, but every number and named thing traces to your résumé.
+    - needs_review: kept, but something (a borrowed metric, an unfamiliar term)
+      is worth a human glance before sending.
+    - blocked: removed entirely because it made a claim the master can't support.
+    """
+
+    entry_id: str | None
+    label: str
+    text: str
+    confidence: Confidence
+    reason: str
+
+
+# The factual categories the engine guarantees the model cannot alter. Surfaced
+# so the user can see exactly what is locked, not just trust that it is.
+LOCKS: tuple[str, ...] = (
+    "Employers & job titles",
+    "Employment dates",
+    "Schools, degrees & GPA",
+    "Project names",
+    "Contact details",
+    "Awards, certifications & publications",
+)
+
+
 class GuardrailReport(TailoringModel):
     violations: list[GuardrailViolation] = Field(default_factory=list)
     keywords_requested: list[str] = Field(default_factory=list)
     keywords_verified: list[str] = Field(default_factory=list)
+    # Per-bullet truthfulness verdicts for the final résumé (Guardrails v2).
+    bullet_confidence: list[BulletConfidence] = Field(default_factory=list)
+    locks: list[str] = Field(default_factory=lambda: list(LOCKS))
 
     @property
     def has_errors(self) -> bool:
