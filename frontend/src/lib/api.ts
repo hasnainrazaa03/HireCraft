@@ -299,6 +299,49 @@ export interface ResumeParseResponse {
   source_filename: string;
 }
 
+export interface ScoreMetric {
+  key: string;
+  label: string;
+  score: number;
+  detail: string;
+}
+
+export interface Finding {
+  category: string;
+  severity: "good" | "info" | "warning" | "critical";
+  title: string;
+  detail: string;
+  location: string | null;
+}
+
+export interface AtsCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ResumeAnalysis {
+  overall_score: number;
+  grade: "Excellent" | "Strong" | "Fair" | "Needs work";
+  metrics: ScoreMetric[];
+  findings: Finding[];
+  ats_checks: AtsCheck[];
+  ats_score: number;
+  bullet_count: number;
+  quantified_bullets: number;
+  estimated_pages: number;
+}
+
+export type Confidence = "verified" | "likely" | "needs_review" | "blocked";
+
+export interface BulletConfidence {
+  entry_id: string | null;
+  label: string;
+  text: string;
+  confidence: Confidence;
+  reason: string;
+}
+
 export interface MasterResume {
   schema_version: string;
   basics: {
@@ -397,6 +440,8 @@ export interface ApplicationDetail {
     violations: GuardrailViolation[];
     keywords_requested: string[];
     keywords_verified: string[];
+    bullet_confidence?: BulletConfidence[];
+    locks?: string[];
   } | null;
   total_input_tokens: number;
   total_output_tokens: number;

@@ -7,13 +7,15 @@ import {
   type ResumeProfileSummary,
   type ResumeVersionSummary,
   type ResumeParseResponse,
+  type ResumeAnalysis,
   type TemplateInfo,
 } from "../lib/api";
 import { Modal, Spinner } from "../components/ui";
 import { TagInput } from "../components/TagInput";
 import { ResumeBuilder, type ResumeContent } from "../components/ResumeBuilder";
+import { ScorePanel } from "../components/ScorePanel";
 import { useToast } from "../lib/toast";
-import { IconHistory, IconUpload, IconResume } from "../components/icons";
+import { IconHistory, IconUpload, IconResume, IconChart } from "../components/icons";
 
 const STARTER: ResumeContent = {
   basics: {
@@ -57,6 +59,7 @@ export default function ResumesPage() {
 
   const [historyFor, setHistoryFor] = useState<ResumeProfileSummary | null>(null);
   const [previewFor, setPreviewFor] = useState<ResumeProfileSummary | null>(null);
+  const [scoreFor, setScoreFor] = useState<ResumeProfileSummary | null>(null);
   const [importing, setImporting] = useState(false);
 
   const { data: profiles = [], isLoading } = useQuery({
@@ -251,6 +254,9 @@ export default function ResumesPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
+                <button onClick={() => setScoreFor(p)} className="btn-ghost btn-sm">
+                  <IconChart className="h-4 w-4" /> Score
+                </button>
                 <button onClick={() => setPreviewFor(p)} className="btn-ghost btn-sm">Preview</button>
                 <ExportMenu profileId={p.id} name={p.name} />
                 {p.current_version > 1 && (
@@ -282,7 +288,26 @@ export default function ResumesPage() {
         />
       )}
       {previewFor && <PreviewModal profile={previewFor} templates={templates} onClose={() => setPreviewFor(null)} />}
+      {scoreFor && <ScoreModal profile={scoreFor} onClose={() => setScoreFor(null)} />}
     </div>
+  );
+}
+
+function ScoreModal({ profile, onClose }: { profile: ResumeProfileSummary; onClose: () => void }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["analysis", profile.id],
+    queryFn: () => api.get<ResumeAnalysis>(`/resumes/${profile.id}/analysis`),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Score — ${profile.name}`} wide>
+      {isLoading ? (
+        <div className="py-10 text-center"><Spinner className="mx-auto h-6 w-6" /></div>
+      ) : isError || !data ? (
+        <div className="py-10 text-center text-sm text-danger">Couldn't score this résumé.</div>
+      ) : (
+        <ScorePanel analysis={data} />
+      )}
+    </Modal>
   );
 }
 
@@ -294,18 +319,38 @@ function Editor(props: any) {
     mode, switchMode, content, setContent, jsonDraft, setJsonDraft,
     error, saving, onSave, onCancel, editingId,
   } = props;
+  const toast = useToast();
+  const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
+
+  const analyze = useMutation({
+    mutationFn: () => {
+      const c = mode === "json" ? JSON.parse(jsonDraft) : content;
+      return api.post<ResumeAnalysis>("/resumes/analyze", c);
+    },
+    onSuccess: setAnalysis,
+    onError: (e) => toast.error("Couldn't score", e instanceof ApiError ? e.message : "Fix any errors first."),
+  });
 
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">{editingId ? "Edit résumé" : "New résumé"}</h1>
         <div className="flex gap-2">
+          <button onClick={() => analyze.mutate()} disabled={analyze.isPending} className="btn-secondary">
+            <IconChart className="h-4 w-4" /> {analyze.isPending ? "Scoring…" : "Score"}
+          </button>
           <button onClick={onCancel} className="btn-secondary">Cancel</button>
           <button onClick={onSave} disabled={saving || !name.trim()} className="btn-primary">
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
+
+      {analysis && (
+        <Modal open onClose={() => setAnalysis(null)} title="Résumé score" wide>
+          <ScorePanel analysis={analysis} />
+        </Modal>
+      )}
 
       <div className="card mb-5 p-5">
         <div className="grid gap-4 sm:grid-cols-3">
