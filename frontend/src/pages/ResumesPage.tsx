@@ -6,87 +6,80 @@ import {
   type ResumeProfile,
   type ResumeProfileSummary,
   type ResumeVersionSummary,
+  type ResumeParseResponse,
+  type TemplateInfo,
 } from "../lib/api";
-import { Modal } from "../components/ui";
+import { Modal, Spinner } from "../components/ui";
 import { TagInput } from "../components/TagInput";
+import { ResumeBuilder, type ResumeContent } from "../components/ResumeBuilder";
 import { useToast } from "../lib/toast";
-import { IconHistory } from "../components/icons";
+import { IconHistory, IconUpload, IconResume } from "../components/icons";
 
-const STARTER_RESUME = {
+const STARTER: ResumeContent = {
   basics: {
-    name: "Your Name",
-    email: "you@example.com",
-    phone: "+1 (555) 000-0000",
-    location: "City, State",
-    github: "https://github.com/yourhandle",
-    linkedin: "https://linkedin.com/in/yourhandle",
+    name: "",
+    email: "",
+    location: "",
     summary: "One or two sentences about what you do.",
   },
   education: [
-    {
-      institution: "Your University",
-      degree: "B.S.",
-      field_of_study: "Computer Science",
-      start_date: "2022",
-      end_date: "2026",
-      gpa: "3.8",
-      coursework: ["Data Structures", "Operating Systems"],
-    },
+    { institution: "", degree: "B.S.", field_of_study: "Computer Science", start_date: "2022", end_date: "2026" },
   ],
   experience: [
     {
-      company: "Company Name",
-      title: "Software Engineering Intern",
-      location: "City, State",
+      company: "",
+      title: "",
       start_date: "2024-05",
       end_date: "2024-08",
-      highlights: [
-        "Describe what you built and its measurable impact.",
-        "Include real numbers — HireCraft can never invent them for you.",
-      ],
-      technologies: ["Python", "React"],
+      highlights: ["Describe what you built and its measurable impact — real numbers only."],
+      technologies: [],
     },
   ],
-  projects: [
-    {
-      name: "Project Name",
-      description: "One line on what it does.",
-      url: "https://github.com/yourhandle/project",
-      highlights: ["What you built and why it mattered."],
-      technologies: ["TypeScript"],
-    },
-  ],
-  skills: [
-    { category: "Languages", items: ["Python", "JavaScript", "SQL"] },
-    { category: "Tools", items: ["Git", "Docker", "PostgreSQL"] },
-  ],
+  projects: [],
+  skills: [{ category: "Languages", items: ["Python"] }],
 };
+
+type Mode = "builder" | "json";
 
 export default function ResumesPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const [editing, setEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [name, setName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [template, setTemplate] = useState("modern");
+  const [content, setContent] = useState<ResumeContent>(STARTER);
+  const [mode, setMode] = useState<Mode>("builder");
+  const [jsonDraft, setJsonDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+
   const [historyFor, setHistoryFor] = useState<ResumeProfileSummary | null>(null);
+  const [previewFor, setPreviewFor] = useState<ResumeProfileSummary | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["resumes"],
     queryFn: () => api.get<ResumeProfileSummary[]>("/resumes"),
   });
 
+  const { data: templates = [] } = useQuery({
+    queryKey: ["templates"],
+    queryFn: () => api.get<TemplateInfo[]>("/resumes/templates"),
+  });
+
   const save = useMutation({
     mutationFn: async () => {
-      const content = JSON.parse(draft);
-      if (editingId) {
-        return api.patch(`/resumes/${editingId}`, { name, content, tags });
-      }
-      return api.post("/resumes", { name, content, tags });
+      const body = { name, content: currentContent(), tags, template };
+      return editingId
+        ? api.patch(`/resumes/${editingId}`, body)
+        : api.post("/resumes", body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["resumes"] });
       close();
+      toast.success("Résumé saved");
     },
     onError: (err) => {
       if (err instanceof SyntaxError) setError(`Invalid JSON: ${err.message}`);
@@ -98,8 +91,7 @@ export default function ResumesPage() {
   const remove = useMutation({
     mutationFn: (id: string) => api.delete(`/resumes/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["resumes"] }),
-    onError: (err) =>
-      alert(err instanceof ApiError ? err.message : "Could not delete."),
+    onError: (err) => toast.error("Couldn't delete", err instanceof ApiError ? err.message : undefined),
   });
 
   const makeDefault = useMutation({
@@ -107,184 +99,171 @@ export default function ResumesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["resumes"] }),
   });
 
+  function currentContent(): ResumeContent {
+    if (mode === "json") return JSON.parse(jsonDraft);
+    return content;
+  }
+
   function close() {
+    setEditing(false);
     setEditingId(null);
-    setDraft("");
     setName("");
     setTags([]);
+    setTemplate("modern");
+    setContent(STARTER);
+    setMode("builder");
+    setJsonDraft("");
     setError(null);
   }
 
   function startNew() {
-    setEditingId(null);
+    close();
     setName("Master Resume");
-    setTags([]);
-    setDraft(JSON.stringify(STARTER_RESUME, null, 2));
-    setError(null);
+    setContent(STARTER);
+    setEditing(true);
   }
 
-  async function startEdit(id: string) {
-    const profile = await api.get<ResumeProfile>(`/resumes/${id}`);
-    setEditingId(id);
-    setName(profile.name);
-    setTags(profile.tags ?? []);
-    setDraft(JSON.stringify(profile.content, null, 2));
+  async function startEdit(p: ResumeProfileSummary) {
+    const full = await api.get<ResumeProfile>(`/resumes/${p.id}`);
+    setEditingId(p.id);
+    setName(full.name);
+    setTags(full.tags ?? []);
+    setTemplate(full.template ?? "modern");
+    setContent(full.content as unknown as ResumeContent);
+    setMode("builder");
     setError(null);
+    setEditing(true);
   }
 
-  async function onFile(file: File) {
-    const text = await file.text();
-    setEditingId(null);
-    setName(file.name.replace(/\.json$/i, "").slice(0, 120));
-    setTags([]);
-    setDraft(text);
+  // Switching modes keeps the two representations in sync.
+  function switchMode(next: Mode) {
     setError(null);
+    if (next === "json" && mode === "builder") {
+      setJsonDraft(JSON.stringify(content, null, 2));
+    } else if (next === "builder" && mode === "json") {
+      try {
+        setContent(JSON.parse(jsonDraft));
+      } catch (e) {
+        setError(`Fix the JSON before switching: ${(e as Error).message}`);
+        return;
+      }
+    }
+    setMode(next);
   }
 
-  const editorOpen = draft !== "";
+  async function onImport(file: File) {
+    setImporting(true);
+    setError(null);
+    try {
+      if (file.name.toLowerCase().endsWith(".json")) {
+        // Local JSON: load straight into the builder without a round-trip.
+        setContent(JSON.parse(await file.text()));
+      } else {
+        const res = await api.upload<ResumeParseResponse>("/resumes/parse", file);
+        setContent(res.content as unknown as ResumeContent);
+        toast.success("Résumé imported", "Review and edit before saving.");
+      }
+      setName((n) => n || file.name.replace(/\.[^.]+$/, "").slice(0, 120));
+      setMode("builder");
+      setEditing(true);
+    } catch (err) {
+      toast.error("Import failed", err instanceof ApiError ? err.message : "Could not read that file.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <Editor
+        name={name} setName={setName}
+        tags={tags} setTags={setTags}
+        template={template} setTemplate={setTemplate}
+        templates={templates}
+        mode={mode} switchMode={switchMode}
+        content={content} setContent={setContent}
+        jsonDraft={jsonDraft} setJsonDraft={setJsonDraft}
+        error={error}
+        saving={save.isPending}
+        onSave={() => { setError(null); save.mutate(); }}
+        onCancel={close}
+        editingId={editingId}
+      />
+    );
+  }
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Master resumes</h1>
-          <p className="text-sm text-muted">
-            Your source of truth. Every tailored resume is derived from this.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">Résumés</h1>
+          <p className="text-sm text-muted">Your source of truth. Every tailored résumé derives from these.</p>
         </div>
-        {!editorOpen && (
-          <div className="flex gap-2">
-            <label className="btn-secondary cursor-pointer">
-              Upload JSON
-              <input
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void onFile(file);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-            <button onClick={startNew} className="btn-primary">
-              New resume
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <label className="btn-secondary cursor-pointer">
+            {importing ? <Spinner className="h-4 w-4" /> : <IconUpload className="h-4 w-4" />}
+            Import file
+            <input
+              type="file"
+              accept=".pdf,.docx,.tex,.json,.txt,.md"
+              className="hidden"
+              disabled={importing}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImport(f); e.target.value = ""; }}
+            />
+          </label>
+          <button onClick={startNew} className="btn-primary">New résumé</button>
+        </div>
       </div>
 
-      {editorOpen ? (
-        <div className="card p-5">
-          <div className="mb-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="label" htmlFor="resumeName">Name</label>
-              <input
-                id="resumeName"
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label">Tags</label>
-              <TagInput value={tags} onChange={setTags} placeholder="SWE, ML, New Grad…" />
-            </div>
-          </div>
-
-          {editingId && (
-            <p className="mb-3 text-xs text-subtle">
-              Saving content changes creates a new version you can roll back to.
-            </p>
-          )}
-
-          <label className="label" htmlFor="resumeJson">
-            Master Resume JSON
-          </label>
-          <textarea
-            id="resumeJson"
-            className="input min-h-[460px] font-mono text-xs leading-relaxed"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            spellCheck={false}
-          />
-
-          {error && (
-            <div
-              role="alert"
-              className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
-            >
-              {error}
-            </div>
-          )}
-
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={() => {
-                setError(null);
-                save.mutate();
-              }}
-              disabled={save.isPending || !name.trim()}
-              className="btn-primary"
-            >
-              {save.isPending ? "Saving…" : "Save"}
-            </button>
-            <button onClick={close} className="btn-secondary">
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="py-16 text-center text-subtle">Loading…</div>
       ) : profiles.length === 0 ? (
         <div className="card p-10 text-center">
-          <h2 className="text-lg font-semibold">No master resume yet</h2>
+          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-brand-500/12 text-brand-300">
+            <IconResume className="h-6 w-6" />
+          </div>
+          <h2 className="text-lg font-semibold">No résumé yet</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-            Start from the template and replace it with your real experience. Include
-            genuine metrics — the guardrails will not let the AI invent any.
+            Import an existing résumé (PDF, Word, LaTeX) or build one from scratch. Include
+            real metrics — the guardrails won't let the AI invent any.
           </p>
-          <button onClick={startNew} className="btn-primary mt-6">
-            Create from template
-          </button>
+          <div className="mt-6 flex justify-center gap-3">
+            <label className="btn-secondary cursor-pointer">
+              Import file
+              <input type="file" accept=".pdf,.docx,.tex,.json,.txt,.md" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImport(f); e.target.value = ""; }} />
+            </label>
+            <button onClick={startNew} className="btn-primary">Build from scratch</button>
+          </div>
         </div>
       ) : (
         <div className="space-y-2">
-          {profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className="card flex flex-wrap items-center justify-between gap-3 p-4"
-            >
+          {profiles.map((p) => (
+            <div key={p.id} className="card flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{profile.name}</span>
-                  {profile.is_default && <span className="badge-brand">Default</span>}
-                  {profile.tags?.map((t) => (
-                    <span key={t} className="badge-muted">{t}</span>
-                  ))}
+                  <span className="font-medium">{p.name}</span>
+                  {p.is_default && <span className="badge-brand">Default</span>}
+                  <span className="badge-muted capitalize">{p.template}</span>
+                  {p.tags?.map((t) => <span key={t} className="badge-muted">{t}</span>)}
                 </div>
                 <div className="mt-0.5 text-xs text-subtle">
-                  v{profile.current_version} · updated{" "}
-                  {new Date(profile.updated_at).toLocaleDateString()}
+                  v{p.current_version} · updated {new Date(p.updated_at).toLocaleDateString()}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                {profile.current_version > 1 && (
-                  <button onClick={() => setHistoryFor(profile)} className="btn-ghost btn-sm">
+                <button onClick={() => setPreviewFor(p)} className="btn-ghost btn-sm">Preview</button>
+                <ExportMenu profileId={p.id} name={p.name} />
+                {p.current_version > 1 && (
+                  <button onClick={() => setHistoryFor(p)} className="btn-ghost btn-sm">
                     <IconHistory className="h-4 w-4" /> History
                   </button>
                 )}
-                {!profile.is_default && (
-                  <button onClick={() => makeDefault.mutate(profile.id)} className="btn-secondary btn-sm">
-                    Make default
-                  </button>
+                {!p.is_default && (
+                  <button onClick={() => makeDefault.mutate(p.id)} className="btn-secondary btn-sm">Make default</button>
                 )}
-                <button onClick={() => void startEdit(profile.id)} className="btn-secondary btn-sm">
-                  Edit
-                </button>
+                <button onClick={() => void startEdit(p)} className="btn-secondary btn-sm">Edit</button>
                 <button
-                  onClick={() => {
-                    if (confirm(`Delete "${profile.name}"?`)) remove.mutate(profile.id);
-                  }}
+                  onClick={() => { if (confirm(`Delete "${p.name}"?`)) remove.mutate(p.id); }}
                   className="btn-danger btn-sm"
                 >
                   Delete
@@ -299,47 +278,176 @@ export default function ResumesPage() {
         <VersionHistoryModal
           profile={historyFor}
           onClose={() => setHistoryFor(null)}
-          onRestored={() => {
-            queryClient.invalidateQueries({ queryKey: ["resumes"] });
-            setHistoryFor(null);
-          }}
+          onRestored={() => { queryClient.invalidateQueries({ queryKey: ["resumes"] }); setHistoryFor(null); }}
         />
+      )}
+      {previewFor && <PreviewModal profile={previewFor} templates={templates} onClose={() => setPreviewFor(null)} />}
+    </div>
+  );
+}
+
+// --- Editor ------------------------------------------------------------------
+
+function Editor(props: any) {
+  const {
+    name, setName, tags, setTags, template, setTemplate, templates,
+    mode, switchMode, content, setContent, jsonDraft, setJsonDraft,
+    error, saving, onSave, onCancel, editingId,
+  } = props;
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">{editingId ? "Edit résumé" : "New résumé"}</h1>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="btn-secondary">Cancel</button>
+          <button onClick={onSave} disabled={saving || !name.trim()} className="btn-primary">
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      <div className="card mb-5 p-5">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-1">
+            <label className="label">Name</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="sm:col-span-1">
+            <label className="label">Template</label>
+            <select className="input" value={template} onChange={(e) => setTemplate(e.target.value)}>
+              {templates.map((t: TemplateInfo) => <option key={t.id} value={t.id} className="bg-surface">{t.name}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-1">
+            <label className="label">Tags</label>
+            <TagInput value={tags} onChange={setTags} placeholder="SWE, ML…" />
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center justify-between">
+        <div className="segment">
+          {(["builder", "json"] as Mode[]).map((m) => (
+            <button key={m} onClick={() => switchMode(m)} className={`segment-item ${mode === m ? "segment-item-active" : ""}`}>
+              {m === "builder" ? "Builder" : "JSON"}
+            </button>
+          ))}
+        </div>
+        {editingId && (
+          <span className="text-xs text-subtle">Saving content changes creates a new version.</span>
+        )}
+      </div>
+
+      {error && (
+        <div role="alert" className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger">{error}</div>
+      )}
+
+      {mode === "builder" ? (
+        <ResumeBuilder value={content} onChange={setContent} />
+      ) : (
+        <textarea
+          className="input min-h-[520px] font-mono text-xs leading-relaxed"
+          value={jsonDraft}
+          onChange={(e) => setJsonDraft(e.target.value)}
+          spellCheck={false}
+        />
+      )}
+
+      <div className="mt-6 flex justify-end gap-2">
+        <button onClick={onCancel} className="btn-secondary">Cancel</button>
+        <button onClick={onSave} disabled={saving || !name.trim()} className="btn-primary">
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Export menu -------------------------------------------------------------
+
+function ExportMenu({ profileId, name }: { profileId: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  const toast = useToast();
+  const safe = name.replace(/\s+/g, "_");
+
+  async function dl(fmt: string) {
+    setOpen(false);
+    try {
+      await api.download(`/resumes/${profileId}/render.${fmt}`, `${safe}.${fmt}`);
+    } catch (e) {
+      toast.error("Export failed", e instanceof ApiError ? e.message : undefined);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)} className="btn-secondary btn-sm">Export</button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-1 w-36 rounded-xl border border-white/[0.1] bg-canvas-raised p-1 shadow-soft">
+            {[["pdf", "PDF"], ["docx", "Word (.docx)"], ["tex", "LaTeX"], ["json", "JSON"]].map(([fmt, label]) => (
+              <button key={fmt} onClick={() => dl(fmt)} className="nav-item w-full text-sm">{label}</button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function VersionHistoryModal({
-  profile,
-  onClose,
-  onRestored,
-}: {
-  profile: ResumeProfileSummary;
-  onClose: () => void;
-  onRestored: () => void;
-}) {
+// --- Preview modal -----------------------------------------------------------
+
+function PreviewModal({ profile, templates, onClose }: { profile: ResumeProfileSummary; templates: TemplateInfo[]; onClose: () => void }) {
+  const [template, setTemplate] = useState(profile.template);
+  const { data: url, isFetching, isError } = useQuery({
+    queryKey: ["preview", profile.id, template],
+    queryFn: async () => {
+      const blob = await api.blob(`/resumes/${profile.id}/render.pdf?template=${template}`);
+      return URL.createObjectURL(blob);
+    },
+    staleTime: 0,
+  });
+
+  return (
+    <Modal open onClose={onClose} title={`Preview — ${profile.name}`} wide>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-sm text-muted">Template:</span>
+        <select className="input max-w-[12rem]" value={template} onChange={(e) => setTemplate(e.target.value)}>
+          {templates.map((t) => <option key={t.id} value={t.id} className="bg-surface">{t.name}</option>)}
+        </select>
+      </div>
+      <div className="h-[70vh] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
+        {isFetching ? (
+          <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>
+        ) : isError ? (
+          <div className="flex h-full items-center justify-center text-sm text-danger">Couldn't render this résumé.</div>
+        ) : (
+          <iframe title="Résumé preview" src={url} className="h-full w-full" />
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// --- Version history ---------------------------------------------------------
+
+function VersionHistoryModal({ profile, onClose, onRestored }: { profile: ResumeProfileSummary; onClose: () => void; onRestored: () => void }) {
   const toast = useToast();
   const { data: versions = [], isLoading } = useQuery({
     queryKey: ["resume-versions", profile.id],
     queryFn: () => api.get<ResumeVersionSummary[]>(`/resumes/${profile.id}/versions`),
   });
-
   const restore = useMutation({
-    mutationFn: (version: number) =>
-      api.post(`/resumes/${profile.id}/versions/${version}/restore`),
-    onSuccess: () => {
-      toast.success("Restored", "The résumé was rolled back. This is undoable.");
-      onRestored();
-    },
+    mutationFn: (version: number) => api.post(`/resumes/${profile.id}/versions/${version}/restore`),
+    onSuccess: () => { toast.success("Restored", "The résumé was rolled back — this is undoable."); onRestored(); },
     onError: (e) => toast.error("Couldn't restore", e instanceof ApiError ? e.message : undefined),
   });
 
   return (
     <Modal open onClose={onClose} title={`Version history — ${profile.name}`} wide>
-      <p className="mb-4 text-sm text-muted">
-        Each edit is snapshotted. Restoring is itself undoable — the current version
-        is saved before rolling back.
-      </p>
+      <p className="mb-4 text-sm text-muted">Each edit is snapshotted. Restoring is itself undoable — the current version is saved before rolling back.</p>
       {isLoading ? (
         <div className="py-6 text-center text-sm text-subtle">Loading…</div>
       ) : versions.length === 0 ? (
@@ -354,17 +462,9 @@ function VersionHistoryModal({
             <div key={v.id} className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-surface-2 px-4 py-2.5">
               <div>
                 <div className="text-sm font-medium">Version {v.version}</div>
-                <div className="text-xs text-subtle">
-                  {v.label ? `${v.label} · ` : ""}{new Date(v.created_at).toLocaleString()}
-                </div>
+                <div className="text-xs text-subtle">{v.label ? `${v.label} · ` : ""}{new Date(v.created_at).toLocaleString()}</div>
               </div>
-              <button
-                onClick={() => restore.mutate(v.version)}
-                disabled={restore.isPending}
-                className="btn-secondary btn-sm"
-              >
-                Restore
-              </button>
+              <button onClick={() => restore.mutate(v.version)} disabled={restore.isPending} className="btn-secondary btn-sm">Restore</button>
             </div>
           ))}
         </div>

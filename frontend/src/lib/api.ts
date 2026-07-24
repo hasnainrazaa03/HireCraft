@@ -129,8 +129,15 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** Multipart file upload. Content-Type is left to the browser (boundary). */
+  upload: <T>(path: string, file: File, field = "file") => {
+    const form = new FormData();
+    form.append(field, file);
+    return request<T>(path, { method: "POST", body: form });
+  },
 
   download: downloadFile,
+  blob: fetchBlob,
 };
 
 /**
@@ -140,6 +147,21 @@ export const api = {
  * "Download PDF" into a dead button after the TTL elapses, even though every
  * other call on the page silently refreshes and succeeds.
  */
+/** Fetch a binary response with auth + one-shot refresh, returning the Blob. */
+async function fetchBlob(path: string, retry = true): Promise<Blob> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${tokens.access ?? ""}` },
+  });
+  if (res.status === 401 && retry && tokens.refresh) {
+    if (await tryRefresh()) return fetchBlob(path, false);
+    tokens.clear();
+    window.dispatchEvent(new Event("hirecraft:logout"));
+    throw new ApiError("Your session expired. Please sign in again.", 401);
+  }
+  if (!res.ok) throw await parseError(res);
+  return res.blob();
+}
+
 async function downloadFile(
   path: string,
   fallbackName: string,
@@ -197,6 +219,7 @@ export interface ResumeProfileSummary {
   name: string;
   is_default: boolean;
   tags: string[];
+  template: string;
   current_version: number;
   updated_at: string;
 }
@@ -262,6 +285,18 @@ export interface WritingProfile {
 export interface ApiKeyStatus {
   configured: boolean;
   hint: string | null;
+}
+
+export interface TemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface ResumeParseResponse {
+  content: MasterResume;
+  cost_usd: number;
+  source_filename: string;
 }
 
 export interface MasterResume {
