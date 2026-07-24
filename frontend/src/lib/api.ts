@@ -646,3 +646,36 @@ export interface OutreachResult {
   cost_usd: number;
   warnings: string[];
 }
+
+// --- Company intelligence ---------------------------------------------------
+
+export interface CompanyBrief {
+  overview: string;
+  industry: string | null;
+  size_band: string | null;
+  headquarters: string | null;
+  known_for: string[];
+  likely_tech_stack: string[];
+  culture_signals: string[];
+  recent_context: string[];
+  interview_angles: string[];
+  smart_questions: string[];
+  watch_outs: string[];
+  confidence: "high" | "medium" | "low";
+  freshness_note: string;
+}
+
+export interface ContactGuidance {
+  steps: string[];
+  note: string;
+}
+
+export interface CompanyBriefResponse {
+  company: string;
+  role: string | null;
+  brief: CompanyBrief;
+  contact_guidance: ContactGuidance;
+  used_grounding: boolean;
+  cost_usd: number;
+  disclaimer: string;
+}

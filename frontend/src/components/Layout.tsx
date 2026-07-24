@@ -22,6 +22,7 @@ import {
   IconLogout,
   IconChevronDown,
   IconUser,
+  IconUsers,
   IconPen,
 } from "./icons";
 
@@ -72,6 +73,7 @@ const NAV = [
   { to: "/profile", label: "Career Profile", icon: IconUser, end: false },
   { to: "/writing", label: "Writing Voice", icon: IconPen, end: false },
   { to: "/cover-letters", label: "Cover Letters", icon: IconLetter, end: false },
+  { to: "/companies", label: "Company Intel", icon: IconUsers, end: false },
   { to: "/jobs", label: "Job Search", icon: IconSearch, end: false },
   { to: "/analytics", label: "Analytics", icon: IconChart, end: false },
   { to: "/templates", label: "Templates", icon: IconTemplate, end: false },
@@ -86,6 +88,7 @@ const LIVE_ROUTES = new Set([
   "/profile",
   "/writing",
   "/cover-letters",
+  "/companies",
   "/analytics",
   "/new",
 ]);
