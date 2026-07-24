@@ -13,6 +13,7 @@ import json
 
 from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
+from app.schemas.writing import VoiceProfile
 
 EXTRACTOR_SYSTEM = """\
 You are an expert technical recruiter who reads job postings and extracts their \
@@ -264,11 +265,66 @@ Return a JSON object with a `paragraphs` array of strings.
 """
 
 
+# Tone presets for cover letters. Each is a short instruction spliced into the
+# prompt; the truthfulness constraints never change, only the register.
+COVER_LETTER_TONES: dict[str, str] = {
+    "traditional": "Classic and professional. Standard business-letter register, "
+    "measured and respectful, no slang.",
+    "modern": "Confident and conversational without being casual. Warm, direct, "
+    "human — how a strong candidate writes today.",
+    "short": "Very concise: 2 tight paragraphs, under 180 words. Every sentence "
+    "earns its place. No throat-clearing.",
+    "enthusiastic": "Genuinely energetic and motivated about this specific role "
+    "and company, while staying grounded in real experience.",
+    "formal": "Highly formal and precise. Suited to enterprise, legal, finance, or "
+    "government roles. Reserved and polished.",
+    "startup": "Energetic, scrappy, outcomes-focused. Speaks to ownership, speed, "
+    "and impact. Plain language, no corporate stiffness.",
+    "research": "Thoughtful and rigorous, foregrounding depth, methods, and "
+    "intellectual contribution. Suited to research or academic-adjacent roles.",
+    "academic": "Scholarly and detailed. Emphasizes research, teaching, and "
+    "publications; formal academic register.",
+}
+
+DEFAULT_COVER_LETTER_TONE = "modern"
+
+
+def _voice_block(voice: VoiceProfile | None) -> str:
+    """Instruction block that makes the model write in the user's own voice."""
+    if voice is None:
+        return ""
+    parts = [
+        "\n=== WRITE IN THE CANDIDATE'S OWN VOICE ===",
+        "Match this personal writing voice as closely as the truthfulness rules allow:",
+    ]
+    if voice.summary:
+        parts.append(f"- Voice: {voice.summary}")
+    if voice.tone:
+        parts.append(f"- Tone: {voice.tone}")
+    if voice.formality and voice.formality != "unknown":
+        parts.append(f"- Formality: {voice.formality}")
+    if voice.sentence_style:
+        parts.append(f"- Sentence style: {voice.sentence_style}")
+    if voice.vocabulary:
+        parts.append(f"- Favors words/phrases like: {', '.join(voice.vocabulary[:15])}")
+    if voice.habits:
+        parts.append(f"- Habits to keep: {'; '.join(voice.habits[:8])}")
+    if voice.avoid:
+        parts.append(f"- Never do: {'; '.join(voice.avoid[:8])}")
+    parts.append(
+        "The voice governs style only. It never licenses a claim the résumé does "
+        "not support."
+    )
+    return "\n".join(parts)
+
+
 def build_cover_letter_prompt(
     resume: MasterResume,
     requirements: JobRequirements,
     job_text: str,
     *,
+    tone: str | None = None,
+    voice: VoiceProfile | None = None,
     max_job_chars: int = 3500,
 ) -> str:
     highlights = [
@@ -279,9 +335,15 @@ def build_cover_letter_prompt(
         f"- {p.name}: " + "; ".join(p.highlights[:2]) for p in resume.projects[:3]
     ]
     skills = ", ".join(item for g in resume.skills for item in g.items)
+    tone_key = tone if tone in COVER_LETTER_TONES else DEFAULT_COVER_LETTER_TONE
+    tone_line = COVER_LETTER_TONES[tone_key]
 
     return f"""\
 Write a cover letter for this candidate.
+
+=== TONE ===
+{tone_line}
+{_voice_block(voice)}
 
 Candidate: {resume.basics.name}
 Target role: {requirements.title or "the advertised role"}
@@ -299,3 +361,95 @@ Job posting excerpt:
 {job_text[:max_job_chars]}
 
 Return JSON with a `paragraphs` array."""
+
+
+# --- Short-form outreach ----------------------------------------------------
+
+OUTREACH_SYSTEM = """\
+You are drafting a short, specific, professional outreach message for a job \
+seeker to send themselves. You are ghost-writing as the candidate.
+
+ABSOLUTE CONSTRAINTS — mechanically verified afterward:
+- Use ONLY facts in the candidate's résumé. Never invent metrics, employers, \
+technologies, titles, or credentials.
+- Never claim a skill the candidate has not listed.
+- No fabricated personal connections ("we met at…") unless the provided context \
+states it.
+- Be genuinely specific: reference the candidate's real, relevant experience and \
+the actual company/role. No generic filler, no "I hope this email finds you well".
+- Sound like a real person, not a template. Concise and easy to reply to.
+
+Return a JSON object with a `subject` (a short line; empty string if the channel \
+has no subject) and a `body` (the message, with `\\n\\n` between paragraphs)."""
+
+# kind -> (label, format guidance)
+OUTREACH_KINDS: dict[str, str] = {
+    "recruiter_email": "A cold email to a recruiter about a specific open role. "
+    "Subject line + 2 short paragraphs: who you are and why you fit, then a light "
+    "ask for a conversation. Under 150 words.",
+    "linkedin_connection": "A LinkedIn connection request note. NO subject "
+    "(empty string). One short, warm paragraph under 300 characters — LinkedIn's "
+    "hard limit. Personal and specific, not salesy.",
+    "follow_up": "A polite follow-up after applying or after no reply. Subject + "
+    "2 brief paragraphs: reaffirm interest, add one concrete reason you'd be a fit, "
+    "and a soft close. Under 130 words.",
+    "thank_you": "A thank-you note after an interview. Subject + 2 short "
+    "paragraphs: specific appreciation, one thing that reinforced your interest, "
+    "and a forward-looking close. Warm and sincere, under 150 words.",
+    "interview_followup": "A follow-up checking in on status after an interview "
+    "with no response. Subject + 2 short paragraphs, courteous and confident, not "
+    "pushy. Under 130 words.",
+    "referral_request": "A message asking a contact (or alum) for a referral. "
+    "Subject + 2 short paragraphs: remind them of any real connection from the "
+    "context, why this role fits, and a clear, easy ask. Under 150 words.",
+    "offer_negotiation": "A professional email opening a salary/offer negotiation. "
+    "Subject + 2–3 short paragraphs: gratitude and enthusiasm, a grounded case for "
+    "an adjustment, and openness to discuss. Respectful and collaborative, never "
+    "entitled. Under 180 words. Invent no competing offers or numbers.",
+}
+
+DEFAULT_OUTREACH_TONE = "professional and warm"
+
+
+def build_outreach_prompt(
+    kind: str,
+    resume: MasterResume,
+    *,
+    company: str | None = None,
+    role: str | None = None,
+    recipient: str | None = None,
+    context: str | None = None,
+    voice: VoiceProfile | None = None,
+) -> str:
+    guidance = OUTREACH_KINDS.get(kind, OUTREACH_KINDS["recruiter_email"])
+    highlights = [
+        f"- {e.company} ({e.title}): " + "; ".join(e.highlights[:2])
+        for e in resume.experience[:3]
+    ]
+    projects = [f"- {p.name}: " + "; ".join(p.highlights[:1]) for p in resume.projects[:2]]
+    skills = ", ".join(item for g in resume.skills for item in g.items)
+
+    return f"""\
+Draft this outreach message.
+
+=== MESSAGE TYPE ===
+{guidance}
+{_voice_block(voice)}
+
+=== WHO IT'S FROM (the candidate) ===
+Name: {resume.basics.name}
+Headline: {resume.basics.headline or "(none)"}
+Relevant experience:
+{chr(10).join(highlights) or "(none)"}
+Projects:
+{chr(10).join(projects) or "(none)"}
+Skills: {skills or "(none listed)"}
+
+=== WHO / WHAT IT'S ABOUT ===
+Recipient: {recipient or "(unspecified — address generically)"}
+Company: {company or "(unspecified)"}
+Role: {role or "(unspecified)"}
+Extra context from the candidate (use only what's here for connections/details):
+{context or "(none provided)"}
+
+Return JSON with `subject` and `body`."""

@@ -21,6 +21,7 @@ from app.api.routes import (
     health,
     profile,
     resumes,
+    studio,
     writing,
 )
 from app.core.config import settings
@@ -178,7 +179,7 @@ async def validation_exception_handler(
 
 
 app.include_router(health.router)
-for module in (auth, account, profile, writing, resumes, applications, analytics):
+for module in (auth, account, profile, writing, resumes, applications, studio, analytics):
     app.include_router(module.router, prefix=settings.api_v1_prefix)
 
 

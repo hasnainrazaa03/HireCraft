@@ -17,6 +17,7 @@ from app.core.logging import get_logger
 from app.schemas.job import JobRequirements, ScrapeResult
 from app.schemas.resume import MasterResume
 from app.schemas.tailoring import DiffEntry, GuardrailReport, TailoringResult
+from app.schemas.writing import VoiceProfile
 from app.services.latex.compiler import CompileResult, compile_latex
 from app.services.latex.renderer import render_cover_letter, render_resume
 from app.services.latex.templates import resolve_filename
@@ -26,10 +27,12 @@ from app.services.llm.prompts import (
     COVER_LETTER_SYSTEM,
     EXTRACTOR_SYSTEM,
     OPTIMIZER_SYSTEM,
+    OUTREACH_SYSTEM,
     REWRITE_SYSTEM,
     build_cover_letter_prompt,
     build_extractor_prompt,
     build_optimizer_prompt,
+    build_outreach_prompt,
     build_rewrite_prompt,
 )
 
@@ -187,18 +190,27 @@ def rewrite_resume(
     return improved, report, diff
 
 
+class OutreachDraft(BaseModel):
+    subject: str = Field(default="", max_length=300)
+    body: str = Field(default="", max_length=4000)
+
+
 def draft_cover_letter(
     resume: MasterResume,
     requirements: JobRequirements,
     job_text: str,
     *,
+    tone: str | None = None,
+    voice: VoiceProfile | None = None,
     client: GeminiClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> list[str]:
     """Optional stage: draft cover letter paragraphs, vetted like everything else."""
     client = client or get_client()
     result: LlmResult[CoverLetterDraft] = client.generate_structured(
-        prompt=build_cover_letter_prompt(resume, requirements, job_text),
+        prompt=build_cover_letter_prompt(
+            resume, requirements, job_text, tone=tone, voice=voice
+        ),
         schema=CoverLetterDraft,
         system_instruction=COVER_LETTER_SYSTEM,
         temperature=0.4,
@@ -215,6 +227,114 @@ def draft_cover_letter(
         else:
             logger.warning("pipeline.cover_letter_paragraph_rejected")
     return vetted
+
+
+def compose_cover_letter(
+    resume: MasterResume,
+    job_text: str,
+    *,
+    company: str | None = None,
+    role: str | None = None,
+    tone: str = "modern",
+    voice: VoiceProfile | None = None,
+    client: GeminiClient | None = None,
+    ledger: UsageLedger | None = None,
+) -> tuple[list[str], GuardrailReport]:
+    """Standalone cover-letter generation for the writing studio.
+
+    No job extraction is run — a lightweight requirements object (just role +
+    company) is enough for the prompt, so this is a single LLM call. Paragraphs
+    that make a claim the résumé does not support are dropped, and the report
+    surfaces exactly what (if anything) was removed.
+    """
+    client = client or get_client()
+    requirements = JobRequirements(title=role, company=company)
+    result: LlmResult[CoverLetterDraft] = client.generate_structured(
+        prompt=build_cover_letter_prompt(
+            resume, requirements, job_text, tone=tone, voice=voice
+        ),
+        schema=CoverLetterDraft,
+        system_instruction=COVER_LETTER_SYSTEM,
+        temperature=0.4,
+    )
+    if ledger is not None:
+        ledger.record("cover_letter", result.usage)
+
+    engine = GuardrailEngine(resume, requirements)
+    vetted = [p for p in result.data.paragraphs if engine.vet_paragraph(p) is not None]
+    # Only hard failures matter here; the soft proper-noun flags fire on the
+    # company name itself (which of course isn't in the résumé) and would be noise.
+    errors = [v for v in engine.violations if v.severity == "error"]
+    report = GuardrailReport(
+        violations=errors,
+        keywords_requested=[],
+        keywords_verified=[],
+        bullet_confidence=[],
+    )
+    if not vetted:
+        # Everything failed verification — fall back to the raw draft rather than
+        # returning nothing, but keep the violations so the UI can warn loudly.
+        vetted = [p for p in result.data.paragraphs if p.strip()]
+    return vetted, report
+
+
+def generate_outreach(
+    resume: MasterResume,
+    kind: str,
+    *,
+    company: str | None = None,
+    role: str | None = None,
+    recipient: str | None = None,
+    context: str | None = None,
+    voice: VoiceProfile | None = None,
+    client: GeminiClient | None = None,
+    ledger: UsageLedger | None = None,
+) -> tuple[OutreachDraft, list[str]]:
+    """Short-form outreach for the writing studio.
+
+    The user reads and sends this themselves, and it legitimately draws on
+    context they provide (a date they met, a mutual contact) that isn't in the
+    résumé — so the truthfulness check here is advisory: it never edits the
+    draft, it only flags numbers or claims the résumé doesn't back so the user
+    can double-check before sending.
+    """
+    client = client or get_client()
+    result: LlmResult[OutreachDraft] = client.generate_structured(
+        prompt=build_outreach_prompt(
+            kind,
+            resume,
+            company=company,
+            role=role,
+            recipient=recipient,
+            context=context,
+            voice=voice,
+        ),
+        schema=OutreachDraft,
+        system_instruction=OUTREACH_SYSTEM,
+        temperature=0.5,
+    )
+    if ledger is not None:
+        ledger.record(f"outreach_{kind}", result.usage)
+
+    warnings = _advisory_number_check(resume, result.data.body, context)
+    return result.data, warnings
+
+
+def _advisory_number_check(
+    resume: MasterResume, body: str, context: str | None
+) -> list[str]:
+    """Flag numbers in ``body`` backed by neither the résumé nor the user's
+    context. Advisory only — outreach may legitimately cite provided facts."""
+    from app.services.llm.guardrails import _master_numbers, _numbers_in
+
+    allowed = _master_numbers(resume) | _numbers_in(context or "")
+    unbacked = sorted(_numbers_in(body) - allowed)
+    if unbacked:
+        return [
+            "Double-check these figures before sending — they aren't in your "
+            f"résumé or the context you gave: {', '.join(unbacked)}."
+        ]
+    return []
 
 
 def run_pipeline(

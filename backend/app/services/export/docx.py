@@ -190,6 +190,87 @@ def resume_to_docx(resume: MasterResume) -> bytes:
     return buf.getvalue()
 
 
+def cover_letter_to_docx(
+    resume: MasterResume,
+    paragraphs: list[str],
+    *,
+    company: str | None = None,
+    role: str | None = None,
+    hiring_manager: str | None = None,
+    date_line: str | None = None,
+) -> bytes:
+    """Render a cover letter to a clean, single-column .docx.
+
+    Mirrors the LaTeX cover-letter layout: sender header, date, recipient block,
+    salutation, body paragraphs, and a sign-off — so the DOCX and PDF read the
+    same.
+    """
+    import docx
+    from docx.shared import Pt, RGBColor
+
+    doc = docx.Document()
+    for section in doc.sections:
+        section.top_margin = section.bottom_margin = Pt(54)
+        section.left_margin = section.right_margin = Pt(60)
+
+    normal = doc.styles["Normal"]
+    normal.font.name = "Calibri"
+    normal.font.size = Pt(11)
+    normal.paragraph_format.space_after = Pt(10)
+    normal.paragraph_format.line_spacing = 1.15
+
+    b = resume.basics
+
+    # Sender header.
+    name = doc.add_paragraph()
+    run = name.add_run(b.name)
+    run.bold = True
+    run.font.size = Pt(15)
+    run.font.color.rgb = RGBColor.from_string(_ACCENT)
+    name.paragraph_format.space_after = Pt(2)
+
+    contact_bits = [str(b.email)]
+    for value in (b.phone, b.location):
+        if value:
+            contact_bits.append(str(value))
+    contact = doc.add_paragraph()
+    contact_run = contact.add_run("  ·  ".join(contact_bits))
+    contact_run.font.size = Pt(9.5)
+    contact_run.font.color.rgb = RGBColor.from_string(_MUTED)
+    contact.paragraph_format.space_after = Pt(14)
+
+    if date_line:
+        doc.add_paragraph(date_line)
+
+    # Recipient block.
+    recipient_lines = [
+        line
+        for line in (hiring_manager, company, role and f"Re: {role}")
+        if line
+    ]
+    for line in recipient_lines:
+        p = doc.add_paragraph(line)
+        p.paragraph_format.space_after = Pt(0)
+    if recipient_lines:
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    doc.add_paragraph(f"Dear {hiring_manager or 'Hiring Manager'},")
+
+    for para in paragraphs:
+        if para.strip():
+            doc.add_paragraph(para.strip())
+
+    closing = doc.add_paragraph("Sincerely,")
+    closing.paragraph_format.space_after = Pt(2)
+    signature = doc.add_paragraph()
+    sig_run = signature.add_run(b.name)
+    sig_run.bold = True
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 def _right_tab(paragraph) -> None:
     """Add a right-aligned tab stop at the text margin so a trailing '\\t' pushes
     the date to the right edge."""
