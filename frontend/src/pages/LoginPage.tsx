@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { ApiError } from "../lib/api";
 import { IconSparkles, IconShield, IconCheck } from "../components/icons";
@@ -119,7 +120,14 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="label" htmlFor="password">Password</label>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="label mb-0" htmlFor="password">Password</label>
+                {mode === "login" && (
+                  <Link to="/forgot-password" className="text-xs text-brand-300 transition hover:text-brand-200">
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <input
                 id="password"
                 type="password"

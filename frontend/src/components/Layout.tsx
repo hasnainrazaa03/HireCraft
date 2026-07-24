@@ -2,6 +2,9 @@ import { NavLink, Link, useLocation } from "react-router-dom";
 import { useState, type ReactNode } from "react";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
+import { api } from "../lib/api";
+import { useToast } from "../lib/toast";
+import { IconShield } from "./icons";
 import {
   IconDashboard,
   IconApplications,
@@ -19,6 +22,46 @@ import {
   IconLogout,
   IconChevronDown,
 } from "./icons";
+
+function VerifyBanner() {
+  const toast = useToast();
+  const [dismissed, setDismissed] = useState(false);
+  const [sending, setSending] = useState(false);
+  if (dismissed) return null;
+
+  async function resend() {
+    setSending(true);
+    try {
+      await api.post("/auth/resend-verification");
+      toast.success("Verification sent", "Check your inbox for the link.");
+    } catch {
+      toast.error("Couldn't send", "Please try again shortly.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-coral/20 bg-coral/[0.07]">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 px-5 py-2.5 text-sm">
+        <IconShield className="h-4 w-4 shrink-0 text-coral" />
+        <span className="text-content">Confirm your email to secure your account.</span>
+        <button onClick={resend} disabled={sending} className="font-medium text-coral hover:underline">
+          {sending ? "Sending…" : "Resend link"}
+        </button>
+        <button
+          onClick={() => setDismissed(true)}
+          className="ml-auto text-subtle transition hover:text-content"
+          aria-label="Dismiss"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: IconDashboard, end: true },
@@ -159,11 +202,14 @@ export default function Layout({ children }: { children: ReactNode }) {
                       </div>
                       <div className="truncate text-xs text-subtle">{user?.email}</div>
                     </div>
-                    <button className="nav-item mt-1 w-full opacity-45" disabled>
+                    <Link
+                      to="/settings"
+                      onClick={() => setMenuOpen(false)}
+                      className="nav-item mt-1 w-full"
+                    >
                       <IconSettings className="h-[18px] w-[18px]" />
                       Settings
-                      <span className="ml-auto text-[10px] text-subtle">soon</span>
-                    </button>
+                    </Link>
                     <button
                       onClick={logout}
                       className="nav-item w-full text-danger hover:bg-danger/10 hover:text-danger"
@@ -197,6 +243,8 @@ export default function Layout({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+
+        {user && !user.is_verified && <VerifyBanner />}
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-5 py-7">{children}</main>
       </div>

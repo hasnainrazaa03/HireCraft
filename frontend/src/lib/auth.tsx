@@ -15,6 +15,10 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName?: string) => Promise<void>;
   logout: () => void;
+  /** Re-fetch the current user (after settings changes, verification, etc.). */
+  refreshUser: () => Promise<void>;
+  /** Merge partial fields into the cached user without a round-trip. */
+  patchUser: (patch: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -24,8 +28,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const logout = useCallback(() => {
+    // Revoke this device's session server-side; ignore failures (we clear
+    // locally regardless, so the user is signed out even if the call fails).
+    api.post("/auth/logout").catch(() => {});
     tokens.clear();
     setUser(null);
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      setUser(await api.get<User>("/auth/me"));
+    } catch {
+      /* stay with the cached user on a transient failure */
+    }
+  }, []);
+
+  const patchUser = useCallback((patch: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
   // The API client fires this when a refresh fails, so an expired session in a
@@ -79,8 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout }),
-    [user, loading, login, register, logout],
+    () => ({ user, loading, login, register, logout, refreshUser, patchUser }),
+    [user, loading, login, register, logout, refreshUser, patchUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

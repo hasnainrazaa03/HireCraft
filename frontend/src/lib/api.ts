@@ -175,7 +175,19 @@ export interface User {
   id: string;
   email: string;
   full_name: string | null;
+  is_verified: boolean;
+  theme: "dark" | "light";
+  notification_prefs: Record<string, boolean>;
   created_at: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  last_used_at: string;
+  created_at: string;
+  current: boolean;
 }
 
 export interface ResumeProfileSummary {
