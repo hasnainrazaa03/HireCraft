@@ -33,6 +33,17 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
+# Scheduled jobs. Runs only when a `celery beat` process is started alongside
+# the workers (see docker-compose `scheduler` service). Phase 11 reminders will
+# register their schedules here; for now it holds a lightweight daily
+# housekeeping slot so the beat wiring is proven end to end.
+celery_app.conf.beat_schedule = {
+    "daily-housekeeping": {
+        "task": "hirecraft.housekeeping",
+        "schedule": 60 * 60 * 24,  # once a day
+    },
+}
+
 
 @setup_logging.connect
 def _configure_worker_logging(**_kwargs: object) -> None:

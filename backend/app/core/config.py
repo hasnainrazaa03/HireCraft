@@ -83,6 +83,24 @@ class Settings(BaseSettings):
     artifacts_dir: str = "/app/artifacts"
     max_upload_bytes: int = 5 * 1024 * 1024
 
+    # --- Email (SMTP) ---
+    # When smtp_host is empty, the app runs in "console" mode: emails are logged
+    # instead of sent, so local development needs no mail server. Set these in
+    # production (Resend/Postmark/SES/etc.) to actually deliver.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    smtp_timeout_seconds: int = 15
+    email_from: str = "HireCraft <no-reply@hirecraft.app>"
+    # Base URL the frontend serves from; used to build links in emails.
+    frontend_base_url: str = "http://localhost:5173"
+
+    # --- Token TTLs for email flows ---
+    email_verify_ttl_hours: int = 48
+    password_reset_ttl_minutes: int = 30
+
     # --- Rate limiting (per user, sliding window) ---
     rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60

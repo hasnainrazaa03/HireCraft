@@ -23,6 +23,7 @@ from app.models.llm_usage import LlmUsage
 from app.schemas.job import ScrapeResult
 from app.schemas.resume import MasterResume
 from app.services import storage
+from app.services.email.sender import Email, EmailError, send_email
 from app.services.latex.compiler import LatexCompilationError
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.pipeline import TailoringOutcome, run_pipeline
@@ -237,3 +238,39 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
         "cost_usd": outcome.usage.cost_usd,
         "guardrail_errors": len(errors),
     }
+
+
+@celery_app.task(
+    bind=True,
+    name="hirecraft.send_email",
+    max_retries=3,
+    default_retry_delay=30,
+)
+def send_email_task(self, to: str, subject: str, html: str, text: str) -> dict[str, str]:
+    """Deliver one transactional email off the request path.
+
+    A failed SMTP send is retried with backoff; an exhausted retry budget is
+    logged rather than raised, so a mail outage never crashes the flow that
+    queued the message (registration still succeeds even if the welcome email
+    is delayed).
+    """
+    try:
+        send_email(Email(to=to, subject=subject, html=html, text=text))
+    except EmailError as exc:
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc) from exc
+        logger.error("task.email_giving_up", to=to, subject=subject)
+        return {"status": "failed", "to": to}
+    return {"status": "sent", "to": to}
+
+
+@celery_app.task(name="hirecraft.housekeeping")
+def housekeeping_task() -> dict[str, int]:
+    """Daily maintenance slot, driven by Celery beat.
+
+    Placeholder for now: it proves the beat scheduler is wired end to end and
+    gives Phase 11's reminders a home to grow into. Returns a small summary so
+    the scheduled run is visible in the result backend.
+    """
+    logger.info("task.housekeeping_ran")
+    return {"ok": 1}

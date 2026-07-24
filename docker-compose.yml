@@ -13,6 +13,13 @@ x-backend-env: &backend-env
   ARTIFACTS_DIR: /app/artifacts
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
+  # SMTP is optional: leave SMTP_HOST empty and emails are logged, not sent.
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-HireCraft <no-reply@hirecraft.app>}
 
 services:
   postgres:
@@ -92,6 +99,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+
+  # Celery beat: fires scheduled jobs (reminders, digests) onto the queue that
+  # `worker` then executes. Exactly one beat process must run, so this is its
+  # own single-replica service rather than folded into the worker.
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment: *backend-env
+    volumes:
+      - ./templates:/app/templates:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    # The shared image bakes in an API healthcheck (curl :8000). Beat serves no
+    # HTTP, so disable the inherited probe rather than flap to false-unhealthy.
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
   frontend:
