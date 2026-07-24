@@ -1,0 +1,43 @@
+((# Minimal — airy and understated. Generous margins, light-grey small-caps
+    headings with no rules, dash bullets, lots of whitespace. #))
+\documentclass[10pt,letterpaper]{article}
+
+\usepackage[top=0.7in, bottom=0.7in, left=0.9in, right=0.9in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{needspace}
+
+\definecolor{accent}{HTML}{222222}
+\definecolor{muted}{HTML}{777777}
+
+\hypersetup{
+  colorlinks=true, urlcolor=muted, linkcolor=muted,
+  pdftitle={((( basics.name ))) -- Resume}, pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+\setlist[itemize]{leftmargin=1em, itemsep=2pt, parsep=0pt, topsep=3pt, label=\textendash}
+
+((# Headings: spaced small-caps, muted, no rule — the whitespace does the work. #))
+\titleformat{\section}
+  {\normalsize\scshape\color{muted}}
+  {}{0em}{}
+\titlespacing*{\section}{0pt}{14pt}{5pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\raggedright
+
+\newcommand{\cvsep}{\hspace{6pt}\textperiodcentered\hspace{6pt}}
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill{\color{muted}#2}\\%
+  \textit{#3}\hfill{\color{muted}\textit{#4}}\\[3pt]%
+}
+
+\begin{document}
+((* include "partials/_body.tex" *))
+\end{document}

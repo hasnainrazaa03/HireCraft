@@ -1,0 +1,144 @@
+((# ===================================================================
+    Shared résumé body, included by every template after its preamble.
+
+    A template's preamble MUST define, before including this file:
+      \cvsep                        contact separator
+      \entryheading{#1}{#2}{#3}{#4} title/date + subtitle/location line
+      colors `accent` and `muted`   (set both to black for a monochrome look)
+      a \section format, itemize spacing, and \begin{document}
+
+    Every interpolated value is auto-escaped. Never add the `raw` filter to
+    user data. Do not write a closing comment delimiter inside a comment.
+   =================================================================== #))
+
+((# ------------------------------ HEADER ------------------------------ #))
+\begin{center}
+  {\LARGE\bfseries ((( basics.name )))}\\[4pt]
+  ((* if basics.headline *))
+  {\color{muted}((( basics.headline )))}\\[4pt]
+  ((* endif *))
+  \small
+  ((* if basics.location *))((( basics.location )))\cvsep((* endif *))%
+  ((* if basics.phone *))((( basics.phone )))\cvsep((* endif *))%
+  \href{mailto:((( basics.email | url )))}{((( basics.email )))}%
+  ((* if basics.linkedin *))\cvsep\href{((( basics.linkedin | url )))}{((( basics.linkedin | display_url )))}((* endif *))%
+  ((* if basics.github *))\cvsep\href{((( basics.github | url )))}{((( basics.github | display_url )))}((* endif *))%
+  ((* if basics.website *))\cvsep\href{((( basics.website | url )))}{((( basics.website | display_url )))}((* endif *))%
+  ((* for link in basics.links *))\cvsep\href{((( link.url | url )))}{((( link.label )))}((* endfor *))
+\end{center}
+\vspace{2pt}
+
+((* for section in sections *))
+
+((* if section == 'summary' and basics.summary *))
+\section{Summary}
+((( basics.summary )))
+((* endif *))
+
+((* if section == 'education' and r.education *))
+\section{Education}
+((* for e in r.education *))
+\entryheading
+  {((( e.institution )))}
+  {((( date_range(e.start_date, e.end_date) )))}
+  {((( e.degree )))((* if e.field_of_study *)), ((( e.field_of_study )))((* endif *))((* if e.gpa *)) \textnormal{---} GPA ((( e.gpa )))((* endif *))}
+  {((( e.location )))}
+((* if e.honors *))
+\textit{Honors:} ((( e.honors | texjoin )))\\[2pt]
+((* endif *))
+((* if e.coursework *))
+\textit{Relevant Coursework:} ((( e.coursework | texjoin )))\\[2pt]
+((* endif *))
+((* if e.highlights *))
+\begin{itemize}
+((* for h in e.highlights *))
+  \item ((( h )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+\vspace{2pt}
+((* endfor *))
+((* endif *))
+
+((* if section == 'experience' and r.experience *))
+\section{Experience}
+((* for x in r.experience *))
+\entryheading
+  {((( x.company )))}
+  {((( date_range(x.start_date, x.end_date) )))}
+  {((( x.title )))}
+  {((( x.location )))}
+((* if x.highlights *))
+\begin{itemize}
+((* for h in x.highlights *))
+  \item ((( h )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* if x.technologies *))
+\vspace{1pt}{\small\textit{Technologies:} ((( x.technologies | texjoin )))}\\
+((* endif *))
+\vspace{3pt}
+((* endfor *))
+((* endif *))
+
+((* if section == 'projects' and r.projects *))
+\section{Projects}
+((* for p in r.projects *))
+\needspace{3\baselineskip}
+\textbf{((( p.name )))}%
+((* if p.url *))\hspace{6pt}\href{((( p.url | url )))}{\small ((( p.url | display_url )))}((* endif *))%
+\hfill\textbf{((( date_range(p.start_date, p.end_date) )))}\\
+((* if p.description *))
+{\color{muted}((( p.description )))}\\[2pt]
+((* endif *))
+((* if p.highlights *))
+\begin{itemize}
+((* for h in p.highlights *))
+  \item ((( h )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* if p.technologies *))
+{\small\textit{Built with:} ((( p.technologies | texjoin )))}\\
+((* endif *))
+\vspace{3pt}
+((* endfor *))
+((* endif *))
+
+((* if section == 'skills' and r.skills *))
+\section{Skills}
+((* for g in r.skills *))
+\textbf{((( g.category ))):} ((( g.items | texjoin )))\\[1pt]
+((* endfor *))
+((* endif *))
+
+((* if section == 'certifications' and r.certifications *))
+\section{Certifications}
+\begin{itemize}
+((* for c in r.certifications *))
+  \item ((( c.name )))((* if c.issuer *)) \textemdash{} \textit{((( c.issuer )))}((* endif *))((* if c.date *)) \hfill ((( c.date )))((* endif *))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((* if section == 'awards' and r.awards *))
+\section{Awards}
+\begin{itemize}
+((* for a in r.awards *))
+  \item \textbf{((( a.title )))}((* if a.issuer *)), ((( a.issuer )))((* endif *))((* if a.date *)) \hfill ((( a.date )))((* endif *))
+  ((* if a.description *))\\ {\small ((( a.description )))}((* endif *))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((* if section == 'publications' and r.publications *))
+\section{Publications}
+\begin{itemize}
+((* for pub in r.publications *))
+  \item ((* if pub.authors *))((( pub.authors | texjoin ))). ((* endif *))\textit{((( pub.title )))}((* if pub.venue *)), ((( pub.venue )))((* endif *))((* if pub.date *)), ((( pub.date )))((* endif *))((* if pub.url *)) \href{((( pub.url | url )))}{[link]}((* endif *))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((* endfor *))

@@ -1,0 +1,45 @@
+((# ATS — monochrome, maximally parseable. No color, plain bold-uppercase
+    headings with a thin rule, standard bullets. Built for applicant-tracking
+    systems that choke on anything fancy. #))
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[top=0.6in, bottom=0.6in, left=0.7in, right=0.7in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{needspace}
+
+((# Both accent colors are black — the shared body's \color calls then produce
+    a fully monochrome document that ATS parsers read cleanly. #))
+\definecolor{accent}{HTML}{000000}
+\definecolor{muted}{HTML}{000000}
+
+\hypersetup{
+  colorlinks=false, hidelinks=true,
+  pdftitle={((( basics.name ))) -- Resume}, pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+\setlist[itemize]{leftmargin=1.3em, itemsep=2pt, parsep=0pt, topsep=2pt, label=\textbullet}
+
+\titleformat{\section}
+  {\large\bfseries\uppercase}
+  {}{0em}{}[\vspace{-0.6em}\rule{\linewidth}{0.8pt}\vspace{-0.1em}]
+\titlespacing*{\section}{0pt}{10pt}{5pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\raggedright
+
+\newcommand{\cvsep}{\hspace{4pt}|\hspace{4pt}}
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill #2\\%
+  #3\hfill #4\\[2pt]%
+}
+
+\begin{document}
+((* include "partials/_body.tex" *))
+\end{document}

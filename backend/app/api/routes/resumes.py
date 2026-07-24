@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from pydantic import ValidationError
 from sqlalchemy import select, update
 
@@ -23,9 +23,14 @@ from app.schemas.api import (
     ResumeProfileUpdate,
     ResumeVersionDetail,
     ResumeVersionSummary,
+    TemplateInfo,
 )
 from app.schemas.resume import MasterResume
-from app.services import resume_versions
+from app.services import resume_versions, storage
+from app.services.export.docx import resume_to_docx
+from app.services.latex.compiler import LatexCompilationError, compile_latex
+from app.services.latex.renderer import render_resume
+from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
 from app.services.llm.client import GeminiClient, LlmError
 from app.services.parsing.extract import ExtractionError, extract
 from app.services.parsing.structure import ParsingError, structure_resume
@@ -95,6 +100,7 @@ def create_profile(
         content=payload.content.model_dump(mode="json"),
         is_default=is_default,
         tags=_clean_tags(payload.tags),
+        template=payload.template if payload.template and is_valid(payload.template) else "modern",
     )
     db.add(profile)
     db.flush()
@@ -236,6 +242,79 @@ def resume_json_schema() -> dict:
     return MasterResume.model_json_schema()
 
 
+@router.get("/templates", response_model=list[TemplateInfo])
+def list_templates() -> list[TemplateInfo]:
+    """The available résumé templates a user can pick from."""
+    return [TemplateInfo(id=t.id, name=t.name, description=t.description) for t in TEMPLATES]
+
+
+@router.get("/{profile_id}/render.{fmt}")
+def render_resume_file(
+    profile_id: uuid.UUID,
+    fmt: str,
+    user: CurrentUser,
+    db: DbSession,
+    template: str | None = None,
+) -> Response:
+    """Render a résumé to PDF, LaTeX, or DOCX in a chosen (or its own) template.
+
+    Serves both template preview and export. The compile happens in FastAPI's
+    threadpool, so a few-second LaTeX run doesn't block the event loop.
+    """
+    profile = _get_owned(db, user.id, profile_id)
+    resume = MasterResume.model_validate(profile.content)
+    template_id = template if (template and is_valid(template)) else profile.template
+    safe = storage.safe_filename(profile.name.replace(" ", "_"), fallback="resume")
+
+    if fmt == "json":
+        return Response(
+            content=json.dumps(profile.content, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{safe}.json"'},
+        )
+
+    if fmt in ("tex", "latex"):
+        tex = render_resume(
+            resume, settings.templates_dir, template_name=resolve_filename(template_id)
+        )
+        return Response(
+            content=tex,
+            media_type="application/x-tex",
+            headers={"Content-Disposition": f'attachment; filename="{safe}.tex"'},
+        )
+
+    if fmt == "docx":
+        docx_bytes = resume_to_docx(resume)
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{safe}.docx"'},
+        )
+
+    if fmt == "pdf":
+        tex = render_resume(
+            resume, settings.templates_dir, template_name=resolve_filename(template_id)
+        )
+        try:
+            result = compile_latex(tex, job_name=safe)
+        except LatexCompilationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Could not typeset this résumé: {exc.summary()}",
+            ) from exc
+        # inline so the frontend can preview it in an <embed>/<iframe>
+        return Response(
+            content=result.pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="{safe}.pdf"'},
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Unsupported format {fmt!r}. Use pdf, tex, docx, or json.",
+    )
+
+
 @router.get("/{profile_id}", response_model=ResumeProfileResponse)
 def get_profile(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> ResumeProfile:
     return _get_owned(db, user.id, profile_id)
@@ -254,6 +333,8 @@ def update_profile(
         profile.name = payload.name
     if payload.tags is not None:
         profile.tags = _clean_tags(payload.tags)
+    if payload.template is not None and is_valid(payload.template):
+        profile.template = payload.template
     if payload.content is not None:
         # Snapshot the old content before overwriting, so the edit is undoable.
         resume_versions.update_content(

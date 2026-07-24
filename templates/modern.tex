@@ -1,0 +1,41 @@
+((# Modern — navy accent, small-caps section headings with a rule. The default. #))
+\documentclass[10pt,letterpaper]{article}
+
+\usepackage[top=0.5in, bottom=0.5in, left=0.55in, right=0.55in, footskip=0.25in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{needspace}
+
+\definecolor{accent}{HTML}{1A3E6F}
+\definecolor{muted}{HTML}{444444}
+
+\hypersetup{
+  colorlinks=true, urlcolor=accent, linkcolor=accent,
+  pdftitle={((( basics.name ))) -- Resume}, pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+\setlist[itemize]{leftmargin=1.2em, itemsep=1.2pt, parsep=0pt, topsep=2pt, label=\textbullet}
+
+\titleformat{\section}
+  {\normalsize\bfseries\scshape\color{accent}}
+  {}{0em}{}[\vspace{-0.7em}\rule{\linewidth}{0.6pt}\vspace{-0.2em}]
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\raggedright
+
+\newcommand{\cvsep}{\hspace{5pt}\textperiodcentered\hspace{5pt}}
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill\textbf{#2}\\%
+  \textit{\color{muted}#3}\hfill\textit{\color{muted}#4}\\[2pt]%
+}
+
+\begin{document}
+((* include "partials/_body.tex" *))
+\end{document}

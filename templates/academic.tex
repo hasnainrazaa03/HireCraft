@@ -1,0 +1,46 @@
+((# Academic — formal CV style. Serif (Latin Modern), centered bold-italic
+    headings, roomy leading. Publications-forward layouts read well here. #))
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[top=0.8in, bottom=0.8in, left=0.9in, right=0.9in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{needspace}
+\usepackage{lmodern}
+
+\definecolor{accent}{HTML}{111111}
+\definecolor{muted}{HTML}{555555}
+
+\linespread{1.05}
+
+\hypersetup{
+  colorlinks=true, urlcolor=accent, linkcolor=accent,
+  pdftitle={((( basics.name ))) -- Curriculum Vitae}, pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+\setlist[itemize]{leftmargin=1.4em, itemsep=2.5pt, parsep=0pt, topsep=3pt, label=\textbullet}
+
+((# Centered small-caps section titles with a full rule beneath. #))
+\titleformat{\section}
+  {\centering\normalsize\bfseries\scshape}
+  {}{0em}{}[\vspace{-0.5em}\rule{\linewidth}{0.4pt}]
+\titlespacing*{\section}{0pt}{12pt}{6pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\raggedright
+
+\newcommand{\cvsep}{\hspace{5pt}\textperiodcentered\hspace{5pt}}
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill\textbf{#2}\\%
+  \textit{#3}\hfill\textit{\color{muted}#4}\\[2pt]%
+}
+
+\begin{document}
+((* include "partials/_body.tex" *))
+\end{document}

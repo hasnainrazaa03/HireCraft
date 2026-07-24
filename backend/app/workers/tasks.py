@@ -147,6 +147,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
         user_id = application.user_id
         include_cover_letter = application.include_cover_letter
         master = MasterResume.model_validate(application.resume_profile.content)
+        template = application.resume_profile.template
         # If the user brought their own Gemini key, their runs bill it instead
         # of the shared key. Decrypt here while the session is open.
         user_api_key: str | None = None
@@ -183,6 +184,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
             master,
             scrape,
             include_cover_letter=include_cover_letter,
+            template=template,
             on_progress=on_progress,
             client=client,
         )

@@ -41,6 +41,8 @@ class ResumeProfile(Base, TimestampMixin):
     content: Mapped[dict[str, Any]] = mapped_column(JsonB, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Chosen LaTeX template id (see services.latex.templates). Presentation only.
+    template: Mapped[str] = mapped_column(String(20), default="modern", nullable=False)
     # Free-form tags for the résumé library ("SWE", "ML", "New Grad", …).
     tags: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
     # Monotonic version counter; the latest saved content is this number, and

@@ -104,6 +104,7 @@ class ResumeProfileCreate(ApiModel):
     content: MasterResume
     is_default: bool = False
     tags: list[str] = Field(default_factory=list, max_length=20)
+    template: str | None = Field(default=None, max_length=20)
 
 
 class ResumeProfileUpdate(ApiModel):
@@ -111,6 +112,7 @@ class ResumeProfileUpdate(ApiModel):
     content: MasterResume | None = None
     is_default: bool | None = None
     tags: list[str] | None = Field(default=None, max_length=20)
+    template: str | None = Field(default=None, max_length=20)
     # Optional note attached to the snapshot this edit creates.
     version_label: str | None = Field(default=None, max_length=200)
 
@@ -121,6 +123,7 @@ class ResumeProfileResponse(ApiModel):
     content: dict[str, Any]
     is_default: bool
     tags: list[str]
+    template: str
     current_version: int
     created_at: datetime
     updated_at: datetime
@@ -131,8 +134,15 @@ class ResumeProfileSummary(ApiModel):
     name: str
     is_default: bool
     tags: list[str]
+    template: str
     current_version: int
     updated_at: datetime
+
+
+class TemplateInfo(ApiModel):
+    id: str
+    name: str
+    description: str
 
 
 class ResumeVersionSummary(ApiModel):
