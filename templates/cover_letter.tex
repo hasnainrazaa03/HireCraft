@@ -1,0 +1,74 @@
+((# ===================================================================
+    HireCraft cover letter template.
+
+    Uses the same LaTeX-safe Jinja delimiters as base_resume.tex; all values
+    are escaped automatically by the renderer's finalize hook.
+   =================================================================== #))
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[top=1in, bottom=1in, left=1.1in, right=1.1in]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{parskip}
+
+\definecolor{accent}{HTML}{1A3E6F}
+\definecolor{muted}{HTML}{444444}
+
+\hypersetup{
+  colorlinks=true,
+  urlcolor=accent,
+  pdftitle={((( basics.name ))) -- Cover Letter},
+  pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+\newcommand{\cvsep}{\hspace{5pt}\textperiodcentered\hspace{5pt}}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.85em}
+\raggedright
+
+\begin{document}
+
+((# ------------------------------ LETTERHEAD ------------------------------ #))
+\begin{center}
+  {\LARGE\bfseries ((( basics.name )))}\\[5pt]
+  {\small
+    ((* if basics.location *))((( basics.location )))\cvsep((* endif *))%
+    ((* if basics.phone *))((( basics.phone )))\cvsep((* endif *))%
+    \href{mailto:((( basics.email | url )))}{((( basics.email )))}%
+    ((* if basics.linkedin *))\cvsep\href{((( basics.linkedin | url )))}{((( basics.linkedin | display_url )))}((* endif *))%
+  }
+\end{center}
+\vspace{0.6em}
+{\color{accent}\rule{\linewidth}{0.6pt}}
+\vspace{0.4em}
+
+((* if date_line *))
+((( date_line )))
+((* endif *))
+
+((* if company *))
+((* if hiring_manager *))
+((( hiring_manager )))\\
+((* endif *))
+((( company )))
+((* endif *))
+
+((* if hiring_manager *))
+Dear ((( hiring_manager ))),
+((* else *))
+Dear Hiring Team((* if company *)) at ((( company )))((* endif *)),
+((* endif *))
+
+((* for paragraph in paragraphs *))
+((( paragraph )))
+
+((* endfor *))
+
+\vspace{0.6em}
+Sincerely,\\[0.9em]
+((( basics.name )))
+
+\end{document}

@@ -1,0 +1,215 @@
+((# ===================================================================
+    HireCraft base resume template.
+
+    Rendered by app/services/latex/renderer.py, which swaps Jinja's default
+    delimiters for LaTeX-safe ones so they do not collide with TeX braces or
+    percent comments. See that module's docstring for the exact syntax.
+
+    NOTE: never write a closing comment delimiter inside a comment body - it
+    terminates the block early and dumps the remaining prose into the document.
+
+    Every interpolated value is escaped automatically. Do not add the `raw`
+    filter to anything that originates from user data.
+
+    ATS notes: single column, no text in graphics, no multi-column tables for
+    layout, standard section headings, selectable text. Parsers read this in
+    linear order, which is why the layout stays deliberately plain.
+   =================================================================== #))
+\documentclass[10pt,letterpaper]{article}
+
+\usepackage[
+  top=0.5in, bottom=0.5in, left=0.55in, right=0.55in,
+  footskip=0.25in
+]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+((# Deliberately no icon font package here. fontawesome5 pulls a system font
+    that is absent from Tectonic's bundle and aborts the engine outright, and
+    icons are noise to an ATS parser anyway. #))
+\usepackage{needspace}
+
+\definecolor{accent}{HTML}{1A3E6F}
+\definecolor{muted}{HTML}{444444}
+
+\hypersetup{
+  colorlinks=true,
+  urlcolor=accent,
+  linkcolor=accent,
+  pdftitle={((( basics.name ))) -- Resume},
+  pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft},
+  hidelinks=false
+}
+
+((# Tight, ATS-safe list styling #))
+\setlist[itemize]{
+  leftmargin=1.2em, itemsep=1.2pt, parsep=0pt, topsep=2pt,
+  label=\textbullet
+}
+
+\titleformat{\section}
+  {\normalsize\bfseries\scshape\color{accent}}
+  {}{0em}{}[\vspace{-0.7em}\rule{\linewidth}{0.6pt}\vspace{-0.2em}]
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\raggedright
+
+((# Contact separator. Carries its own spacing because a bare space after a
+    "%" line continuation is swallowed by TeX's leading-whitespace rule. #))
+\newcommand{\cvsep}{\hspace{5pt}\textperiodcentered\hspace{5pt}}
+
+((# A single experience/project/education heading line: title left, dates right #))
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill\textbf{#2}\\%
+  \textit{\color{muted}#3}\hfill\textit{\color{muted}#4}\\[2pt]%
+}
+
+\begin{document}
+
+((# ------------------------------ HEADER ------------------------------ #))
+\begin{center}
+  {\LARGE\bfseries ((( basics.name )))}\\[4pt]
+  ((* if basics.headline *))
+  {\color{muted}((( basics.headline )))}\\[4pt]
+  ((* endif *))
+  \small
+  ((* if basics.location *))((( basics.location )))\cvsep((* endif *))%
+  ((* if basics.phone *))((( basics.phone )))\cvsep((* endif *))%
+  \href{mailto:((( basics.email | url )))}{((( basics.email )))}%
+  ((* if basics.linkedin *))\cvsep\href{((( basics.linkedin | url )))}{((( basics.linkedin | display_url )))}((* endif *))%
+  ((* if basics.github *))\cvsep\href{((( basics.github | url )))}{((( basics.github | display_url )))}((* endif *))%
+  ((* if basics.website *))\cvsep\href{((( basics.website | url )))}{((( basics.website | display_url )))}((* endif *))%
+  ((* for link in basics.links *))\cvsep\href{((( link.url | url )))}{((( link.label )))}((* endfor *))
+\end{center}
+\vspace{2pt}
+
+((* for section in sections *))
+
+((# ------------------------------ SUMMARY ------------------------------ #))
+((* if section == 'summary' and basics.summary *))
+\section{Summary}
+((( basics.summary )))
+((* endif *))
+
+((# ---------------------------- EDUCATION ------------------------------ #))
+((* if section == 'education' and r.education *))
+\section{Education}
+((* for e in r.education *))
+\entryheading
+  {((( e.institution )))}
+  {((( date_range(e.start_date, e.end_date) )))}
+  {((( e.degree )))((* if e.field_of_study *)), ((( e.field_of_study )))((* endif *))((* if e.gpa *)) \textnormal{---} GPA ((( e.gpa )))((* endif *))}
+  {((( e.location )))}
+((* if e.honors *))
+\textit{Honors:} ((( e.honors | texjoin )))\\[2pt]
+((* endif *))
+((* if e.coursework *))
+\textit{Relevant Coursework:} ((( e.coursework | texjoin )))\\[2pt]
+((* endif *))
+((* if e.highlights *))
+\begin{itemize}
+((* for h in e.highlights *))
+  \item ((( h )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+\vspace{2pt}
+((* endfor *))
+((* endif *))
+
+((# ---------------------------- EXPERIENCE ----------------------------- #))
+((* if section == 'experience' and r.experience *))
+\section{Experience}
+((* for x in r.experience *))
+\entryheading
+  {((( x.company )))}
+  {((( date_range(x.start_date, x.end_date) )))}
+  {((( x.title )))}
+  {((( x.location )))}
+((* if x.highlights *))
+\begin{itemize}
+((* for h in x.highlights *))
+  \item ((( h )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* if x.technologies *))
+\vspace{1pt}{\small\textit{Technologies:} ((( x.technologies | texjoin )))}\\
+((* endif *))
+\vspace{3pt}
+((* endfor *))
+((* endif *))
+
+((# ------------------------------ PROJECTS ----------------------------- #))
+((* if section == 'projects' and r.projects *))
+\section{Projects}
+((* for p in r.projects *))
+\needspace{3\baselineskip}
+\textbf{((( p.name )))}%
+((* if p.url *))\hspace{6pt}\href{((( p.url | url )))}{\small ((( p.url | display_url )))}((* endif *))%
+\hfill\textbf{((( date_range(p.start_date, p.end_date) )))}\\
+((* if p.description *))
+{\color{muted}((( p.description )))}\\[2pt]
+((* endif *))
+((* if p.highlights *))
+\begin{itemize}
+((* for h in p.highlights *))
+  \item ((( h )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* if p.technologies *))
+{\small\textit{Built with:} ((( p.technologies | texjoin )))}\\
+((* endif *))
+\vspace{3pt}
+((* endfor *))
+((* endif *))
+
+((# ------------------------------- SKILLS ------------------------------ #))
+((* if section == 'skills' and r.skills *))
+\section{Skills}
+((* for g in r.skills *))
+\textbf{((( g.category ))):} ((( g.items | texjoin )))\\[1pt]
+((* endfor *))
+((* endif *))
+
+((# --------------------------- CERTIFICATIONS -------------------------- #))
+((* if section == 'certifications' and r.certifications *))
+\section{Certifications}
+\begin{itemize}
+((* for c in r.certifications *))
+  \item ((( c.name )))((* if c.issuer *)) \textemdash{} \textit{((( c.issuer )))}((* endif *))((* if c.date *)) \hfill ((( c.date )))((* endif *))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((# ------------------------------- AWARDS ------------------------------ #))
+((* if section == 'awards' and r.awards *))
+\section{Awards}
+\begin{itemize}
+((* for a in r.awards *))
+  \item \textbf{((( a.title )))}((* if a.issuer *)), ((( a.issuer )))((* endif *))((* if a.date *)) \hfill ((( a.date )))((* endif *))
+  ((* if a.description *))\\ {\small ((( a.description )))}((* endif *))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((# ---------------------------- PUBLICATIONS --------------------------- #))
+((* if section == 'publications' and r.publications *))
+\section{Publications}
+\begin{itemize}
+((* for pub in r.publications *))
+  \item ((* if pub.authors *))((( pub.authors | texjoin ))). ((* endif *))\textit{((( pub.title )))}((* if pub.venue *)), ((( pub.venue )))((* endif *))((* if pub.date *)), ((( pub.date )))((* endif *))((* if pub.url *)) \href{((( pub.url | url )))}{[link]}((* endif *))
+((* endfor *))
+\end{itemize}
+((* endif *))
+
+((* endfor *))
+
+\end{document}
