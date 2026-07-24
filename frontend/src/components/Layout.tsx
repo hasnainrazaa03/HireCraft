@@ -86,20 +86,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        {/* Upgrade / plan card — a small hero accent at the base of the rail. */}
-        <div className="hero-card mt-4 bg-hero-purple p-4">
-          <div className="relative z-10">
-            <div className="text-sm font-semibold text-white">Unlock Premium</div>
-            <p className="mt-1 text-xs text-white/75">
-              Unlimited tailoring, advanced analytics, and priority support.
-            </p>
-            <button className="mt-3 w-full rounded-lg bg-white/15 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-white/25">
-              Upgrade
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-3 border-t border-white/[0.06] pt-3">
+        <div className="mt-auto border-t border-white/[0.06] pt-3">
           <div className="flex items-center gap-2.5 px-1">
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500/20 text-xs font-semibold text-brand-200">
               {initials}
@@ -162,8 +149,10 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
               {menuOpen && (
                 <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <div className="glass absolute right-0 z-20 mt-2 w-52 animate-fade-in p-1.5">
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  {/* Opaque surface, not glass: a translucent menu lets the bright
+                      buttons behind it bleed through the blur. */}
+                  <div className="absolute right-0 z-50 mt-2 w-52 animate-fade-in rounded-2xl border border-white/[0.1] bg-canvas-raised p-1.5 shadow-soft">
                     <div className="border-b border-white/[0.06] px-3 py-2">
                       <div className="truncate text-sm font-medium text-content">
                         {user?.full_name || "Signed in"}
