@@ -504,3 +504,97 @@ confidence honestly. Use bands for size, never invented exact figures. Do not \
 include any individual's contact details.
 
 Return JSON matching the schema."""
+
+
+# --- Interview preparation --------------------------------------------------
+
+INTERVIEW_QUESTIONS_SYSTEM = """\
+You are an experienced interviewer preparing a candidate. Generate realistic \
+interview questions they should be ready for, tailored to their résumé and the \
+target role.
+
+Rules:
+- Questions must be specific and realistic for THIS role and THIS candidate's \
+background — not generic filler. Reference their actual experience/projects where \
+a category calls for it (résumé-specific, project-specific).
+- Spread across the requested categories. For each question give a one-line \
+`why` (what the interviewer is really probing) and a short, actionable `tip`.
+- Do not invent facts about the candidate; you are asking questions, not making \
+claims. For technical/coding/system-design, pick topics that fit the role's stack.
+
+Return JSON matching the schema."""
+
+
+def build_questions_prompt(
+    resume: MasterResume,
+    *,
+    role: str | None = None,
+    company: str | None = None,
+    keywords: list[str] | None = None,
+    categories: list[str] | None = None,
+    count: int = 8,
+) -> str:
+    highlights = [
+        f"- {e.title} at {e.company}: " + "; ".join(e.highlights[:2])
+        for e in resume.experience[:4]
+    ]
+    projects = [f"- {p.name}: " + "; ".join(p.highlights[:1]) for p in resume.projects[:3]]
+    skills = ", ".join(item for g in resume.skills for item in g.items)
+    cats = ", ".join(categories) if categories else "a sensible mix"
+    kw = ", ".join((keywords or [])[:20])
+    return f"""\
+Generate about {count} interview questions for this candidate.
+
+Target role: {role or "(unspecified)"}
+Company: {company or "(unspecified)"}
+Role keywords/stack: {kw or "(none provided)"}
+Categories to cover: {cats}
+
+Candidate experience:
+{chr(10).join(highlights) or "(none)"}
+Candidate projects:
+{chr(10).join(projects) or "(none)"}
+Candidate skills: {skills or "(none listed)"}
+
+Return JSON with a `questions` array; each item has `category`, `question`, \
+`why`, and `tip`."""
+
+
+INTERVIEW_ANSWER_SYSTEM = """\
+You help a candidate answer an interview question using the STAR method \
+(Situation, Task, Action, Result), grounded ONLY in their real résumé.
+
+Constraints — mechanically checked afterward:
+- Use ONLY experience, projects, skills, and metrics present in the résumé. Never \
+invent numbers, employers, technologies, or outcomes.
+- If the résumé lacks a perfect example, adapt the closest real one honestly \
+rather than fabricating a better story.
+- Keep each STAR field to 1–3 tight sentences, first person, natural spoken tone.
+
+Return JSON with `situation`, `task`, `action`, and `result`."""
+
+
+def build_answer_prompt(
+    resume: MasterResume, question: str, *, voice: VoiceProfile | None = None
+) -> str:
+    experience = [
+        f"- {e.title} at {e.company} ({e.start_date or '?'}–{e.end_date or 'present'}): "
+        + "; ".join(e.highlights)
+        for e in resume.experience[:5]
+    ]
+    projects = [f"- {p.name}: " + "; ".join(p.highlights[:2]) for p in resume.projects[:4]]
+    skills = ", ".join(item for g in resume.skills for item in g.items)
+    return f"""\
+Draft a STAR answer to this interview question, using only the candidate's real \
+experience.
+
+Question: {question}
+{_voice_block(voice)}
+
+Candidate experience:
+{chr(10).join(experience) or "(none)"}
+Candidate projects:
+{chr(10).join(projects) or "(none)"}
+Candidate skills: {skills or "(none listed)"}
+
+Return JSON with `situation`, `task`, `action`, `result`."""
