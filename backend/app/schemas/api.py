@@ -146,6 +146,14 @@ class ResumeVersionDetail(ResumeVersionSummary):
     content: dict[str, Any]
 
 
+class ResumeParseResponse(ApiModel):
+    """Result of parsing an uploaded file into a draft résumé (not yet saved)."""
+
+    content: MasterResume
+    cost_usd: float
+    source_filename: str
+
+
 # --- Jobs -------------------------------------------------------------------
 
 

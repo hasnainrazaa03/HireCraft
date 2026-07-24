@@ -81,6 +81,20 @@ def _strip_fence(text: str) -> str:
     return text.strip()
 
 
+def _loads(text: str) -> Any:
+    """Parse a model reply as JSON, unwrapping a single-element list wrapper."""
+    payload = _strip_fence(text)
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise LlmResponseError(
+            f"Gemini did not return valid JSON: {exc}. First 200 chars: {payload[:200]!r}"
+        ) from exc
+    if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+        parsed = parsed[0]
+    return parsed
+
+
 def _classify(exc: Exception) -> LlmError:
     """Map a provider exception onto our retryable / terminal split."""
     message = str(exc)
@@ -131,22 +145,17 @@ class GeminiClient:
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def generate_structured(
+    def _generate_text(
         self,
         *,
         prompt: str,
-        schema: type[T],
-        system_instruction: str | None = None,
-        temperature: float | None = None,
-        max_output_tokens: int | None = None,
-    ) -> LlmResult[T]:
-        """Call Gemini and parse the reply into ``schema``.
-
-        Raises:
-            LlmConfigurationError: no API key configured.
-            LlmTransientError: retryable provider failure, after retries are spent.
-            LlmResponseError: reply could not be validated against ``schema``.
-        """
+        schema: type[BaseModel],
+        system_instruction: str | None,
+        temperature: float | None,
+        max_output_tokens: int | None,
+    ) -> tuple[str, Usage]:
+        """Make the Gemini call and return the raw reply text plus usage. Shared
+        by generate_structured (validates) and generate_raw (does not)."""
 
         @retry(
             retry=retry_if_exception_type(LlmTransientError),
@@ -210,33 +219,72 @@ class GeminiClient:
             model=self.model,
             latency_ms=latency_ms,
         )
+        return text, usage
 
+    def generate_structured(
+        self,
+        *,
+        prompt: str,
+        schema: type[T],
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
+    ) -> LlmResult[T]:
+        """Call Gemini and parse the reply into ``schema`` (validated).
+
+        Raises:
+            LlmConfigurationError: no API key configured.
+            LlmTransientError: retryable provider failure, after retries are spent.
+            LlmResponseError: reply could not be validated against ``schema``.
+        """
+        text, usage = self._generate_text(
+            prompt=prompt,
+            schema=schema,
+            system_instruction=system_instruction,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
         data = self._parse(text, schema)
         logger.info(
             "llm.call_succeeded",
             model=self.model,
             schema=schema.__name__,
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
             cost_usd=usage.cost_usd,
-            latency_ms=latency_ms,
+            latency_ms=usage.latency_ms,
         )
         return LlmResult(data=data, usage=usage, raw_text=text)
 
+    def generate_raw(
+        self,
+        *,
+        prompt: str,
+        schema: type[BaseModel],
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
+    ) -> tuple[dict[str, Any], Usage, str]:
+        """Like generate_structured, but return the parsed JSON dict WITHOUT
+        validating it against ``schema`` (the schema still guides Gemini).
+
+        For cases that must repair the JSON before it can pass strict validation
+        — e.g. importing a résumé whose dates arrive as "May 2024". Returns
+        ``(payload, usage, raw_text)``.
+        """
+        text, usage = self._generate_text(
+            prompt=prompt,
+            schema=schema,
+            system_instruction=system_instruction,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        payload = _loads(text)
+        if not isinstance(payload, dict):
+            raise LlmResponseError("Expected a JSON object from Gemini.")
+        return payload, usage, text
+
     @staticmethod
     def _parse(text: str, schema: type[T]) -> T:
-        payload = _strip_fence(text)
-        try:
-            parsed = json.loads(payload)
-        except json.JSONDecodeError as exc:
-            raise LlmResponseError(
-                f"Gemini did not return valid JSON: {exc}. First 200 chars: {payload[:200]!r}"
-            ) from exc
-
-        # A schema whose root is an object may still arrive wrapped in a list.
-        if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
-            parsed = parsed[0]
-
+        parsed = _loads(text)
         try:
             return schema.model_validate(parsed)
         except ValidationError as exc:

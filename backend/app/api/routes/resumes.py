@@ -9,10 +9,14 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import ValidationError
 from sqlalchemy import select, update
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, GenerationUser
 from app.core.config import settings
+from app.core.crypto import decrypt
+from app.core.logging import get_logger
+from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile, ResumeVersion
 from app.schemas.api import (
+    ResumeParseResponse,
     ResumeProfileCreate,
     ResumeProfileResponse,
     ResumeProfileSummary,
@@ -22,6 +26,11 @@ from app.schemas.api import (
 )
 from app.schemas.resume import MasterResume
 from app.services import resume_versions
+from app.services.llm.client import GeminiClient, LlmError
+from app.services.parsing.extract import ExtractionError, extract
+from app.services.parsing.structure import ParsingError, structure_resume
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -142,6 +151,83 @@ def _readable_validation_error(exc: ValidationError) -> str:
         lines.append(f"{location}: {error['msg']}")
     suffix = "" if exc.error_count() <= 8 else f" (+{exc.error_count() - 8} more)"
     return "Resume JSON is invalid -- " + "; ".join(lines) + suffix
+
+
+@router.post("/parse", response_model=ResumeParseResponse)
+async def parse_resume(
+    user: GenerationUser,
+    db: DbSession,
+    file: UploadFile = File(..., description="A PDF, DOCX, LaTeX, or text résumé"),
+) -> ResumeParseResponse:
+    """Extract and structure an uploaded résumé into a draft — NOT saved.
+
+    The client loads the result into the builder for review, then saves it via
+    the normal create endpoint. Costs one LLM call; the tighter generation rate
+    limit applies.
+    """
+    raw = await file.read(settings.max_upload_bytes + 1)
+    if len(raw) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds the {settings.max_upload_bytes // 1024 // 1024} MB limit.",
+        )
+    filename = file.filename or "resume"
+
+    # A .json résumé is already structured — validate it directly, no LLM needed.
+    if filename.lower().endswith(".json"):
+        try:
+            resume = MasterResume.model_validate(json.loads(raw.decode("utf-8")))
+        except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=_readable_validation_error(exc)
+                if isinstance(exc, ValidationError)
+                else f"That JSON file is invalid: {exc}",
+            ) from exc
+        return ResumeParseResponse(content=resume, cost_usd=0.0, source_filename=filename)
+
+    try:
+        text = extract(filename, raw)
+    except ExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    client = None
+    if user.encrypted_gemini_key:
+        try:
+            client = GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
+        except Exception:  # noqa: BLE001 - fall back to the shared key
+            client = None
+
+    try:
+        resume, usage = structure_resume(text, client=client)
+    except ParsingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except LlmError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't parse your résumé right now: {exc}",
+        ) from exc
+
+    db.add(
+        LlmUsage(
+            user_id=user.id,
+            purpose="resume_parse",
+            model=usage.model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cost_usd=usage.cost_usd,
+            latency_ms=usage.latency_ms,
+        )
+    )
+    db.commit()
+    logger.info("resume.parsed", user_id=str(user.id), cost_usd=usage.cost_usd)
+    return ResumeParseResponse(
+        content=resume, cost_usd=usage.cost_usd, source_filename=filename
+    )
 
 
 @router.get("/schema", response_model=dict)
