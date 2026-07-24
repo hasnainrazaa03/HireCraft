@@ -5,8 +5,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import JSON, DateTime, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Portable JSON column: JSONB on Postgres (production - indexable, typed),
+# plain JSON on SQLite so the unit tests can compile the schema in memory
+# without a running database. Use this everywhere instead of importing JSONB
+# directly, so any model can be created under either dialect.
+JsonB = JSONB().with_variant(JSON(), "sqlite")
 
 
 class Base(DeclarativeBase):

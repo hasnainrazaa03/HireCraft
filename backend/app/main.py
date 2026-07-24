@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
-from app.api.routes import analytics, applications, auth, health, resumes
+from app.api.routes import account, analytics, applications, auth, health, resumes
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger, request_id_var
 from app.core.rate_limit import check_api_limit
@@ -169,7 +169,7 @@ async def validation_exception_handler(
 
 
 app.include_router(health.router)
-for module in (auth, resumes, applications, analytics):
+for module in (auth, account, resumes, applications, analytics):
     app.include_router(module.router, prefix=settings.api_v1_prefix)
 
 

@@ -10,6 +10,7 @@ from app.models.application import (
     PipelineStatus,
     TrackerStatus,
 )
+from app.models.auth import AuthToken, AuthTokenPurpose, Session
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile
@@ -18,10 +19,13 @@ from app.models.user import User
 __all__ = [
     "Application",
     "ApplicationArtifact",
+    "AuthToken",
+    "AuthTokenPurpose",
     "Job",
     "LlmUsage",
     "PipelineStatus",
     "ResumeProfile",
+    "Session",
     "TrackerStatus",
     "User",
 ]

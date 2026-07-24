@@ -8,11 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, JsonB, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.job import Job
@@ -94,11 +93,11 @@ class Application(Base, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text)
 
     # The tailored Master Resume JSON produced by the optimizer.
-    tailored_resume: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    tailored_resume: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
     # Field-level record of what changed vs. the master, for the diff view.
-    diff: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    diff: Mapped[list[dict[str, Any]] | None] = mapped_column(JsonB)
     # Guardrail findings; non-empty means something was rejected or repaired.
-    guardrail_report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    guardrail_report: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
 
     include_cover_letter: Mapped[bool] = mapped_column(default=False, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)

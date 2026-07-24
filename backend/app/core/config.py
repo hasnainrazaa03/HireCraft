@@ -46,7 +46,10 @@ class Settings(BaseSettings):
 
     # --- Auth ---
     secret_key: str = "dev-only-insecure-key-change-me"
-    access_token_ttl_minutes: int = 60 * 12
+    # Short access TTL keeps stateless access tokens honest: after "log out
+    # everywhere" revokes the refresh sessions, any lingering access token dies
+    # within the hour rather than staying valid for half a day.
+    access_token_ttl_minutes: int = 60
     refresh_token_ttl_days: int = 14
     jwt_algorithm: str = "HS256"
 

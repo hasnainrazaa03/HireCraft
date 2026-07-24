@@ -47,7 +47,53 @@ class UserResponse(ApiModel):
     id: uuid.UUID
     email: EmailStr
     full_name: str | None
+    is_verified: bool
+    theme: str
+    notification_prefs: dict[str, Any]
     created_at: datetime
+
+
+class VerifyEmailRequest(ApiModel):
+    token: str = Field(min_length=8, max_length=200)
+
+
+class ForgotPasswordRequest(ApiModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(ApiModel):
+    token: str = Field(min_length=8, max_length=200)
+    new_password: Annotated[str, Field(min_length=10, max_length=128)]
+
+
+class ChangePasswordRequest(ApiModel):
+    current_password: Annotated[str, Field(min_length=1, max_length=128)]
+    new_password: Annotated[str, Field(min_length=10, max_length=128)]
+    logout_other_sessions: bool = True
+
+
+class ChangeEmailRequest(ApiModel):
+    new_email: EmailStr
+    password: Annotated[str, Field(min_length=1, max_length=128)]
+
+
+class MessageResponse(ApiModel):
+    message: str
+
+
+class SessionResponse(ApiModel):
+    id: uuid.UUID
+    user_agent: str | None
+    ip_address: str | None
+    last_used_at: datetime
+    created_at: datetime
+    current: bool = False
+
+
+class AccountSettingsUpdate(ApiModel):
+    theme: Literal["dark", "light"] | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+    notification_prefs: dict[str, bool] | None = None
 
 
 # --- Resume profiles --------------------------------------------------------

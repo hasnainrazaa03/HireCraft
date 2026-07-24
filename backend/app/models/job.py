@@ -6,11 +6,10 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, JsonB, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.application import Application
@@ -42,7 +41,7 @@ class Job(Base, TimestampMixin):
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Structured output of the Requirement Extractor; see schemas.job.JobRequirements.
-    requirements: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    requirements: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
 
     user: Mapped[User] = relationship(back_populates="jobs")
     applications: Mapped[list[Application]] = relationship(

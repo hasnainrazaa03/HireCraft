@@ -6,11 +6,10 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, JsonB, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.application import Application
@@ -39,7 +38,7 @@ class ResumeProfile(Base, TimestampMixin):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    content: Mapped[dict[str, Any]] = mapped_column(JsonB, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="resume_profiles")

@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import check_generation_limit
-from app.core.security import TokenError, token_subject
+from app.core.security import TokenError, decode_token, token_subject
 from app.db.session import get_db
 from app.models.user import User
 
@@ -53,6 +53,32 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_current_session_id(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ] = None,
+) -> uuid.UUID | None:
+    """The session id embedded in the access token, if present.
+
+    Lets a handler act on the caller's *own* session (e.g. log out this device,
+    or "log out everywhere else") without a second round-trip.
+    """
+    if credentials is None or not credentials.credentials:
+        return None
+    try:
+        payload = decode_token(credentials.credentials, "access")
+    except TokenError:
+        return None
+    sid = payload.get("sid")
+    try:
+        return uuid.UUID(str(sid)) if sid else None
+    except ValueError:
+        return None
+
+
+CurrentSessionId = Annotated[uuid.UUID | None, Depends(get_current_session_id)]
 
 
 def enforce_generation_quota(request: Request, user: CurrentUser) -> User:
