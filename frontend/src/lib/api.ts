@@ -777,3 +777,11 @@ export interface NotificationList {
   items: NotificationItem[];
   unread_count: number;
 }
+
+// --- Copilot ----------------------------------------------------------------
+
+export interface CopilotResponse {
+  reply: string;
+  grounded_in: string[];
+  cost_usd: number;
+}

@@ -18,6 +18,7 @@ import WritingPage from "./pages/WritingPage";
 import CoverLettersPage from "./pages/CoverLettersPage";
 import CompaniesPage from "./pages/CompaniesPage";
 import InterviewPage from "./pages/InterviewPage";
+import CopilotPage from "./pages/CopilotPage";
 
 function AuthedApp() {
   return (
@@ -33,6 +34,7 @@ function AuthedApp() {
         <Route path="/cover-letters" element={<CoverLettersPage />} />
         <Route path="/companies" element={<CompaniesPage />} />
         <Route path="/interview" element={<InterviewPage />} />
+        <Route path="/copilot" element={<CopilotPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />

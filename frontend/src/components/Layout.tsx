@@ -15,6 +15,7 @@ import {
   IconSearch,
   IconChart,
   IconTarget,
+  IconSparkles,
   IconSettings,
   IconTemplate,
   IconPlus,
@@ -69,6 +70,7 @@ function VerifyBanner() {
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: IconDashboard, end: true },
+  { to: "/copilot", label: "Copilot", icon: IconSparkles, end: false },
   { to: "/applications", label: "Applications", icon: IconApplications, end: false },
   { to: "/resumes", label: "Resumes", icon: IconResume, end: false },
   { to: "/profile", label: "Career Profile", icon: IconUser, end: false },
@@ -85,6 +87,7 @@ const NAV = [
 // can show the full product shape without dead links.
 const LIVE_ROUTES = new Set([
   "/",
+  "/copilot",
   "/applications",
   "/resumes",
   "/profile",
