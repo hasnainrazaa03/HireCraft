@@ -16,6 +16,11 @@ class JobSearchResult(BaseModel):
     tags: list[str]
     snippet: str
     source: str
-    # Approximate résumé fit (null if the user has no résumé yet).
+    created_at: int | None = None  # unix seconds, for "posted N days ago"
+    # Résumé fit analysis (null / empty if the user has no résumé yet).
     match_score: int | None = None
-    matched_skills: list[str] = []
+    verdict: str | None = None
+    interview_chance: str | None = None
+    summary: str | None = None
+    strengths: list[str] = []
+    gaps: list[str] = []

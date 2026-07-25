@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date
 
 from app.schemas.job import JobRequirements, Skill
@@ -73,6 +74,93 @@ def quick_match_score(resume: MasterResume, job_text: str) -> tuple[int, list[st
     # 0 hits reads as a weak fit, ~5+ as a strong one.
     score = min(100, max(12, len(matched) * 20))
     return score, matched[:8]
+
+
+# A curated vocabulary of skills/tools a posting is likely to name. Detecting
+# these in the job text lets us split the requirements the candidate *has*
+# (strengths) from the ones they *lack* (gaps) — the heart of the fit summary.
+TECH_VOCAB: tuple[str, ...] = (
+    "Python", "Java", "JavaScript", "TypeScript", "Go", "Rust", "C++", "C#", "Ruby",
+    "Scala", "Kotlin", "Swift", "PHP", "R", "MATLAB", "SQL", "Bash",
+    "React", "Vue", "Angular", "Next.js", "Node.js", "Django", "Flask", "FastAPI",
+    "Spring", "Rails", "Express", "GraphQL", "REST", "gRPC",
+    "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Cassandra",
+    "Kafka", "RabbitMQ", "Snowflake", "Spark", "Hadoop", "Airflow", "dbt",
+    "AWS", "GCP", "Azure", "Docker", "Kubernetes", "Terraform", "CI/CD", "Jenkins",
+    "Linux", "Git", "Microservices", "System Design", "Distributed Systems",
+    "Machine Learning", "Deep Learning", "NLP", "Computer Vision", "PyTorch",
+    "TensorFlow", "Scikit-learn", "Pandas", "NumPy", "LLM", "Transformers",
+    "Data Engineering", "ETL", "Data Pipelines", "Tableau", "Power BI",
+    "Agile", "Scrum", "TDD", "Selenium", "Playwright",
+)
+
+
+@dataclass
+class JobFit:
+    score: int
+    verdict: str
+    strengths: list[str]
+    gaps: list[str]
+    interview_chance: str  # High | Medium | Low
+    summary: str
+
+
+def _term_present(job_lower: str, term: str) -> bool:
+    return re.search(rf"(?<![a-z0-9]){re.escape(term.lower())}(?![a-z0-9])", job_lower) is not None
+
+
+def analyze_job_fit(resume: MasterResume, job_text: str) -> JobFit:
+    """Deterministic, LLM-free fit analysis for a job posting: a fit score,
+    the requirements the candidate has vs. lacks, and a plain-language summary —
+    so a job card can answer 'should I apply, and why?' with no API call."""
+    corpus, vocab = _skill_index(resume)
+    job = job_text.lower()
+
+    present = [t for t in TECH_VOCAB if _term_present(job, t)]
+    strengths = [t for t in present if _claims(t, corpus, vocab)]
+    gaps = [t for t in present if not _claims(t, corpus, vocab)]
+
+    if present:
+        score = round(len(strengths) / len(present) * 100)
+    else:
+        # No recognised tech named — fall back to raw résumé-skill overlap.
+        score = quick_match_score(resume, job_text)[0]
+    score = max(12, min(100, score))
+
+    verdict = (
+        "Excellent Match" if score >= 85
+        else "Great Match" if score >= 70
+        else "Good Match" if score >= 50
+        else "Fair Match"
+    )
+    chance = "High" if score >= 72 else "Medium" if score >= 50 else "Low"
+    return JobFit(
+        score=score,
+        verdict=verdict,
+        strengths=strengths[:8],
+        gaps=gaps[:6],
+        interview_chance=chance,
+        summary=_fit_summary(score, strengths, gaps),
+    )
+
+
+def _fit_summary(score: int, strengths: list[str], gaps: list[str]) -> str:
+    top = ", ".join(strengths[:2]) if strengths else "your background"
+    miss = ", ".join(gaps[:2])
+    if score >= 85:
+        base = f"Excellent fit — your {top} lines up with what they're asking for."
+    elif score >= 70:
+        base = f"Strong match. Your {top} experience fits this role well."
+    elif score >= 50:
+        base = f"Decent fit — you bring {top}, with a few gaps to close."
+    else:
+        base = (
+            f"Lighter fit — this role leans on {miss or 'skills'} your résumé doesn't emphasize yet."
+            if gaps else "Lighter fit for your current résumé."
+        )
+    if gaps and score >= 50:
+        base += f" Worth adding: {miss}."
+    return base
 
 
 def _claims(term: str, corpus_lower: str, vocab: set[str]) -> bool:

@@ -79,7 +79,8 @@ def search_jobs(
             hay = f"{title} {company} {' '.join(tags)}".lower()
             if q not in hay:
                 continue
-        snippet = _strip_html(job.get("description", ""))[:400]
+        snippet = _strip_html(job.get("description", ""))[:600]
+        created = job.get("created_at")
         results.append(
             JobSearchResult(
                 title=title,
@@ -90,6 +91,7 @@ def search_jobs(
                 tags=[str(t) for t in tags][:8],
                 snippet=snippet,
                 source="Arbeitnow",
+                created_at=int(created) if isinstance(created, (int, float)) else None,
             )
         )
         if len(results) >= limit:

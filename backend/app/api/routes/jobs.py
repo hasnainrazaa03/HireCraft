@@ -11,7 +11,7 @@ from app.schemas.jobsearch import JobSearchResult
 from app.schemas.resume import MasterResume
 from app.services import feature_flags
 from app.services.jobsearch import search_jobs
-from app.services.matching import quick_match_score
+from app.services.matching import analyze_job_fit
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -42,11 +42,15 @@ def job_search(
         try:
             resume = MasterResume.model_validate(profile.content)
             for r in results:
-                score, matched = quick_match_score(
+                fit = analyze_job_fit(
                     resume, f"{r.title} {r.company} {' '.join(r.tags)} {r.snippet}"
                 )
-                r.match_score = score
-                r.matched_skills = matched
+                r.match_score = fit.score
+                r.verdict = fit.verdict
+                r.interview_chance = fit.interview_chance
+                r.summary = fit.summary
+                r.strengths = fit.strengths
+                r.gaps = fit.gaps
         except Exception:  # noqa: BLE001 - a bad résumé shouldn't break search
             pass
     return results
