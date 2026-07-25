@@ -6,6 +6,7 @@ import {
   type ResumeProfileSummary,
   type ApplicationSummary,
   type CopilotResponse,
+  type LlmSettings,
 } from "../lib/api";
 import { IconSparkles } from "../components/icons";
 import { Spinner } from "../components/ui";
@@ -28,6 +29,8 @@ export default function CopilotPage() {
   const [input, setInput] = useState("");
   const [resumeId, setResumeId] = useState<string>("");
   const [appId, setAppId] = useState<string>("");
+  // Per-chat model override: "" = the account's active model.
+  const [override, setOverride] = useState<string>("");
   const endRef = useRef<HTMLDivElement>(null);
 
   const { data: resumes = [] } = useQuery({
@@ -38,15 +41,23 @@ export default function CopilotPage() {
     queryKey: ["applications"],
     queryFn: () => api.get<ApplicationSummary[]>("/applications?limit=100"),
   });
+  const { data: llm } = useQuery({
+    queryKey: ["llm-settings"],
+    queryFn: () => api.get<LlmSettings>("/account/llm"),
+  });
 
   const send = useMutation({
-    mutationFn: (message: string) =>
-      api.post<CopilotResponse>("/copilot/chat", {
+    mutationFn: (message: string) => {
+      const [provider, model] = override ? override.split("::") : [null, null];
+      return api.post<CopilotResponse>("/copilot/chat", {
         message,
         history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
         resume_profile_id: resumeId || null,
         application_id: appId || null,
-      }),
+        provider,
+        model,
+      });
+    },
     onSuccess: (r) =>
       setMessages((prev) => [
         ...prev,
@@ -109,6 +120,27 @@ export default function CopilotPage() {
               </option>
             ))}
           </select>
+          {llm && (
+            <select
+              className="input max-w-[190px] py-1.5 text-sm"
+              value={override}
+              onChange={(e) => setOverride(e.target.value)}
+              title="Model for this chat"
+            >
+              <option value="">
+                Active: {llm.providers.find((p) => p.id === llm.provider)?.models.find((m) => m.id === llm.model)?.label ?? llm.model}
+              </option>
+              {llm.providers
+                .filter((p) => p.has_key)
+                .map((p) => (
+                  <optgroup key={p.id} label={p.label}>
+                    {p.models.map((m) => (
+                      <option key={m.id} value={`${p.id}::${m.id}`}>{m.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+            </select>
+          )}
         </div>
       </div>
 

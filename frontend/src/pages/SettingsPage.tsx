@@ -1,17 +1,25 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, type ApiKeyStatus, type SessionInfo, type User } from "../lib/api";
+import {
+  api,
+  ApiError,
+  type SessionInfo,
+  type User,
+  type LlmSettings,
+  type LlmProviderInfo,
+} from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
 import { useToast } from "../lib/toast";
 import { Modal, Spinner } from "../components/ui";
 import { IconCheck, IconShield, IconLogout, IconKey } from "../components/icons";
 
-type Tab = "profile" | "security" | "sessions" | "notifications" | "data";
+type Tab = "profile" | "security" | "ai" | "sessions" | "notifications" | "data";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "security", label: "Security" },
+  { id: "ai", label: "AI Model" },
   { id: "sessions", label: "Devices" },
   { id: "notifications", label: "Notifications" },
   { id: "data", label: "Data" },
@@ -43,6 +51,7 @@ export default function SettingsPage() {
       <div className="pt-6">
         {tab === "profile" && <ProfileSection />}
         {tab === "security" && <SecuritySection />}
+        {tab === "ai" && <LlmSection />}
         {tab === "sessions" && <SessionsSection />}
         {tab === "notifications" && <NotificationsSection />}
         {tab === "data" && <DataSection />}
@@ -230,82 +239,167 @@ function SecuritySection() {
           </button>
         </form>
       </Card>
-
-      <ApiKeySection />
     </>
   );
 }
 
-// --- Bring-your-own Gemini key ----------------------------------------------
+// --- AI provider / model + keys ---------------------------------------------
 
-function ApiKeySection() {
+const PROVIDER_HINT: Record<string, string> = {
+  gemini: "Get one free at aistudio.google.com/apikey",
+  anthropic: "Create one at console.anthropic.com",
+  openai: "Create one at platform.openai.com/api-keys",
+};
+
+function LlmSection() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["llm-settings"],
+    queryFn: () => api.get<LlmSettings>("/account/llm"),
+  });
+
+  const select = useMutation({
+    mutationFn: (body: { provider: string; model: string }) =>
+      api.put<LlmSettings>("/account/llm", body),
+    onSuccess: (s) => {
+      queryClient.setQueryData(["llm-settings"], s);
+      toast.success("Model updated");
+    },
+    onError: (e) => toast.error("Couldn't switch", e instanceof ApiError ? e.message : undefined),
+  });
+
+  if (isLoading || !data) return <Spinner className="mx-auto my-10 h-6 w-6" />;
+
+  const active = data.providers.find((p) => p.id === data.provider);
+
+  return (
+    <>
+      <Card
+        title="AI provider & model"
+        description="Choose which model powers everything — one active provider at a time. Add a key below to unlock a provider."
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Provider</label>
+            <select
+              className="input"
+              value={data.provider}
+              onChange={(e) => {
+                const prov = data.providers.find((p) => p.id === e.target.value)!;
+                select.mutate({ provider: prov.id, model: prov.models[0]?.id });
+              }}
+            >
+              {data.providers.map((p) => (
+                <option key={p.id} value={p.id} disabled={!p.has_key} className="bg-surface">
+                  {p.label}{p.has_key ? "" : " (no key)"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Model</label>
+            <select
+              className="input"
+              value={data.model}
+              disabled={!active?.has_key}
+              onChange={(e) => select.mutate({ provider: data.provider, model: e.target.value })}
+            >
+              {active?.models.map((m) => (
+                <option key={m.id} value={m.id} className="bg-surface">
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {active && (
+          <p className="mt-3 text-xs text-subtle">
+            {active.byo_key
+              ? "Billing your own key."
+              : active.has_key
+                ? "Using the shared server key."
+                : "Add a key to use this provider."}
+          </p>
+        )}
+      </Card>
+
+      <Card title="API keys" description="Stored encrypted; validated with a tiny live call before saving. Your key bills your own quota.">
+        <div className="space-y-3">
+          {data.providers.map((p) => (
+            <ProviderKeyRow key={p.id} provider={p} />
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function ProviderKeyRow({ provider }: { provider: LlmProviderInfo }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [key, setKey] = useState("");
-
-  const { data: status } = useQuery({
-    queryKey: ["api-key"],
-    queryFn: () => api.get<ApiKeyStatus>("/account/api-key"),
-  });
+  const [open, setOpen] = useState(false);
 
   const save = useMutation({
-    mutationFn: () => api.put<ApiKeyStatus>("/account/api-key", { api_key: key }),
+    mutationFn: () => api.put<LlmSettings>(`/account/llm/keys/${provider.id}`, { api_key: key }),
     onSuccess: (s) => {
-      queryClient.setQueryData(["api-key"], s);
-      setKey("");
-      toast.success("API key saved", "Your runs now use your own Gemini quota.");
+      queryClient.setQueryData(["llm-settings"], s);
+      setKey(""); setOpen(false);
+      toast.success(`${provider.label} key saved`);
     },
     onError: (e) => toast.error("Key rejected", e instanceof ApiError ? e.message : undefined),
   });
-
   const remove = useMutation({
-    mutationFn: () => api.delete("/account/api-key"),
-    onSuccess: () => {
-      queryClient.setQueryData(["api-key"], { configured: false, hint: null });
-      toast.success("API key removed");
+    mutationFn: () => api.delete<LlmSettings>(`/account/llm/keys/${provider.id}`),
+    onSuccess: (s) => {
+      queryClient.setQueryData(["llm-settings"], s);
+      toast.success(`${provider.label} key removed`);
     },
   });
 
   return (
-    <Card
-      title="Your Gemini API key"
-      description="Optional. Bring your own key and your tailoring runs bill your quota instead of the shared one. Stored encrypted; we validate it before saving."
-    >
-      {status?.configured ? (
-        <div className="flex items-center justify-between rounded-xl border border-emerald/30 bg-emerald/5 p-4">
-          <div className="flex items-center gap-2.5 text-sm">
-            <IconKey className="h-4 w-4 text-emerald" />
-            <span>Your key is active <span className="font-mono text-muted">({status.hint})</span></span>
-          </div>
-          <button onClick={() => remove.mutate()} className="btn-ghost btn-sm text-danger hover:bg-danger/10">
-            Remove
-          </button>
+    <div className="rounded-xl border border-white/[0.07] bg-surface-2 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 text-sm">
+          <IconKey className={`h-4 w-4 ${provider.byo_key ? "text-emerald" : "text-subtle"}`} />
+          <span className="font-medium">{provider.label}</span>
+          {provider.byo_key ? (
+            <span className="badge-emerald text-[10px]">your key ····{provider.key_hint}</span>
+          ) : provider.has_key ? (
+            <span className="badge-muted text-[10px]">server key</span>
+          ) : (
+            <span className="badge-muted text-[10px]">no key</span>
+          )}
         </div>
-      ) : (
-        <div className="max-w-md">
-          <label className="label" htmlFor="apikey">Gemini API key</label>
+        {provider.byo_key ? (
+          <button onClick={() => remove.mutate()} className="btn-ghost btn-sm text-danger hover:bg-danger/10">Remove</button>
+        ) : (
+          <button onClick={() => setOpen((v) => !v)} className="btn-ghost btn-sm">{open ? "Cancel" : "Add key"}</button>
+        )}
+      </div>
+      {open && !provider.byo_key && (
+        <div className="mt-3 max-w-md">
           <input
-            id="apikey"
             type="password"
             className="input font-mono"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="AIza…"
+            placeholder="Paste your API key"
             autoComplete="off"
           />
-          <p className="mt-1.5 text-xs text-subtle">
-            Get one free at aistudio.google.com/apikey.
-          </p>
+          <p className="mt-1.5 text-xs text-subtle">{PROVIDER_HINT[provider.id]}</p>
           <button
             onClick={() => save.mutate()}
-            disabled={save.isPending || key.trim().length < 10}
-            className="btn-primary mt-3"
+            disabled={save.isPending || key.trim().length < 8}
+            className="btn-primary btn-sm mt-2"
           >
             {save.isPending ? "Validating…" : "Save key"}
           </button>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 

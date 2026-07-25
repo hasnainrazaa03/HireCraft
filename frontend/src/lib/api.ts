@@ -842,3 +842,27 @@ export interface AdminStats {
   cost_by_purpose: Record<string, number>;
   recent_signups: AdminUserRow[];
 }
+
+// --- LLM provider / model settings ------------------------------------------
+
+export interface LlmModelInfo {
+  id: string;
+  label: string;
+  input_cost: number;
+  output_cost: number;
+}
+
+export interface LlmProviderInfo {
+  id: string;
+  label: string;
+  models: LlmModelInfo[];
+  has_key: boolean;
+  byo_key: boolean;
+  key_hint: string | null;
+}
+
+export interface LlmSettings {
+  provider: string;
+  model: string;
+  providers: LlmProviderInfo[];
+}
