@@ -127,7 +127,8 @@ export default function JobSearchPage() {
             ))}
           </div>
           <p className="pt-1 text-center text-xs text-subtle">
-            Results from {sorted[0]?.source} · match scores are an approximate fit against your résumé
+            Aggregated from {[...new Set(sorted.map((j) => j.source.split(" · ")[0]))].join(" · ")}
+            {" "}· match scores are an approximate fit against your résumé
           </p>
         </>
       )}
@@ -205,8 +206,10 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
           )}
 
           <div className="mt-auto space-y-3 pt-3">
-            <div className="text-xs text-subtle">
-              {job.created_at ? `Posted ${timeAgo(job.created_at)}` : "Recently posted"}
+            <div className="flex items-center gap-1.5 text-xs text-subtle">
+              <span>{job.created_at ? `Posted ${timeAgo(job.created_at)}` : "Recently posted"}</span>
+              <span>·</span>
+              <span className="truncate text-brand-300/70">{job.source}</span>
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
               <button onClick={onOpen} className="inline-flex items-center gap-1 text-sm font-medium text-brand-300 hover:text-brand-200">

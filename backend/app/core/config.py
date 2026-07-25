@@ -97,6 +97,17 @@ class Settings(BaseSettings):
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     )
 
+    # --- Job search sources ---
+    # Comma-separated list of enabled sources (all free / keyless):
+    #   arbeitnow · remotive · remoteok · github
+    job_sources: str = "arbeitnow,remotive,remoteok,github"
+    # Comma-separated "owner/repo" of GitHub job-listing repos. These are read as
+    # a structured listings.json when present, else parsed from the README table.
+    # Add your own repo here (or via the GITHUB_JOB_REPOS env var).
+    github_job_repos: str = (
+        "SimplifyJobs/Summer2026-Internships,SimplifyJobs/New-Grad-Positions"
+    )
+
     # --- LaTeX ---
     tectonic_binary: str = "tectonic"
     latex_timeout_seconds: int = 120
