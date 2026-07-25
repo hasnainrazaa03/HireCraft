@@ -48,6 +48,7 @@ class UserResponse(ApiModel):
     email: EmailStr
     full_name: str | None
     is_verified: bool
+    is_superuser: bool = False
     theme: str
     notification_prefs: dict[str, Any]
     created_at: datetime

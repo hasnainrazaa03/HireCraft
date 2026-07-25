@@ -106,6 +106,16 @@ class Settings(BaseSettings):
     # Base URL the frontend serves from; used to build links in emails.
     frontend_base_url: str = "http://localhost:5173"
 
+    # OAuth (optional). A provider is "enabled" only when both id and secret are
+    # set; otherwise its endpoints report 501 and the login buttons hide.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    # Where the provider redirects back to (the API's callback). Defaults derive
+    # from the API's own base at request time when left blank.
+    oauth_redirect_base: str = ""
+
     # --- Token TTLs for email flows ---
     email_verify_ttl_hours: int = 48
     password_reset_ttl_minutes: int = 30

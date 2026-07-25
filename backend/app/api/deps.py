@@ -98,3 +98,16 @@ def enforce_generation_quota(request: Request, user: CurrentUser) -> User:
 
 
 GenerationUser = Annotated[User, Depends(enforce_generation_quota)]
+
+
+def require_admin(user: CurrentUser) -> User:
+    """Gate admin-only endpoints on the existing is_superuser flag."""
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]

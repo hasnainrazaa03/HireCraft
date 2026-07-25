@@ -15,9 +15,11 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentUser, DbSession
 from app.models.application import Application
 from app.models.resume import ResumeProfile
+from app.schemas.assistant import HistoryInsights, ResumeRecommendation
 from app.schemas.job import JobRequirements
 from app.schemas.matching import JobMatch, SkillGapReport
 from app.schemas.resume import MasterResume
+from app.services.assistant import history_insights, recommend_resume
 from app.services.matching import match_resume_to_job, skill_gaps
 
 router = APIRouter(prefix="/insights", tags=["insights"])
@@ -87,3 +89,34 @@ def skill_gap_report(
                 continue
 
     return skill_gaps(resume, requirement_sets)
+
+
+@router.get("/applications/{application_id}/recommend", response_model=ResumeRecommendation)
+def recommend_for_application(
+    application_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> ResumeRecommendation:
+    """Rank every résumé the user has against this job and name the best fit."""
+    application = db.scalar(
+        select(Application)
+        .where(Application.id == application_id, Application.user_id == user.id)
+        .options(selectinload(Application.job))
+    )
+    if application is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Application not found.")
+    if not application.job or not application.job.requirements:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This job hasn't been analysed yet — run the tailoring pipeline first.",
+        )
+    requirements = JobRequirements.model_validate(application.job.requirements)
+    return recommend_resume(
+        db, user.id, requirements,
+        job_title=application.job.title, company=application.job.company,
+    )
+
+
+@router.get("/history", response_model=HistoryInsights)
+def application_history_insights(user: CurrentUser, db: DbSession) -> HistoryInsights:
+    """Per-résumé outcomes: which résumé actually lands interviews, and the
+    keywords the winning applications covered."""
+    return history_insights(db, user.id)

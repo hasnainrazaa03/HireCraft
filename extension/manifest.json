@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "HireCraft Job Clipper",
+  "version": "0.1.0",
+  "description": "Grab a job posting from the page and send it to HireCraft to tailor your résumé.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HireCraft Job Clipper"
+  },
+  "icons": {
+    "128": "icon128.png"
+  }
+}
