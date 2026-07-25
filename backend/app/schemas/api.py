@@ -340,6 +340,23 @@ class UsagePoint(ApiModel):
     calls: int
 
 
+class ModelUsage(ApiModel):
+    model: str
+    provider: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    calls: int
+
+
+class ProviderUsage(ApiModel):
+    provider: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    calls: int
+
+
 class UsageSummary(ApiModel):
     total_cost_usd: float
     total_input_tokens: int
@@ -349,6 +366,8 @@ class UsageSummary(ApiModel):
     average_cost_per_application: float
     by_day: list[UsagePoint] = Field(default_factory=list)
     by_purpose: dict[str, float] = Field(default_factory=dict)
+    by_model: list[ModelUsage] = Field(default_factory=list)
+    by_provider: list[ProviderUsage] = Field(default_factory=list)
 
 
 class TrackerStats(ApiModel):

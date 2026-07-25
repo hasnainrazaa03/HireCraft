@@ -13,11 +13,14 @@ from app.models.application import Application
 from app.models.llm_usage import LlmUsage
 from app.schemas.api import (
     AnalyticsOverview,
+    ModelUsage,
+    ProviderUsage,
     TrackerStats,
     UsagePoint,
     UsageSummary,
 )
 from app.services.dashboard import build_overview
+from app.services.llm.models import provider_for_model
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -72,6 +75,56 @@ def usage_summary(
         .group_by(LlmUsage.purpose)
     ).all()
 
+    # Per-model usage; provider is derived from the model name.
+    model_rows = db.execute(
+        select(
+            LlmUsage.model,
+            func.sum(LlmUsage.input_tokens),
+            func.sum(LlmUsage.output_tokens),
+            func.sum(LlmUsage.cost_usd),
+            func.count(LlmUsage.id),
+        )
+        .where(LlmUsage.user_id == user.id, LlmUsage.created_at >= since)
+        .group_by(LlmUsage.model)
+        .order_by(func.sum(LlmUsage.cost_usd).desc())
+    ).all()
+
+    by_model: list[ModelUsage] = []
+    provider_agg: dict[str, dict[str, float]] = {}
+    for model, in_tok, out_tok, cost, calls in model_rows:
+        provider = provider_for_model(str(model))
+        by_model.append(
+            ModelUsage(
+                model=str(model),
+                provider=provider,
+                input_tokens=int(in_tok or 0),
+                output_tokens=int(out_tok or 0),
+                cost_usd=round(float(cost or 0.0), 6),
+                calls=int(calls or 0),
+            )
+        )
+        agg = provider_agg.setdefault(
+            provider, {"input": 0, "output": 0, "cost": 0.0, "calls": 0}
+        )
+        agg["input"] += int(in_tok or 0)
+        agg["output"] += int(out_tok or 0)
+        agg["cost"] += float(cost or 0.0)
+        agg["calls"] += int(calls or 0)
+
+    by_provider = sorted(
+        (
+            ProviderUsage(
+                provider=p,
+                input_tokens=int(a["input"]),
+                output_tokens=int(a["output"]),
+                cost_usd=round(a["cost"], 6),
+                calls=int(a["calls"]),
+            )
+            for p, a in provider_agg.items()
+        ),
+        key=lambda x: -x.cost_usd,
+    )
+
     total_cost = round(float(totals[2] or 0.0), 6)
     return UsageSummary(
         total_cost_usd=total_cost,
@@ -95,6 +148,8 @@ def usage_summary(
         by_purpose={
             str(purpose): round(float(cost or 0.0), 6) for purpose, cost in by_purpose_rows
         },
+        by_model=by_model,
+        by_provider=by_provider,
     )
 
 

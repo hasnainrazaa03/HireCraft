@@ -106,3 +106,26 @@ def price_for(model: str) -> tuple[float, float]:
     if info is not None:
         return info.input_cost, info.output_cost
     return settings.llm_input_cost_per_mtok, settings.llm_output_cost_per_mtok
+
+
+_MODEL_TO_PROVIDER: dict[str, str] = {
+    m.id: pid for pid, prov in PROVIDERS.items() for m in prov["models"]
+}
+
+
+def provider_for_model(model: str) -> str:
+    """Which provider a model string belongs to — for usage analytics.
+
+    Exact registry match first, then a prefix heuristic so aliases (e.g.
+    ``gemini-flash-latest``, ``gpt-4o-2024-...``) still bucket correctly.
+    """
+    if model in _MODEL_TO_PROVIDER:
+        return _MODEL_TO_PROVIDER[model]
+    low = model.lower()
+    if low.startswith("gemini"):
+        return "gemini"
+    if low.startswith("claude"):
+        return "anthropic"
+    if low.startswith(("gpt", "o1", "o3", "o4", "text-", "davinci")):
+        return "openai"
+    return "other"

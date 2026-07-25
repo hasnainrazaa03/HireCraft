@@ -560,6 +560,25 @@ export interface UsageSummary {
     calls: number;
   }[];
   by_purpose: Record<string, number>;
+  by_model: ModelUsage[];
+  by_provider: ProviderUsage[];
+}
+
+export interface ModelUsage {
+  model: string;
+  provider: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  calls: number;
+}
+
+export interface ProviderUsage {
+  provider: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  calls: number;
 }
 
 export interface TrackerStats {

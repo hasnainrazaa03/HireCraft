@@ -250,14 +250,76 @@ export default function AnalyticsPage() {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MiniStat label="Total spend" value={`$${usage.total_cost_usd.toFixed(4)}`} />
-            <MiniStat label="Per application" value={`$${usage.average_cost_per_application.toFixed(4)}`} />
-            <MiniStat label="Applications" value={usage.applications.toLocaleString()} />
+            <MiniStat label="Input tokens" value={usage.total_input_tokens.toLocaleString()} />
+            <MiniStat label="Output tokens" value={usage.total_output_tokens.toLocaleString()} />
             <MiniStat label="LLM calls" value={usage.total_calls.toLocaleString()} />
           </div>
+
+          {/* By provider */}
+          {usage.by_provider.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-medium">By provider</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                {usage.by_provider.map((p) => (
+                  <div key={p.provider} className="rounded-xl border border-white/[0.06] bg-surface-2 p-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${providerDot(p.provider)}`} />
+                      <span className="text-sm font-medium capitalize text-content">{providerLabel(p.provider)}</span>
+                    </div>
+                    <div className="mt-2 text-xl font-semibold tabular-nums text-gradient">${p.cost_usd.toFixed(4)}</div>
+                    <div className="mt-1 text-xs text-subtle">
+                      {p.calls} calls · {((p.input_tokens + p.output_tokens) / 1000).toFixed(1)}k tokens
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* By model */}
+          {usage.by_model.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-medium">By model</h3>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="table-head">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Model</th>
+                      <th className="px-3 py-2 text-right font-medium">Calls</th>
+                      <th className="px-3 py-2 text-right font-medium">In</th>
+                      <th className="px-3 py-2 text-right font-medium">Out</th>
+                      <th className="px-3 py-2 text-right font-medium">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usage.by_model.map((m) => (
+                      <tr key={m.model} className="table-row">
+                        <td className="px-3 py-2">
+                          <span className="font-mono text-xs text-content">{m.model}</span>
+                          <span className="ml-2 text-[10px] text-subtle capitalize">{providerLabel(m.provider)}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted">{m.calls}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted">{m.input_tokens.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted">{m.output_tokens.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-content">${m.cost_usd.toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function providerLabel(p: string): string {
+  return { gemini: "Gemini", anthropic: "Claude", openai: "OpenAI", other: "Other" }[p] ?? p;
+}
+function providerDot(p: string): string {
+  return { gemini: "bg-electric", anthropic: "bg-coral", openai: "bg-emerald", other: "bg-white/30" }[p] ?? "bg-white/30";
 }
 
 function RateCard({
