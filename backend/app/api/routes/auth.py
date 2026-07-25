@@ -34,7 +34,7 @@ from app.schemas.api import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services import auth_service
+from app.services import auth_service, feature_flags
 from app.services.auth_service import TokenError
 from app.services.email.templates import password_reset_email, verification_email
 from app.workers.tasks import send_email_task
@@ -107,6 +107,12 @@ def _send_verification(db: DbSession, user: User) -> None:
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, request: Request, db: DbSession) -> TokenResponse:
     _throttle(request, "register")
+
+    if not feature_flags.is_enabled(db, "signups_enabled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="New registrations are temporarily disabled.",
+        )
 
     try:
         validate_password_strength(payload.password)
