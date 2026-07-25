@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
+from app.models.resume import ResumeProfile
 from app.schemas.jobsearch import JobSearchResult
+from app.schemas.resume import MasterResume
 from app.services import feature_flags
 from app.services.jobsearch import search_jobs
+from app.services.matching import quick_match_score
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -20,10 +24,29 @@ def job_search(
     remote_only: bool = False,
     limit: int = Query(default=20, ge=1, le=50),
 ) -> list[JobSearchResult]:
-    """Search recent public job postings. Results deep-link into the tailoring
-    flow. Gracefully returns [] if the upstream board is unavailable."""
+    """Search recent public job postings, scored against the user's default
+    résumé. Deep-links into tailoring; returns [] if the board is unavailable."""
     if not feature_flags.is_enabled(db, "job_search_enabled"):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Job search is currently disabled."
         )
-    return search_jobs(q, remote_only=remote_only, limit=limit)
+    results = search_jobs(q, remote_only=remote_only, limit=limit)
+
+    # Score each against the default résumé (deterministic, no LLM).
+    profile = db.scalar(
+        select(ResumeProfile)
+        .where(ResumeProfile.user_id == user.id)
+        .order_by(ResumeProfile.is_default.desc(), ResumeProfile.updated_at.desc())
+    )
+    if profile is not None:
+        try:
+            resume = MasterResume.model_validate(profile.content)
+            for r in results:
+                score, matched = quick_match_score(
+                    resume, f"{r.title} {r.company} {' '.join(r.tags)} {r.snippet}"
+                )
+                r.match_score = score
+                r.matched_skills = matched
+        except Exception:  # noqa: BLE001 - a bad résumé shouldn't break search
+            pass
+    return results

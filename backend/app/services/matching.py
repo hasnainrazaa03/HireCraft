@@ -46,6 +46,35 @@ def _skill_index(resume: MasterResume) -> tuple[str, set[str]]:
     return corpus, _tokens(corpus)
 
 
+def _resume_skills(resume: MasterResume) -> set[str]:
+    """The candidate's concrete skills + technologies — what a job can 'match'."""
+    skills = {item for g in resume.skills for item in g.items}
+    skills |= {t for e in resume.experience for t in e.technologies}
+    skills |= {t for p in resume.projects for t in p.technologies}
+    return {s for s in skills if s.strip()}
+
+
+def quick_match_score(resume: MasterResume, job_text: str) -> tuple[int, list[str]]:
+    """A lightweight, LLM-free fit signal for job-search results.
+
+    The board gives us no structured requirements, so we approximate: how many of
+    the candidate's real skills the posting mentions. Returns (0–100, matched
+    skills). It's a rough relevance hint, not the full job-match analysis.
+    """
+    job = job_text.lower()
+    job_vocab = _tokens(job)
+    matched: list[str] = []
+    for skill in _resume_skills(resume):
+        needle = skill.strip().lower()
+        parts = _tokens(needle)
+        if needle in job or (parts and parts.issubset(job_vocab)):
+            matched.append(skill)
+    matched = sorted(set(matched), key=str.lower)
+    # 0 hits reads as a weak fit, ~5+ as a strong one.
+    score = min(100, max(12, len(matched) * 20))
+    return score, matched[:8]
+
+
 def _claims(term: str, corpus_lower: str, vocab: set[str]) -> bool:
     """Does the résumé support this skill/keyword? Substring for multi-word terms,
     token-subset otherwise — the same rule the guardrails use for provenance."""

@@ -110,3 +110,21 @@ def test_skill_gaps_empty_is_safe(resume):
     assert report.jobs_analyzed == 0
     assert report.average_match is None
     assert report.top_missing == []
+
+
+def test_quick_match_scores_by_skill_overlap(resume):
+    from app.services.matching import quick_match_score
+    # The résumé has Python + SQL; a job mentioning both scores higher than one
+    # mentioning neither.
+    hi, matched = quick_match_score(resume, "We need Python and SQL and React and more.")
+    lo, _ = quick_match_score(resume, "We need a plumber with welding experience.")
+    assert hi > lo
+    assert "Python" in matched
+    assert 0 <= lo <= 100 and 0 <= hi <= 100
+
+
+def test_quick_match_no_overlap_is_low(resume):
+    from app.services.matching import quick_match_score
+    score, matched = quick_match_score(resume, "Bäckerei sucht Verkäufer in Berlin.")
+    assert matched == []
+    assert score <= 20

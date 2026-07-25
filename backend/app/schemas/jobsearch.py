@@ -16,3 +16,6 @@ class JobSearchResult(BaseModel):
     tags: list[str]
     snippet: str
     source: str
+    # Approximate résumé fit (null if the user has no résumé yet).
+    match_score: int | None = None
+    matched_skills: list[str] = []

@@ -878,6 +878,8 @@ export interface JobSearchResult {
   tags: string[];
   snippet: string;
   source: string;
+  match_score: number | null;
+  matched_skills: string[];
 }
 
 export interface PublicConfig {
