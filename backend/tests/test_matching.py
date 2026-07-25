@@ -128,3 +128,29 @@ def test_quick_match_no_overlap_is_low(resume):
     score, matched = quick_match_score(resume, "Bäckerei sucht Verkäufer in Berlin.")
     assert matched == []
     assert score <= 20
+
+
+def test_analyze_job_fit_splits_strengths_and_gaps(resume):
+    from app.services.matching import analyze_job_fit
+    # Résumé has Python + SQL; the job also wants Kubernetes + AWS (which it lacks).
+    fit = analyze_job_fit(resume, "Backend role needing Python, SQL, Kubernetes, AWS, Docker.")
+    assert "Python" in fit.strengths
+    assert "Kubernetes" in fit.gaps and "AWS" in fit.gaps
+    assert 0 <= fit.score <= 100
+    assert fit.verdict in {"Excellent Match", "Great Match", "Good Match", "Fair Match"}
+    assert fit.interview_chance in {"High", "Medium", "Low"}
+    assert fit.summary
+
+
+def test_analyze_job_fit_full_coverage_scores_high(resume):
+    from app.services.matching import analyze_job_fit
+    # Every tech named is in the résumé → high coverage.
+    fit = analyze_job_fit(resume, "We use Python and SQL. That's it.")
+    assert fit.score >= 85 and fit.gaps == []
+
+
+def test_analyze_job_fit_no_tech_is_graceful(resume):
+    from app.services.matching import analyze_job_fit
+    fit = analyze_job_fit(resume, "A friendly bakery seeks a morning shift helper.")
+    assert 0 <= fit.score <= 100
+    assert fit.summary  # still writes a summary

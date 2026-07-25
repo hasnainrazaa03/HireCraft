@@ -2,11 +2,12 @@
 
 # 🛠️ HireCraft
 
-### Tailor your resume to any job — without inventing a single thing.
+### Your entire job search — powered by AI that refuses to lie about you.
 
-*Paste a job posting. Get back an ATS-ready PDF where every line is still true.*
+*Tailor résumés, write cover letters, prep for interviews, track applications, and
+find roles that fit — with a guardrail that never invents a single thing.*
 
-`FastAPI` · `Celery` · `PostgreSQL` · `Redis` · `Gemini` · `Tectonic` · `React`
+`FastAPI` · `Celery` · `PostgreSQL` · `Redis` · `Gemini · Claude · OpenAI` · `Tectonic` · `React`
 
 </div>
 
@@ -59,6 +60,43 @@ behave:**
 
 Everything the guardrails remove is shown to you, with the reason. You stay in
 control; the AI just does the typing.
+
+---
+
+## 🧰 The whole toolkit
+
+HireCraft grew from a résumé tailorer into a full, honest job-search cockpit.
+Everything below is built, tested, and running under one `docker compose up`.
+
+**📄 Résumés**
+- Tailor to any job (scrape a URL or paste text) with the guardrail engine above
+- **Standalone "Improve with AI"** — sharpen a résumé for no specific job, with before/after scores
+- **Deterministic scoring** — 7 metrics, ATS checks, and findings, computed instantly with *no* LLM
+- Version history (snapshot-on-edit, one-click rollback), 4 LaTeX **templates** with live preview
+- Import from PDF / DOCX / LaTeX / JSON; export to PDF / DOCX / LaTeX / JSON
+
+**✍️ Writing studio**
+- **Cover letters v2** — 8 tones, written in *your* saved voice, guardrail-checked, export PDF/DOCX/LaTeX
+- **AI outreach** — recruiter emails, LinkedIn notes, follow-ups, thank-yous, referral & negotiation drafts
+- **Writing voice** — learns your tone/vocabulary/habits from samples you paste
+
+**🎯 Insight & prep**
+- **Job-match score** — explainable fit against a job's requirements, with strengths & gaps *(deterministic)*
+- **Skill-gap analysis** across every saved job → the most impactful skills to learn
+- **Interview prep** — role-tailored questions + STAR answers grounded in your real experience
+- **Company intel** — an honest, opt-in research brief (bands not fake precision, no scraped PII)
+- **Résumé Copilot** — a chat that explains *your* real data: "why was this bullet removed?", "why is my ATS score low?"
+
+**🗂️ Track & discover**
+- **Kanban tracker v2** — 17 stages, drag-and-drop, interview dates, reminders, notes
+- **Job search** — live postings scored against your résumé as an AI mini-analysis card (should I apply, and why?)
+- **Dashboard & analytics** — funnel, response/interview/offer rates, résumé performance, activity feed
+- **Notifications & reminders** (interview-soon, follow-ups, weekly summary) + a full **data export center**
+- **Chrome extension** (`extension/`) — an ATS-aware job clipper (Greenhouse/Lever/Ashby/Workday/LinkedIn)
+
+**🤖 Platform**
+- **Bring your own key** for **Gemini, Claude, or OpenAI** — switch the active provider & model in Settings, one at a time
+- Google / GitHub **OAuth** (config-gated), an **admin panel** (usage, cost, feature flags, user suspension)
 
 ---
 
@@ -150,7 +188,7 @@ progress and renders the diff. Everything runs as containers behind one
 | API | **FastAPI** | async, typed, self-documenting at `/docs` |
 | Worker | **Celery + Redis** | tailoring takes ~60s; that belongs off the request path |
 | Database | **PostgreSQL + SQLAlchemy 2** | JSONB stores résumés without flattening them |
-| AI | **Google Gemini** | strong instruction-following, and cheap — *~$0.001 per application* |
+| AI | **Gemini · Claude · OpenAI** | pluggable providers behind one interface; bring your own key, switch models in Settings |
 | Typesetting | **Tectonic** | LaTeX-grade output from a single static binary, no 5GB TeX install |
 | Frontend | **React + Tailwind + TanStack Query** | polling, caching, and a board view without the ceremony |
 
@@ -203,21 +241,29 @@ truthfulness promise could break* as an explicit, named test. That's the spec.
 
 ## 💸 A word on cost & quotas
 
-Each tailoring run makes 2–3 Gemini calls, landing around **$0.001 per
-application** on Flash-class models. The dashboard tracks every token and dollar,
-broken down by pipeline stage, under *Usage*.
+Every LLM call is metered — input/output tokens, latency, and **per-model** cost —
+and rolled up on the dashboard *and* in the admin panel, broken down by purpose.
+A tailoring run is ~2–3 calls, around **$0.001 per application** on Flash-class
+models. The deterministic features (scoring, job-match, skill-gaps, exports, job
+search) make **zero** LLM calls, so they're free and instant.
 
-> ⚠️ **Free-tier keys are capped at ~20 requests/day** — enough to kick the tires
-> (~6–10 applications), not enough to run a job hunt on. Enable billing on your key
-> when you're ready to go for real. Swapping the model is a one-line `.env` change.
+> ⚠️ **Gemini's free tier is capped (~20 requests/day)** — great for kicking the
+> tires, not for a full hunt. Cheapest to start: **Gemini Flash** (free tier). You
+> can **bring your own Gemini / Claude / OpenAI key** and pick the model in
+> *Settings → AI Model* — one active provider at a time, billed to your own quota.
 
 ---
 
-## 🗺️ Where it's headed
+## 🗺️ Status
 
-The core loop — scrape, tailor, guard, typeset, track — is **built and working
-end to end**. On deck: cloud file storage, résumé version history, and batch
-applications. Ideas and PRs welcome.
+The full roadmap — tailoring, rewrite, scoring, dashboard, tracker v2, cover
+letters + outreach, company intel, interview prep + match/skill-gaps,
+notifications + export, Copilot, job search, multi-provider LLM, admin — is
+**built and running end to end**, with tests and a green CI drift-gate.
+
+A few things need *your* keys, not more code: **OAuth** (add provider client
+IDs/secrets to activate the buttons), paid **Claude/OpenAI** access if you want
+those live, and packaging the Chrome extension for the store. Ideas and PRs welcome.
 
 ---
 

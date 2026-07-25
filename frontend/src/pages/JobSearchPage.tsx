@@ -167,7 +167,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
           <button
             onClick={() => setFlipped(true)}
             className="absolute right-4 top-4 z-10 text-subtle transition hover:rotate-90 hover:text-content"
-            title="Flip for quick analysis"
+            title="Flip for quick analysis" aria-label="Show quick analysis"
           >
             <IconRefresh className="h-4 w-4" />
           </button>
@@ -214,7 +214,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
               </button>
               <div className="flex items-center gap-1.5">
                 <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor Resume</button>
-                <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "text-brand-300" : ""}`} title={saved ? "Saved" : "Save"}>
+                <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "text-brand-300" : ""}`} title={saved ? "Saved" : "Save"} aria-label={saved ? "Remove from saved" : "Save job"} aria-pressed={saved}>
                   <IconBookmark className="h-4 w-4" />
                 </button>
               </div>
@@ -224,7 +224,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
 
         {/* BACK (quick analysis — flip retained) */}
         <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface-2 p-5 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-          <button onClick={() => setFlipped(false)} className="absolute right-4 top-4 z-10 text-subtle transition hover:-rotate-90 hover:text-content" title="Flip back">
+          <button onClick={() => setFlipped(false)} className="absolute right-4 top-4 z-10 text-subtle transition hover:-rotate-90 hover:text-content" title="Flip back" aria-label="Back to job details">
             <IconRefresh className="h-4 w-4" />
           </button>
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-brand-300">
@@ -275,6 +275,7 @@ function JobModal({ job, saved, onSave, onTailor, onClose }: {
       <div
         className="my-4 w-full max-w-2xl animate-fade-in rounded-3xl border border-white/[0.08] bg-canvas-raised shadow-soft"
         onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={`${job.title} at ${job.company}`}
       >
         {/* Header */}
         <div className="relative border-b border-white/[0.06] p-6">
@@ -558,9 +559,9 @@ function MatchRing({ score, verdict }: { score: number | null; verdict?: string 
   const rot = `rotate(135 ${c} ${c})`;
   const gid = `grad-${Math.round(score)}`;
   return (
-    <div className="shrink-0 text-center">
+    <div className="shrink-0 text-center" role="img" aria-label={`${score} percent résumé match${verdict ? `, ${verdict}` : ""}`}>
       <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size}>
+        <svg width={size} height={size} aria-hidden="true">
           <defs>
             <linearGradient id={gid} x1="0%" y1="100%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#34d399" />
