@@ -26,11 +26,13 @@ from app.services.llm.guardrails import GuardrailEngine, build_diff
 from app.services.llm.prompts import (
     COVER_LETTER_SYSTEM,
     EXTRACTOR_SYSTEM,
+    INTRO_SYSTEM,
     OPTIMIZER_SYSTEM,
     OUTREACH_SYSTEM,
     REWRITE_SYSTEM,
     build_cover_letter_prompt,
     build_extractor_prompt,
+    build_intro_prompt,
     build_optimizer_prompt,
     build_outreach_prompt,
     build_rewrite_prompt,
@@ -188,6 +190,47 @@ def rewrite_resume(
         errors=len([v for v in report.violations if v.severity == "error"]),
     )
     return improved, report, diff
+
+
+class ProfileIntro(BaseModel):
+    headline: str = Field(default="", max_length=200)
+    summary: str = Field(default="", max_length=1200)
+
+
+def generate_profile_intro(
+    master: MasterResume,
+    *,
+    client: GeminiClient | None = None,
+    ledger: UsageLedger | None = None,
+) -> ProfileIntro:
+    """Draft a truthful headline + summary from the rest of the résumé.
+
+    Powers the builder's "Generate with AI" button on the Basics section. Uses
+    only facts the résumé already contains (enforced by the prompt and, for
+    numbers/skills, re-checked below): the summary can't claim a metric or a
+    technology the candidate hasn't listed. Costs one LLM call.
+    """
+    client = client or get_client()
+    result: LlmResult[ProfileIntro] = client.generate_structured(
+        prompt=build_intro_prompt(master),
+        schema=ProfileIntro,
+        system_instruction=INTRO_SYSTEM,
+        temperature=settings.llm_temperature,
+    )
+    if ledger is not None:
+        ledger.record("generate_profile_intro", result.usage)
+
+    from app.services.llm.guardrails import _master_numbers, _numbers_in
+
+    intro = result.data
+    # Truthfulness backstop: drop the summary if it introduces a number the
+    # résumé doesn't contain (the headline is short and rarely carries metrics).
+    allowed = _master_numbers(master)
+    if intro.summary and not _numbers_in(intro.summary) <= allowed:
+        logger.info("pipeline.intro_summary_had_unverified_number")
+        intro = ProfileIntro(headline=intro.headline, summary="")
+    logger.info("pipeline.generated_intro", has_summary=bool(intro.summary))
+    return intro
 
 
 class OutreachDraft(BaseModel):

@@ -16,6 +16,7 @@ from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile, ResumeVersion
 from app.schemas.analysis import ResumeAnalysis
 from app.schemas.api import (
+    ProfileIntroResponse,
     ResumeParseResponse,
     ResumeProfileCreate,
     ResumeProfileResponse,
@@ -37,7 +38,11 @@ from app.services.llm.client import LlmConfigurationError, LlmError, LlmResponse
 from app.services.llm.factory import client_for_user
 from app.services.parsing.extract import ExtractionError, extract
 from app.services.parsing.structure import ParsingError, structure_resume
-from app.services.pipeline import UsageLedger, rewrite_resume
+from app.services.pipeline import (
+    UsageLedger,
+    generate_profile_intro,
+    rewrite_resume,
+)
 
 logger = get_logger(__name__)
 
@@ -353,6 +358,65 @@ def rewrite_profile(
         score_before=before.overall_score,
         score_after=after.overall_score,
         cost_usd=ledger.cost_usd,
+    )
+
+
+@router.post("/generate-intro", response_model=ProfileIntroResponse)
+def generate_intro(
+    payload: MasterResume, user: GenerationUser, db: DbSession
+) -> ProfileIntroResponse:
+    """Draft a headline + summary from the rest of the résumé (builder button).
+
+    Works on whatever content the builder currently holds — no need to save
+    first — so it accepts the résumé in the body like ``/analyze``. Truthful by
+    construction: it can't cite a number or skill the résumé doesn't contain.
+    Costs one LLM call; the tighter generation rate limit applies.
+    """
+    if not (payload.experience or payload.projects or payload.education):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Add some experience, projects, or education first — the AI "
+            "writes your intro from what's already on your résumé.",
+        )
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    ledger = UsageLedger()
+    try:
+        intro = generate_profile_intro(payload, client=client, ledger=ledger)
+    except LlmResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The AI returned an incomplete draft. Please try again in a moment.",
+        ) from exc
+    except LlmError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"The AI service is unavailable right now: {exc}",
+        ) from exc
+
+    for purpose, usage in ledger.entries:
+        db.add(
+            LlmUsage(
+                user_id=user.id,
+                purpose=purpose,
+                model=usage.model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cost_usd=usage.cost_usd,
+                latency_ms=usage.latency_ms,
+            )
+        )
+    db.commit()
+    logger.info(
+        "resume.generated_intro", user_id=str(user.id), cost_usd=ledger.cost_usd
+    )
+    return ProfileIntroResponse(
+        headline=intro.headline, summary=intro.summary, cost_usd=ledger.cost_usd
     )
 
 

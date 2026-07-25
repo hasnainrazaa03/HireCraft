@@ -5,10 +5,15 @@
  * publications) round-trip untouched through the JSON mode on the Resumes page.
  *
  * Works on a plain content object so it can load a parsed-import result or an
- * existing résumé's content, and emits the same shape back for saving.
+ * existing résumé's content, and emits the same shape back for saving. Each
+ * section is a collapsible card; long-form fields (summary, bullets) grow to
+ * fit their text so nothing is clipped.
  */
+import { useLayoutEffect, useRef, useState } from "react";
+
+import { api, type ProfileIntroResponse } from "../lib/api";
 import { TagInput } from "./TagInput";
-import { IconPlus, IconTrash } from "./icons";
+import { IconChevronDown, IconPlus, IconSparkles, IconTrash } from "./icons";
 
 // The résumé content is loosely typed here; the backend validates it strictly
 // against the Master Resume schema on save.
@@ -34,9 +39,9 @@ export function ResumeBuilder({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Basics */}
-      <Section title="Basics">
+      <Collapsible title="Basics">
         <div className="grid gap-3 sm:grid-cols-2">
           <Input label="Full name" value={basics.name} onChange={(v) => setBasics({ name: v })} required />
           <Input label="Email" value={basics.email} onChange={(v) => setBasics({ email: v })} required />
@@ -45,9 +50,28 @@ export function ResumeBuilder({
           <Input label="LinkedIn" value={basics.linkedin} onChange={(v) => setBasics({ linkedin: v })} placeholder="https://…" />
           <Input label="GitHub" value={basics.github} onChange={(v) => setBasics({ github: v })} placeholder="https://…" />
         </div>
+
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.07] bg-surface-2 px-3.5 py-2.5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Headline &amp; summary</p>
+            <p className="text-xs text-subtle">Let AI draft these from your experience — you can edit after.</p>
+          </div>
+          <IntroGenerator
+            content={value}
+            onResult={(headline, summary) =>
+              setBasics({
+                ...(headline ? { headline } : {}),
+                ...(summary ? { summary } : {}),
+              })
+            }
+          />
+        </div>
+
         <Input label="Headline" value={basics.headline} onChange={(v) => setBasics({ headline: v })} placeholder="Backend Engineer focused on distributed systems" />
-        <TextArea label="Summary" value={basics.summary} onChange={(v) => setBasics({ summary: v })} />
-      </Section>
+        <Field label="Summary">
+          <AutoTextarea value={basics.summary} onChange={(v) => setBasics({ summary: v })} minRows={3} placeholder="2–4 sentences on what you do and your strongest, most relevant experience." />
+        </Field>
+      </Collapsible>
 
       {/* Experience */}
       <EntryList
@@ -56,6 +80,7 @@ export function ResumeBuilder({
         onChange={(list) => setList("experience", list)}
         blank={{ company: "", title: "", start_date: "", end_date: "", location: "", highlights: [""], technologies: [] }}
         addLabel="Add experience"
+        label={(e) => e.title || e.company}
         render={(e, up) => (
           <>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -80,6 +105,7 @@ export function ResumeBuilder({
         onChange={(list) => setList("education", list)}
         blank={{ institution: "", degree: "", field_of_study: "", start_date: "", end_date: "", gpa: "", coursework: [], highlights: [] }}
         addLabel="Add education"
+        label={(e) => e.institution || e.degree}
         render={(e, up) => (
           <>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -104,6 +130,7 @@ export function ResumeBuilder({
         onChange={(list) => setList("projects", list)}
         blank={{ name: "", description: "", url: "", start_date: "", end_date: "", highlights: [""], technologies: [] }}
         addLabel="Add project"
+        label={(e) => e.name}
         render={(e, up) => (
           <>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -126,6 +153,7 @@ export function ResumeBuilder({
         onChange={(list) => setList("skills", list)}
         blank={{ category: "", items: [] }}
         addLabel="Add skill group"
+        label={(e) => e.category}
         render={(e, up) => (
           <>
             <Input label="Category" value={e.category} onChange={(v) => up({ category: v })} placeholder="Languages" required />
@@ -141,11 +169,39 @@ export function ResumeBuilder({
 
 // --- building blocks ---------------------------------------------------------
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/** A collapsible section card. Optional header count badge + right-aligned action. */
+function Collapsible({
+  title,
+  badge,
+  action,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  badge?: number;
+  action?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="card p-5">
-      <h3 className="mb-4 text-base font-semibold">{title}</h3>
-      <div className="space-y-3">{children}</div>
+    <div className="card overflow-hidden p-0">
+      <div className="flex items-center gap-2 pr-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex flex-1 items-center gap-2.5 px-5 py-3.5 text-left"
+        >
+          <IconChevronDown className={`h-4 w-4 shrink-0 text-subtle transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
+          <h3 className="text-base font-semibold">{title}</h3>
+          {badge != null && (
+            <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-subtle">{badge}</span>
+          )}
+        </button>
+        {action}
+      </div>
+      {open && <div className="space-y-3 border-t border-white/[0.06] px-5 py-4">{children}</div>}
     </div>
   );
 }
@@ -156,6 +212,7 @@ function EntryList({
   onChange,
   blank,
   addLabel,
+  label,
   render,
 }: {
   title: string;
@@ -163,6 +220,7 @@ function EntryList({
   onChange: (list: any[]) => void;
   blank: Record<string, any>;
   addLabel: string;
+  label?: (entry: any) => string | undefined;
   render: (entry: any, update: (patch: Record<string, any>) => void) => React.ReactNode;
 }) {
   function update(i: number, patch: Record<string, any>) {
@@ -179,23 +237,26 @@ function EntryList({
     onChange(next);
   }
 
+  const addButton = (
+    <button onClick={() => onChange([...entries, { ...blank }])} className="btn-secondary btn-sm shrink-0">
+      <IconPlus className="h-4 w-4" /> {addLabel}
+    </button>
+  );
+
   return (
-    <div className="card p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-base font-semibold">{title}</h3>
-        <button onClick={() => onChange([...entries, { ...blank }])} className="btn-secondary btn-sm">
-          <IconPlus className="h-4 w-4" /> {addLabel}
-        </button>
-      </div>
+    <Collapsible title={title} badge={entries.length} action={addButton}>
       {entries.length === 0 ? (
         <p className="text-sm text-subtle">None yet.</p>
       ) : (
         <div className="space-y-4">
           {entries.map((entry, i) => (
             <div key={i} className="rounded-xl border border-white/[0.07] bg-surface-2 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-medium text-subtle">#{i + 1}</span>
-                <div className="flex gap-1">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-xs font-medium text-subtle">
+                  #{i + 1}
+                  {label?.(entry) ? <span className="text-fg/80"> · {label(entry)}</span> : null}
+                </span>
+                <div className="flex shrink-0 gap-1">
                   <IconBtn onClick={() => move(i, -1)} disabled={i === 0} label="Move up">↑</IconBtn>
                   <IconBtn onClick={() => move(i, 1)} disabled={i === entries.length - 1} label="Move down">↓</IconBtn>
                   <button onClick={() => remove(i)} className="btn-ghost btn-sm text-danger hover:bg-danger/10" aria-label="Remove">
@@ -208,7 +269,7 @@ function EntryList({
           ))}
         </div>
       )}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -217,15 +278,13 @@ function BulletEditor({ label, items, onChange }: { label: string; items: string
     <Field label={label}>
       <div className="space-y-2">
         {items.map((item, i) => (
-          <div key={i} className="flex gap-2">
-            <textarea
-              className="input min-h-[38px] flex-1 py-2 leading-snug"
-              rows={1}
+          <div key={i} className="flex items-start gap-2">
+            <AutoTextarea
               value={item}
-              onChange={(e) => onChange(items.map((t, idx) => (idx === i ? e.target.value : t)))}
+              onChange={(v) => onChange(items.map((t, idx) => (idx === i ? v : t)))}
               placeholder="Describe an accomplishment with a real metric"
             />
-            <button onClick={() => onChange(items.filter((_, idx) => idx !== i))} className="btn-ghost btn-sm shrink-0 text-danger hover:bg-danger/10" aria-label="Remove bullet">
+            <button onClick={() => onChange(items.filter((_, idx) => idx !== i))} className="btn-ghost btn-sm mt-0.5 shrink-0 text-danger hover:bg-danger/10" aria-label="Remove bullet">
               <IconTrash className="h-4 w-4" />
             </button>
           </div>
@@ -235,6 +294,40 @@ function BulletEditor({ label, items, onChange }: { label: string; items: string
         </button>
       </div>
     </Field>
+  );
+}
+
+/** AI-drafts a truthful headline + summary from the rest of the résumé. */
+function IntroGenerator({
+  content,
+  onResult,
+}: {
+  content: ResumeContent;
+  onResult: (headline: string, summary: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.post<ProfileIntroResponse>("/resumes/generate-intro", content);
+      onResult(res.headline, res.summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't generate — try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2.5">
+      {error && <span className="max-w-[16rem] text-xs text-danger">{error}</span>}
+      <button type="button" onClick={run} disabled={loading} className="btn-secondary btn-sm shrink-0">
+        <IconSparkles className="h-4 w-4" /> {loading ? "Writing…" : "Generate with AI"}
+      </button>
+    </div>
   );
 }
 
@@ -255,11 +348,34 @@ function Input({ label, value, onChange, placeholder, required }: { label: strin
   );
 }
 
-function TextArea({ label, value, onChange }: { label: string; value?: string; onChange: (v: string) => void }) {
+/** A textarea that grows to fit its content, so long bullets are never clipped. */
+function AutoTextarea({
+  value,
+  onChange,
+  placeholder,
+  minRows = 1,
+}: {
+  value?: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  minRows?: number;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
   return (
-    <Field label={label}>
-      <textarea className="input min-h-[80px] leading-relaxed" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
-    </Field>
+    <textarea
+      ref={ref}
+      className="input flex-1 resize-none overflow-hidden py-2 leading-relaxed"
+      rows={minRows}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+    />
   );
 }
 

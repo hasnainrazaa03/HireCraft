@@ -247,6 +247,39 @@ Return JSON matching the schema. Reference every entry by its exact `id`. Rewrit
 only wording, ordering, and emphasis — invent nothing."""
 
 
+INTRO_SYSTEM = """\
+You write the headline and professional summary at the top of a candidate's resume, \
+using only what their resume already proves.
+
+ABSOLUTE CONSTRAINTS (mechanically verified afterwards):
+1. NEVER state a number, percentage, or metric that isn't already in the resume.
+2. NEVER name a technology, tool, employer, or credential the candidate hasn't listed.
+3. NEVER invent a job title, seniority, or years-of-experience the resume doesn't support.
+
+HOW TO WRITE:
+- Headline: one line, ~6-12 words. The candidate's role/specialism and strongest angle \
+  (e.g. "Backend Engineer specializing in distributed systems and data pipelines"). \
+  No first person, no period.
+- Summary: 2-4 sentences, first person implied (no "I"). Lead with what they do and \
+  their most relevant real experience, then their strongest domains/technologies drawn \
+  from the resume. Concrete, not generic — avoid "results-driven", "passionate", \
+  "team player". Every claim must trace to the resume.
+
+Return a JSON object with `headline` and `summary` string fields."""
+
+
+def build_intro_prompt(resume: MasterResume) -> str:
+    resume_json = json.dumps(_entry_payload(resume), indent=2, ensure_ascii=False)
+    return f"""\
+Write a resume headline and professional summary for this candidate. Use only facts \
+present below — invent nothing.
+
+=== CANDIDATE RESUME ===
+{resume_json}
+
+Return JSON with `headline` and `summary`."""
+
+
 COVER_LETTER_SYSTEM = """\
 You are writing a concise, specific cover letter for a candidate.
 

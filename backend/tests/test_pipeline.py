@@ -12,7 +12,12 @@ from __future__ import annotations
 from app.schemas.resume import MasterResume
 from app.schemas.tailoring import TailoringResult
 from app.services.llm.client import LlmResult, Usage
-from app.services.pipeline import UsageLedger, rewrite_resume
+from app.services.pipeline import (
+    ProfileIntro,
+    UsageLedger,
+    generate_profile_intro,
+    rewrite_resume,
+)
 
 
 class StubClient:
@@ -105,3 +110,55 @@ def test_rewrite_confidence_covers_every_bullet(master: MasterResume):
     final = [h for e in improved.experience for h in e.highlights]
     assert len(report.bullet_confidence) == len(final)
     assert all(c.confidence == "verified" for c in report.bullet_confidence)
+
+
+# --- generate_profile_intro -------------------------------------------------
+
+
+class IntroStub:
+    """A client stand-in that returns a canned ProfileIntro."""
+
+    def __init__(self, headline: str, summary: str) -> None:
+        self._intro = ProfileIntro(headline=headline, summary=summary)
+
+    def generate_structured(self, **kwargs):  # noqa: ANN003
+        return LlmResult(
+            data=self._intro,
+            usage=Usage(input_tokens=80, output_tokens=40, model="stub", latency_ms=3),
+            raw_text="{}",
+        )
+
+
+def test_generate_intro_returns_and_records_usage(master: MasterResume):
+    client = IntroStub(
+        "Software Engineer building React and Python tools",
+        "Computer Science student who has built internal React dashboards.",
+    )
+    ledger = UsageLedger()
+    intro = generate_profile_intro(master, client=client, ledger=ledger)
+    assert intro.headline.startswith("Software Engineer")
+    assert "React" in intro.summary
+    assert ledger.entries and ledger.entries[0][0] == "generate_profile_intro"
+
+
+def test_generate_intro_drops_summary_with_invented_number(master: MasterResume):
+    """The summary must not smuggle in a metric the résumé never states — the
+    fixture mentions 200 users, so 9,000 is fabricated and the summary is dropped
+    while a clean headline survives."""
+    client = IntroStub(
+        "Backend Engineer focused on data pipelines",
+        "Engineer who scaled a dashboard to 9,000 daily users.",
+    )
+    intro = generate_profile_intro(master, client=client)
+    assert intro.summary == ""
+    assert intro.headline == "Backend Engineer focused on data pipelines"
+
+
+def test_generate_intro_keeps_summary_with_resume_number(master: MasterResume):
+    """A number the résumé already contains (200) is allowed through."""
+    client = IntroStub(
+        "Software Engineer",
+        "Built an internal React dashboard serving 200 users.",
+    )
+    intro = generate_profile_intro(master, client=client)
+    assert "200" in intro.summary

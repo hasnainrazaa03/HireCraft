@@ -215,6 +215,14 @@ class ResumeRewriteResponse(ApiModel):
     cost_usd: float
 
 
+class ProfileIntroResponse(ApiModel):
+    """AI-drafted headline + summary for the résumé builder's Basics section."""
+
+    headline: str
+    summary: str
+    cost_usd: float
+
+
 # --- Jobs -------------------------------------------------------------------
 
 
