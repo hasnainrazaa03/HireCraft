@@ -1,7 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
-import { ApiError } from "../lib/api";
+import { ApiError, api } from "../lib/api";
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "") + "/api/v1";
+const PROVIDER_LABELS: Record<string, string> = { google: "Google", github: "GitHub" };
 import { IconShield, IconCheck } from "../components/icons";
 import { LogoMark, Wordmark } from "../components/Logo";
 import { Spinner } from "../components/ui";
@@ -20,6 +23,18 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [providers, setProviders] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Show OAuth buttons only for providers configured on the server.
+    api
+      .get<{ providers: string[] }>("/auth/oauth/providers")
+      .then((r) => setProviders(r.providers))
+      .catch(() => setProviders([]));
+    // Surface an error the OAuth callback bounced back with.
+    const err = new URLSearchParams(window.location.search).get("oauth_error");
+    if (err) setError("Sign-in with that provider didn't complete. Please try again.");
+  }, []);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -160,6 +175,27 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          {providers.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center gap-3 text-xs text-subtle">
+                <span className="h-px flex-1 bg-white/[0.08]" />
+                or continue with
+                <span className="h-px flex-1 bg-white/[0.08]" />
+              </div>
+              <div className="mt-4 flex gap-2">
+                {providers.map((p) => (
+                  <a
+                    key={p}
+                    href={`${API_BASE}/auth/oauth/${p}/authorize`}
+                    className="btn-secondary flex-1 justify-center"
+                  >
+                    {PROVIDER_LABELS[p] ?? p}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           <button
             type="button"

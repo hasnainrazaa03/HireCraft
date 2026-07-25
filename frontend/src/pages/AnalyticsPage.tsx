@@ -7,6 +7,7 @@ import {
   type NamedCount,
   type TimePoint,
   type UsageSummary,
+  type HistoryInsights,
 } from "../lib/api";
 import { PageLoader, EmptyState } from "../components/ui";
 import {
@@ -32,6 +33,11 @@ export default function AnalyticsPage() {
   const { data: usage } = useQuery({
     queryKey: ["usage"],
     queryFn: () => api.get<UsageSummary>("/analytics/usage?days=30"),
+  });
+
+  const { data: history } = useQuery({
+    queryKey: ["history-insights"],
+    queryFn: () => api.get<HistoryInsights>("/insights/history"),
   });
 
   if (isLoading || !overview) return <PageLoader label="Crunching your numbers…" />;
@@ -182,6 +188,57 @@ export default function AnalyticsPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Résumé performance — which version wins */}
+      {history && history.resumes.length > 0 && (
+        <div className="card p-5">
+          <h2 className="section-title">Résumé performance</h2>
+          <p className="mt-1 text-xs text-subtle">
+            Which résumé actually lands interviews — reuse what's working.
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="table-head">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Résumé</th>
+                  <th className="px-3 py-2 text-right font-medium">Apps</th>
+                  <th className="px-3 py-2 text-right font-medium">Interviews</th>
+                  <th className="px-3 py-2 text-right font-medium">Offers</th>
+                  <th className="px-3 py-2 text-right font-medium">Response</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.resumes.map((r) => (
+                  <tr key={r.resume_profile_id} className="table-row">
+                    <td className="px-3 py-2">
+                      {r.name}
+                      {r.resume_profile_id === history.best_resume_id && (
+                        <span className="badge-emerald ml-2 text-[10px]">Top performer</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">{r.applications}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">{r.interviews}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">{r.offers}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {Math.round(r.response_rate * 100)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {history.winning_keywords.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-subtle">Keywords your interview-winning applications covered:</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {history.winning_keywords.map((k) => (
+                  <span key={k} className="badge-emerald">{k}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Usage & cost */}

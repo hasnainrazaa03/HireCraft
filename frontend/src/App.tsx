@@ -19,6 +19,8 @@ import CoverLettersPage from "./pages/CoverLettersPage";
 import CompaniesPage from "./pages/CompaniesPage";
 import InterviewPage from "./pages/InterviewPage";
 import CopilotPage from "./pages/CopilotPage";
+import AdminPage from "./pages/AdminPage";
+import OAuthCallbackPage from "./pages/OAuthCallbackPage";
 
 function AuthedApp() {
   return (
@@ -35,6 +37,7 @@ function AuthedApp() {
         <Route path="/companies" element={<CompaniesPage />} />
         <Route path="/interview" element={<InterviewPage />} />
         <Route path="/copilot" element={<CopilotPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
@@ -61,6 +64,8 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      {/* OAuth lands here with tokens in the fragment, signed in or not. */}
+      <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
 
       {user ? (
         <Route path="/*" element={<AuthedApp />} />

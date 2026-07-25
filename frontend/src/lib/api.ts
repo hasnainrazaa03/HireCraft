@@ -239,6 +239,7 @@ export interface User {
   email: string;
   full_name: string | null;
   is_verified: boolean;
+  is_superuser?: boolean;
   theme: "dark" | "light";
   notification_prefs: Record<string, boolean>;
   created_at: string;
@@ -784,4 +785,60 @@ export interface CopilotResponse {
   reply: string;
   grounded_in: string[];
   cost_usd: number;
+}
+
+// --- Assistant + admin ------------------------------------------------------
+
+export interface ResumeRanking {
+  resume_profile_id: string;
+  name: string;
+  match_score: number;
+  verdict: string;
+}
+
+export interface ResumeRecommendation {
+  job_title: string | null;
+  company: string | null;
+  rankings: ResumeRanking[];
+  best_resume_id: string | null;
+  weak_areas: string[];
+  missing_skills: string[];
+}
+
+export interface ResumeOutcome {
+  resume_profile_id: string;
+  name: string;
+  applications: number;
+  interviews: number;
+  offers: number;
+  response_rate: number;
+}
+
+export interface HistoryInsights {
+  resumes: ResumeOutcome[];
+  best_resume_id: string | null;
+  total_applications: number;
+  winning_keywords: string[];
+}
+
+export interface AdminUserRow {
+  email: string;
+  full_name: string | null;
+  is_verified: boolean;
+  created_at: string;
+  applications: number;
+}
+
+export interface AdminStats {
+  total_users: number;
+  verified_users: number;
+  active_users_30d: number;
+  total_applications: number;
+  total_resumes: number;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_llm_calls: number;
+  cost_by_purpose: Record<string, number>;
+  recent_signups: AdminUserRow[];
 }

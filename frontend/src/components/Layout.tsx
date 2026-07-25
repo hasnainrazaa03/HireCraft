@@ -81,6 +81,7 @@ const NAV = [
   { to: "/jobs", label: "Job Search", icon: IconSearch, end: false },
   { to: "/analytics", label: "Analytics", icon: IconChart, end: false },
   { to: "/templates", label: "Templates", icon: IconTemplate, end: false },
+  { to: "/admin", label: "Admin", icon: IconShield, end: false, adminOnly: true },
 ];
 
 // Routes that exist today. Others render a "coming soon" placeholder so the nav
@@ -95,6 +96,7 @@ const LIVE_ROUTES = new Set([
   "/cover-letters",
   "/companies",
   "/interview",
+  "/admin",
   "/analytics",
   "/new",
 ]);
@@ -121,7 +123,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="flex flex-1 flex-col gap-1">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.adminOnly || user?.is_superuser).map((item) => {
             const Icon = item.icon;
             const live = LIVE_ROUTES.has(item.to);
             return (
