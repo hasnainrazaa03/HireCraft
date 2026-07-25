@@ -11,7 +11,6 @@ from sqlalchemy import select, update
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
 from app.core.config import settings
-from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile, ResumeVersion
@@ -34,7 +33,8 @@ from app.services.export.docx import resume_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
 from app.services.latex.renderer import render_resume
 from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
-from app.services.llm.client import GeminiClient, LlmError, LlmResponseError
+from app.services.llm.client import LlmConfigurationError, LlmError, LlmResponseError
+from app.services.llm.factory import client_for_user
 from app.services.parsing.extract import ExtractionError, extract
 from app.services.parsing.structure import ParsingError, structure_resume
 from app.services.pipeline import UsageLedger, rewrite_resume
@@ -203,12 +203,12 @@ async def parse_resume(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
-    client = None
-    if user.encrypted_gemini_key:
-        try:
-            client = GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-        except Exception:  # noqa: BLE001 - fall back to the shared key
-            client = None
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
     try:
         resume, usage = structure_resume(text, client=client)
@@ -295,12 +295,12 @@ def rewrite_profile(
 
     before = analyze_resume(master)
 
-    client = None
-    if user.encrypted_gemini_key:
-        try:
-            client = GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-        except Exception:  # noqa: BLE001 - fall back to the shared key
-            client = None
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
     ledger = UsageLedger()
     try:

@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
-from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.llm_usage import LlmUsage
 from app.models.writing import WritingProfile, WritingSample
@@ -18,7 +17,8 @@ from app.schemas.writing import (
     WritingSampleCreate,
     WritingSampleResponse,
 )
-from app.services.llm.client import GeminiClient, LlmError
+from app.services.llm.client import LlmConfigurationError, LlmError
+from app.services.llm.factory import client_for_user
 from app.services.llm.voice import extract_voice
 
 router = APIRouter(prefix="/writing", tags=["writing"])
@@ -93,12 +93,12 @@ def analyze_voice(user: GenerationUser, db: DbSession) -> WritingProfileResponse
             detail="Add at least one writing sample before analyzing your voice.",
         )
 
-    client = None
-    if user.encrypted_gemini_key:
-        try:
-            client = GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-        except Exception:  # noqa: BLE001 - fall back to the shared key
-            client = None
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
     pairs = [(s.kind.value, s.content) for s in profile.samples]
     try:

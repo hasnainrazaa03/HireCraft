@@ -10,12 +10,16 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import DbSession, GenerationUser
-from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.llm_usage import LlmUsage
 from app.schemas.company import CompanyBriefRequest, CompanyBriefResponse
 from app.services.company import build_contact_guidance, generate_company_brief
-from app.services.llm.client import GeminiClient, LlmError, LlmResponseError
+from app.services.llm.client import (
+    LlmConfigurationError,
+    LlmError,
+    LlmResponseError,
+)
+from app.services.llm.factory import client_for_user
 from app.services.pipeline import UsageLedger
 from app.services.scraper import ScrapeError, scrape_job, validate_url
 
@@ -23,13 +27,12 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 logger = get_logger(__name__)
 
 
-def _client_for(user) -> GeminiClient | None:  # noqa: ANN001
-    if not user.encrypted_gemini_key:
-        return None
+def _client_for(user, provider: str | None = None, model: str | None = None):  # noqa: ANN001
+    """Build the LLM client for this user's active (or overridden) provider/model."""
     try:
-        return GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-    except Exception:  # noqa: BLE001 - fall back to the shared key
-        return None
+        return client_for_user(user, provider=provider, model=model)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.post("/brief", response_model=CompanyBriefResponse)

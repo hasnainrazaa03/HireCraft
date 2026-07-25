@@ -15,7 +15,6 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
 from app.core.config import settings
-from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile
@@ -35,7 +34,12 @@ from app.services import storage
 from app.services.export.docx import cover_letter_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
 from app.services.latex.renderer import render_cover_letter
-from app.services.llm.client import GeminiClient, LlmError, LlmResponseError
+from app.services.llm.client import (
+    LlmConfigurationError,
+    LlmError,
+    LlmResponseError,
+)
+from app.services.llm.factory import client_for_user
 from app.services.llm.prompts import COVER_LETTER_TONES, OUTREACH_KINDS
 from app.services.pipeline import UsageLedger, compose_cover_letter, generate_outreach
 
@@ -82,13 +86,12 @@ def _voice_for(db: DbSession, user_id: uuid.UUID) -> VoiceProfile | None:
         return None
 
 
-def _client_for(user) -> GeminiClient | None:  # noqa: ANN001
-    if not user.encrypted_gemini_key:
-        return None
+def _client_for(user, provider: str | None = None, model: str | None = None):  # noqa: ANN001
+    """Build the LLM client for this user's active (or overridden) provider/model."""
     try:
-        return GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-    except Exception:  # noqa: BLE001 - fall back to the shared key
-        return None
+        return client_for_user(user, provider=provider, model=model)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 def _record(db: DbSession, user_id: uuid.UUID, ledger: UsageLedger) -> None:

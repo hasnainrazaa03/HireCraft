@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession, GenerationUser
-from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.application import Application
 from app.models.llm_usage import LlmUsage
@@ -25,7 +24,12 @@ from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.schemas.writing import VoiceProfile
 from app.services.interview import draft_star_answer, generate_questions
-from app.services.llm.client import GeminiClient, LlmError, LlmResponseError
+from app.services.llm.client import (
+    LlmConfigurationError,
+    LlmError,
+    LlmResponseError,
+)
+from app.services.llm.factory import client_for_user
 from app.services.pipeline import UsageLedger
 
 router = APIRouter(prefix="/interview", tags=["interview"])
@@ -39,13 +43,12 @@ def _owned_resume(db: DbSession, user_id: uuid.UUID, profile_id: uuid.UUID) -> R
     return profile
 
 
-def _client_for(user) -> GeminiClient | None:  # noqa: ANN001
-    if not user.encrypted_gemini_key:
-        return None
+def _client_for(user, provider: str | None = None, model: str | None = None):  # noqa: ANN001
+    """Build the LLM client for this user's active (or overridden) provider/model."""
     try:
-        return GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-    except Exception:  # noqa: BLE001 - fall back to shared key
-        return None
+        return client_for_user(user, provider=provider, model=model)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 def _voice_for(db: DbSession, user_id: uuid.UUID) -> VoiceProfile | None:

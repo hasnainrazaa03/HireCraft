@@ -46,9 +46,16 @@ class User(Base, TimestampMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # Optional bring-your-own Gemini key, encrypted at rest (app.core.crypto).
-    # When set, the user's tailoring runs bill their key instead of the system's.
+    # Optional bring-your-own keys, encrypted at rest (app.core.crypto). When set,
+    # the user's generations bill their key instead of the system's.
     encrypted_gemini_key: Mapped[str | None] = mapped_column(String(500))
+    encrypted_anthropic_key: Mapped[str | None] = mapped_column(String(500))
+    encrypted_openai_key: Mapped[str | None] = mapped_column(String(500))
+
+    # Active LLM selection — one provider/model at a time. Null model = the
+    # provider's default. The provider is only usable if a key is available.
+    llm_provider: Mapped[str] = mapped_column(String(20), default="gemini", nullable=False)
+    llm_model: Mapped[str | None] = mapped_column(String(80))
 
     # Account preferences.
     theme: Mapped[str] = mapped_column(String(10), default="dark", nullable=False)

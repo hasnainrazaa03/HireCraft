@@ -97,6 +97,41 @@ class AccountSettingsUpdate(ApiModel):
     notification_prefs: dict[str, bool] | None = None
 
 
+# --- LLM provider / model settings ------------------------------------------
+
+
+class LlmModelInfo(ApiModel):
+    id: str
+    label: str
+    input_cost: float
+    output_cost: float
+
+
+class LlmProviderInfo(ApiModel):
+    id: str
+    label: str
+    models: list[LlmModelInfo]
+    has_key: bool
+    # Whether the key is the user's own (BYO) vs a server-provided one.
+    byo_key: bool
+    key_hint: str | None = None
+
+
+class LlmSettings(ApiModel):
+    provider: str
+    model: str
+    providers: list[LlmProviderInfo]
+
+
+class LlmSelectionUpdate(ApiModel):
+    provider: str = Field(min_length=1, max_length=20)
+    model: str | None = Field(default=None, max_length=80)
+
+
+class LlmKeyUpdate(ApiModel):
+    api_key: str = Field(min_length=8, max_length=400)
+
+
 # --- Resume profiles --------------------------------------------------------
 
 

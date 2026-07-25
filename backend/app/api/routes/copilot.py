@@ -5,25 +5,24 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import DbSession, GenerationUser
-from app.core.crypto import decrypt
 from app.core.logging import get_logger
 from app.models.llm_usage import LlmUsage
 from app.schemas.copilot import CopilotRequest, CopilotResponse
 from app.services.copilot import answer
-from app.services.llm.client import GeminiClient, LlmError
+from app.services.llm.client import LlmConfigurationError, LlmError
+from app.services.llm.factory import client_for_user
 from app.services.pipeline import UsageLedger
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 logger = get_logger(__name__)
 
 
-def _client_for(user) -> GeminiClient | None:  # noqa: ANN001
-    if not user.encrypted_gemini_key:
-        return None
+def _client_for(user, provider: str | None = None, model: str | None = None):  # noqa: ANN001
+    """Build the LLM client for this user's active (or overridden) provider/model."""
     try:
-        return GeminiClient(api_key=decrypt(user.encrypted_gemini_key))
-    except Exception:  # noqa: BLE001 - fall back to the shared key
-        return None
+        return client_for_user(user, provider=provider, model=model)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.post("/chat", response_model=CopilotResponse)
@@ -31,7 +30,9 @@ def chat(payload: CopilotRequest, user: GenerationUser, db: DbSession) -> Copilo
     ledger = UsageLedger()
     try:
         reply, grounded_in = answer(
-            db, user.id, payload, client=_client_for(user), ledger=ledger
+            db, user.id, payload,
+            client=_client_for(user, payload.provider, payload.model),
+            ledger=ledger,
         )
     except LlmError as exc:
         raise HTTPException(

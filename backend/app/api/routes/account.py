@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.config import settings
 from app.core.crypto import decrypt, encrypt
 from app.core.logging import get_logger
 from app.models.application import Application
@@ -17,10 +18,22 @@ from app.models.job import Job
 from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile
 from app.models.user import DEFAULT_NOTIFICATION_PREFS, User
-from app.schemas.api import AccountSettingsUpdate, MessageResponse, UserResponse
+from app.schemas.api import (
+    AccountSettingsUpdate,
+    LlmKeyUpdate,
+    LlmModelInfo,
+    LlmProviderInfo,
+    LlmSelectionUpdate,
+    LlmSettings,
+    MessageResponse,
+    UserResponse,
+)
 from app.schemas.profile import ApiKeyStatus, ApiKeyUpdate
 from app.services import storage
+from app.services.llm import factory
+from app.services.llm import models as registry
 from app.services.llm.client import GeminiClient, LlmError
+from app.services.llm.factory import resolve_selection
 
 router = APIRouter(prefix="/account", tags=["account"])
 logger = get_logger(__name__)
@@ -94,6 +107,101 @@ def clear_api_key(user: CurrentUser, db: DbSession) -> MessageResponse:
     user.encrypted_gemini_key = None
     db.commit()
     return MessageResponse(message="Your API key has been removed. Runs use the shared key.")
+
+
+# --- Multi-provider LLM settings --------------------------------------------
+
+_KEY_ATTR = {
+    "gemini": "encrypted_gemini_key",
+    "anthropic": "encrypted_anthropic_key",
+    "openai": "encrypted_openai_key",
+}
+
+
+def _llm_settings(user: User) -> LlmSettings:
+    prov, model = resolve_selection(user)
+    providers: list[LlmProviderInfo] = []
+    for pid in registry.provider_ids():
+        byo = factory.user_key(user, pid)
+        providers.append(
+            LlmProviderInfo(
+                id=pid,
+                label=registry.provider_label(pid),
+                models=[
+                    LlmModelInfo(id=m.id, label=m.label, input_cost=m.input_cost, output_cost=m.output_cost)
+                    for m in registry.models_for(pid)
+                ],
+                has_key=factory.has_key(user, pid),
+                byo_key=bool(byo),
+                key_hint=byo[-4:] if byo else None,
+            )
+        )
+    return LlmSettings(provider=prov, model=model, providers=providers)
+
+
+@router.get("/llm", response_model=LlmSettings)
+def get_llm_settings(user: CurrentUser) -> LlmSettings:
+    """Current provider/model + every provider's models and key status."""
+    return _llm_settings(user)
+
+
+@router.put("/llm", response_model=LlmSettings)
+def set_llm_selection(payload: LlmSelectionUpdate, user: CurrentUser, db: DbSession) -> LlmSettings:
+    """Switch the active provider (and optionally model). One at a time."""
+    if not registry.is_valid_provider(payload.provider):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown provider.")
+    if not factory.has_key(user, payload.provider):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Add a {registry.provider_label(payload.provider)} API key before selecting it.",
+        )
+    model = payload.model or registry.default_model(payload.provider)
+    if not registry.is_valid_model(payload.provider, model):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown model for that provider.")
+    user.llm_provider = payload.provider
+    user.llm_model = model
+    db.commit()
+    db.refresh(user)
+    logger.info("account.llm_selected", user_id=str(user.id), provider=payload.provider, model=model)
+    return _llm_settings(user)
+
+
+@router.put("/llm/keys/{provider}", response_model=LlmSettings)
+def set_llm_key(provider: str, payload: LlmKeyUpdate, user: CurrentUser, db: DbSession) -> LlmSettings:
+    """Validate a provider API key with a tiny live call, then store it encrypted."""
+    if provider not in _KEY_ATTR:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown provider.")
+    key = payload.api_key.strip()
+    try:
+        client = factory.build_client(provider, model=registry.default_model(provider), api_key=key)
+        client.generate_text(prompt="Reply with the single word: ok", max_output_tokens=5)
+    except LlmError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"That {registry.provider_label(provider)} key was rejected: {exc}",
+        ) from exc
+
+    setattr(user, _KEY_ATTR[provider], encrypt(key))
+    db.commit()
+    db.refresh(user)
+    logger.info("account.llm_key_set", user_id=str(user.id), provider=provider)
+    return _llm_settings(user)
+
+
+@router.delete("/llm/keys/{provider}", response_model=LlmSettings)
+def clear_llm_key(provider: str, user: CurrentUser, db: DbSession) -> LlmSettings:
+    if provider not in _KEY_ATTR:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown provider.")
+    setattr(user, _KEY_ATTR[provider], None)
+    # If they cleared the key for their active provider and it's now unusable,
+    # fall back to a provider that still works.
+    if user.llm_provider == provider and not factory.has_key(user, provider):
+        fallback = next(iter(factory.available_providers(user)), settings.default_llm_provider)
+        user.llm_provider = fallback
+        user.llm_model = registry.default_model(fallback)
+    db.commit()
+    db.refresh(user)
+    return _llm_settings(user)
 
 
 @router.get("/export")

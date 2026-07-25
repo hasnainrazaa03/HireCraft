@@ -30,6 +30,9 @@ class CopilotRequest(CopilotModel):
     # Optional focus: ground the answer in a specific résumé and/or application.
     resume_profile_id: uuid.UUID | None = None
     application_id: uuid.UUID | None = None
+    # Optional per-message model switch (falls back to the user's active choice).
+    provider: str | None = Field(default=None, max_length=20)
+    model: str | None = Field(default=None, max_length=80)
 
 
 class CopilotResponse(CopilotModel):

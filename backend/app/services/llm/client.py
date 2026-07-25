@@ -61,9 +61,14 @@ class Usage:
 
     @property
     def cost_usd(self) -> float:
+        # Per-model pricing from the registry, falling back to the config default
+        # for any model not catalogued.
+        from app.services.llm.models import price_for
+
+        in_price, out_price = price_for(self.model)
         return round(
-            self.input_tokens / 1_000_000 * settings.llm_input_cost_per_mtok
-            + self.output_tokens / 1_000_000 * settings.llm_output_cost_per_mtok,
+            self.input_tokens / 1_000_000 * in_price
+            + self.output_tokens / 1_000_000 * out_price,
             6,
         )
 

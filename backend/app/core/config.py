@@ -53,7 +53,11 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 14
     jwt_algorithm: str = "HS256"
 
-    # --- LLM (Gemini) ---
+    # --- LLM (multi-provider) ---
+    # The server-wide default provider. A user can override it (and the model)
+    # from their account settings; whichever is active is used one at a time.
+    default_llm_provider: str = "gemini"
+
     gemini_api_key: str = ""
     # "gemini-flash-latest" is a stable alias that always resolves to the current
     # Flash generation. Pinning "gemini-2.0-flash" was a trap: newer API keys get
@@ -71,7 +75,17 @@ class Settings(BaseSettings):
     # reject a budget of 0, so we send the config only when this is > 0).
     llm_thinking_budget: int = 512
 
-    # Cost tracking: USD per 1M tokens. Defaults track Gemini Flash pricing.
+    # Anthropic (Claude) — optional. Server key + default model; enabled only
+    # when a key (server or the user's own) is available.
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-haiku-4-5-20251001"
+
+    # OpenAI — optional, same gating.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
+    # Cost tracking: USD per 1M tokens. Per-model prices live in the model
+    # registry; these are the fallback for any model not listed there.
     llm_input_cost_per_mtok: float = 0.10
     llm_output_cost_per_mtok: float = 0.40
 
