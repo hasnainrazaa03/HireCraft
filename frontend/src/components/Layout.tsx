@@ -98,6 +98,8 @@ const LIVE_ROUTES = new Set([
   "/interview",
   "/admin",
   "/analytics",
+  "/jobs",
+  "/templates",
   "/new",
 ]);
 

@@ -1,18 +1,38 @@
-import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect, type FormEvent } from "react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api, ApiError, type ApplicationDetail, type ResumeProfileSummary } from "../lib/api";
 
+interface PrefillState {
+  url?: string;
+  text?: string;
+  title?: string;
+  company?: string;
+}
+
 export default function NewApplicationPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"url" | "text">("url");
-  const [url, setUrl] = useState("");
-  const [text, setText] = useState("");
-  const [title, setTitle] = useState("");
-  const [company, setCompany] = useState("");
+  const location = useLocation();
+  const prefill = (location.state as PrefillState | null) ?? null;
+  const clip = new URLSearchParams(location.search).get("clip") === "1";
+
+  const [mode, setMode] = useState<"url" | "text">(
+    prefill?.text || clip ? "text" : "url",
+  );
+  const [url, setUrl] = useState(prefill?.url ?? "");
+  const [text, setText] = useState(prefill?.text ?? "");
+  const [title, setTitle] = useState(prefill?.title ?? "");
+  const [company, setCompany] = useState(prefill?.company ?? "");
   const [profileId, setProfileId] = useState("");
   const [coverLetter, setCoverLetter] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Extension clip: the posting is on the clipboard — pull it in automatically.
+  useEffect(() => {
+    if (clip && !text) {
+      navigator.clipboard.readText().then((t) => t && setText(t)).catch(() => {});
+    }
+  }, [clip, text]);
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ["resumes"],

@@ -5,8 +5,11 @@ hands it to the HireCraft web app so you can tailor a résumé to it in one clic
 
 ## What it does
 
-- Extracts the visible text of the active tab (prefers a job/description
-  container, falls back to the page body).
+- Extracts the job posting with **ATS-aware selectors** — Greenhouse, Lever,
+  Ashby, Workday, LinkedIn, and Indeed each have targeted description/title/
+  company selectors, so you get the clean role text (and title + company),
+  not the whole chrome-heavy page. Falls back to a generic job/description
+  container, then the page body, on any other site.
 - **Copy** puts that text on your clipboard to paste into HireCraft.
 - **Clip & open** stashes the text and opens `…/new?clip=1` in the HireCraft app.
 
@@ -25,6 +28,6 @@ hands it to the HireCraft web app so you can tailor a résumé to it in one clic
 3. Set your HireCraft URL in the popup (defaults to `http://localhost:5173`).
 
 > Note: `icon128.png` is intentionally omitted from the repo — add any 128×128
-> PNG before packaging for the Chrome Web Store. Deeper ATS auto-import
-> (Greenhouse/Lever/Ashby/Workday field mapping) is future work; this scaffold
-> covers the common "clip a posting" path.
+> PNG before packaging for the Chrome Web Store. The web app reads the clipboard
+> (reliable across browsers); the `clippedJob` in `chrome.storage` (text, title,
+> company, url, source) is available for a tighter same-origin integration later.

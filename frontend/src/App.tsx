@@ -21,6 +21,8 @@ import InterviewPage from "./pages/InterviewPage";
 import CopilotPage from "./pages/CopilotPage";
 import AdminPage from "./pages/AdminPage";
 import OAuthCallbackPage from "./pages/OAuthCallbackPage";
+import JobSearchPage from "./pages/JobSearchPage";
+import TemplatesPage from "./pages/TemplatesPage";
 
 function AuthedApp() {
   return (
@@ -38,6 +40,8 @@ function AuthedApp() {
         <Route path="/interview" element={<InterviewPage />} />
         <Route path="/copilot" element={<CopilotPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/jobs" element={<JobSearchPage />} />
+        <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />

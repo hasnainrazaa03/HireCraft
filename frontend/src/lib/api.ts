@@ -866,3 +866,45 @@ export interface LlmSettings {
   model: string;
   providers: LlmProviderInfo[];
 }
+
+// --- Job search, config, admin extras ---------------------------------------
+
+export interface JobSearchResult {
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  remote: boolean;
+  tags: string[];
+  snippet: string;
+  source: string;
+}
+
+export interface PublicConfig {
+  flags: Record<string, boolean>;
+  oauth_providers: string[];
+}
+
+export interface FeatureFlagRow {
+  key: string;
+  enabled: boolean;
+  description: string;
+}
+
+export interface AdminUserDetail {
+  id: string;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  is_verified: boolean;
+  is_superuser: boolean;
+  created_at: string;
+  applications: number;
+  total_cost_usd: number;
+  llm_calls: number;
+}
+
+export interface AdminUserPage {
+  users: AdminUserDetail[];
+  total: number;
+}
