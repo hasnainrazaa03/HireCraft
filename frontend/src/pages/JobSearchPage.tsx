@@ -548,29 +548,42 @@ function MatchRing({ score, verdict }: { score: number | null; verdict?: string 
   const [mounted, setMounted] = useState(false);
   useEffect(() => { const t = setTimeout(() => setMounted(true), 60); return () => clearTimeout(t); }, []);
   if (score == null) return null;
-  const size = 62, stroke = 6;
+  const size = 72, stroke = 7;
+  const c = size / 2;
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
+  // Open gauge: draw a 270° arc with the 90° gap centred at the bottom. The
+  // circles are rotated 135° so the gap sits at 6 o'clock; the text stays upright.
+  const ARC = 0.75;
+  const rot = `rotate(135 ${c} ${c})`;
   const gid = `grad-${Math.round(score)}`;
   return (
     <div className="shrink-0 text-center">
       <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-90">
+        <svg width={size} height={size}>
           <defs>
-            <linearGradient id={gid} x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id={gid} x1="0%" y1="100%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#34d399" />
               <stop offset="100%" stopColor="#7c4dff" />
             </linearGradient>
           </defs>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
+          {/* track (the full 270° arc) */}
+          <circle
+            cx={c} cy={c} r={r} fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth={stroke}
+            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - ARC)} transform={rot}
+          />
+          {/* progress (score along that arc) */}
+          <circle
+            cx={c} cy={c} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
             strokeLinecap="round" strokeDasharray={circ}
-            strokeDashoffset={mounted ? circ * (1 - score / 100) : circ}
-            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.22,1,0.36,1)" }} />
+            strokeDashoffset={circ * (1 - ARC * (mounted ? score / 100 : 0))}
+            transform={rot}
+            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.22,1,0.36,1)" }}
+          />
         </svg>
         <span className="absolute inset-0 grid place-items-center text-lg font-bold tabular-nums text-content">{score}%</span>
       </div>
-      {verdict && <div className="mt-1 text-[11px] font-medium text-emerald">{verdict}</div>}
+      {verdict && <div className="-mt-1 text-[11px] font-medium text-emerald">{verdict}</div>}
     </div>
   );
 }
