@@ -97,11 +97,12 @@ export default function CopilotPage() {
             Grounded in your real data — it explains HireCraft's actual decisions, never guesses.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <select
-            className="input max-w-[160px] py-1.5 text-sm"
+            className="input w-auto min-w-[130px] py-1.5 text-sm"
             value={resumeId}
             onChange={(e) => setResumeId(e.target.value)}
+            title="Résumé to ground answers in"
           >
             <option value="">Default résumé</option>
             {resumes.map((r) => (
@@ -109,11 +110,12 @@ export default function CopilotPage() {
             ))}
           </select>
           <select
-            className="input max-w-[180px] py-1.5 text-sm"
+            className="input w-auto min-w-[150px] max-w-[220px] py-1.5 text-sm"
             value={appId}
             onChange={(e) => setAppId(e.target.value)}
+            title="Focus on a specific application"
           >
-            <option value="">No specific application</option>
+            <option value="">All applications</option>
             {applications.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.job_title ?? "Untitled"}{a.company ? ` · ${a.company}` : ""}
@@ -122,13 +124,13 @@ export default function CopilotPage() {
           </select>
           {llm && (
             <select
-              className="input max-w-[190px] py-1.5 text-sm"
+              className="input w-auto min-w-[150px] max-w-[220px] py-1.5 text-sm"
               value={override}
               onChange={(e) => setOverride(e.target.value)}
               title="Model for this chat"
             >
               <option value="">
-                Active: {llm.providers.find((p) => p.id === llm.provider)?.models.find((m) => m.id === llm.model)?.label ?? llm.model}
+                {llm.providers.find((p) => p.id === llm.provider)?.models.find((m) => m.id === llm.model)?.label ?? llm.model}
               </option>
               {llm.providers
                 .filter((p) => p.has_key)

@@ -44,7 +44,7 @@ export default function CompaniesPage() {
       </div>
 
       {/* Input */}
-      <div className="card space-y-4 p-5">
+      <div className="card flex flex-col items-stretch gap-4 p-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Company</label>
@@ -72,7 +72,7 @@ export default function CompaniesPage() {
         <button
           type="button"
           onClick={() => setShowGrounding((v) => !v)}
-          className="text-xs text-brand-300 hover:text-brand-200"
+          className="self-start text-xs text-brand-300 hover:text-brand-200"
         >
           {showGrounding ? "− Hide" : "+ Add"} a public page for fresher facts (optional)
         </button>
@@ -103,7 +103,7 @@ export default function CompaniesPage() {
         <button
           onClick={() => generate.mutate()}
           disabled={generate.isPending || !company.trim()}
-          className="btn-primary"
+          className="btn-primary self-start"
         >
           <IconSparkles className="h-4 w-4" />
           {generate.isPending ? "Researching…" : "Research company"}

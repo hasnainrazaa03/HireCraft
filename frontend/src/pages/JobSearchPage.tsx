@@ -5,6 +5,33 @@ import { api, type JobSearchResult } from "../lib/api";
 import { EmptyState, Spinner } from "../components/ui";
 import { IconSearch, IconSparkles } from "../components/icons";
 
+// Deterministic accent per company so avatars are stable and varied (no logos
+// are available from the board, so initials stand in).
+const AVATAR_TONES = [
+  "bg-brand-500/20 text-brand-200",
+  "bg-electric/20 text-electric",
+  "bg-hotpink/20 text-hotpink",
+  "bg-emerald/20 text-emerald",
+  "bg-coral/20 text-coral",
+];
+
+function CompanyAvatar({ name }: { name: string }) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("") || "?";
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
+  return (
+    <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-sm font-semibold ${tone}`}>
+      {initials}
+    </div>
+  );
+}
+
 export default function JobSearchPage() {
   const navigate = useNavigate();
   const [input, setInput] = useState("");
@@ -75,40 +102,49 @@ export default function JobSearchPage() {
       ) : (
         <div className="space-y-3">
           {jobs.map((job, i) => (
-            <div key={i} className="card p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-medium text-content">{job.title}</h3>
-                  <div className="mt-0.5 text-sm text-muted">
-                    {job.company}
-                    {job.location ? ` · ${job.location}` : ""}
-                    {job.remote && <span className="badge-emerald ml-2 text-[10px]">Remote</span>}
+            <div key={i} className="card card-hover p-5">
+              <div className="flex gap-4">
+                <CompanyAvatar name={job.company || job.title} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold leading-tight text-content">{job.title}</h3>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                        <span className="font-medium text-muted">{job.company || "—"}</span>
+                        {job.location && (
+                          <span className="inline-flex items-center gap-1 text-subtle">
+                            <span className="text-subtle">·</span> {job.location}
+                          </span>
+                        )}
+                        {job.remote && <span className="badge-emerald text-[10px]">Remote</span>}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {job.url && (
+                        <a href={job.url} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
+                          View
+                        </a>
+                      )}
+                      <button onClick={() => tailor(job)} className="btn-primary btn-sm">
+                        <IconSparkles className="h-4 w-4" /> Tailor
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  {job.url && (
-                    <a href={job.url} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
-                      View
-                    </a>
+                  {job.snippet && (
+                    <p className="mt-2.5 line-clamp-2 text-sm leading-relaxed text-subtle">{job.snippet}</p>
                   )}
-                  <button onClick={() => tailor(job)} className="btn-primary btn-sm">
-                    <IconSparkles className="h-4 w-4" /> Tailor
-                  </button>
+                  {job.tags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {job.tags.slice(0, 6).map((t) => (
+                        <span key={t} className="badge-muted capitalize">{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-              {job.snippet && (
-                <p className="mt-2 line-clamp-2 text-sm text-subtle">{job.snippet}</p>
-              )}
-              {job.tags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {job.tags.slice(0, 6).map((t) => (
-                    <span key={t} className="badge-muted">{t}</span>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
-          <p className="pt-1 text-center text-xs text-subtle">Source: {jobs[0]?.source}</p>
+          <p className="pt-1 text-center text-xs text-subtle">Results from {jobs[0]?.source}</p>
         </div>
       )}
     </div>
