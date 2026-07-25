@@ -3,26 +3,25 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type JobSearchResult } from "../lib/api";
 import { EmptyState, Spinner } from "../components/ui";
-import { IconSearch, IconSparkles, IconCheck } from "../components/icons";
+import {
+  IconSearch, IconSparkles, IconCheck, IconPin, IconBriefcase,
+  IconGlobe, IconClock, IconBookmark, IconRefresh, IconArrowRight,
+} from "../components/icons";
 
 // --- helpers ----------------------------------------------------------------
 
 const SUFFIX = /\b(gmbh|inc|llc|ltd|co|corp|group|gbr|ag|se|kg|plc|limited|technologies|labs)\b/gi;
 
-/** Best-effort company domain for a logo lookup; falls back to an avatar. */
 function guessDomain(company: string): string {
-  const slug = company
-    .toLowerCase()
-    .replace(SUFFIX, "")
-    .replace(/[^a-z0-9]/g, "");
+  const slug = company.toLowerCase().replace(SUFFIX, "").replace(/[^a-z0-9]/g, "");
   return slug ? `${slug}.com` : "";
 }
 
 function timeAgo(unix: number | null): string {
   if (!unix) return "";
   const days = Math.floor((Date.now() / 1000 - unix) / 86400);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
   if (days < 7) return `${days} days ago`;
   if (days < 30) return `${Math.floor(days / 7)}w ago`;
   return `${Math.floor(days / 30)}mo ago`;
@@ -30,12 +29,12 @@ function timeAgo(unix: number | null): string {
 
 const SAVED_KEY = "hirecraft.savedJobs";
 function loadSaved(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
+  try { return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || "[]")); } catch { return new Set(); }
 }
+
+const GRADIENT_BTN =
+  "btn text-white shadow-[0_4px_20px_rgba(255,79,216,0.25)] hover:-translate-y-px";
+const GRADIENT_STYLE = { backgroundImage: "linear-gradient(135deg,#ff4fd8 0%,#7c4dff 55%,#5a2bde 100%)" };
 
 type Sort = "match" | "newest";
 
@@ -48,7 +47,7 @@ export default function JobSearchPage() {
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [sort, setSort] = useState<Sort>("match");
   const [saved, setSaved] = useState<Set<string>>(loadSaved);
-  const [detail, setDetail] = useState<JobSearchResult | null>(null);
+  const [modal, setModal] = useState<JobSearchResult | null>(null);
 
   const { data: jobs, isLoading, isFetching } = useQuery({
     queryKey: ["job-search", query, remoteOnly],
@@ -58,10 +57,10 @@ export default function JobSearchPage() {
       ),
   });
 
-  function toggleSave(job: JobSearchResult) {
+  function toggleSave(url: string) {
     setSaved((prev) => {
       const next = new Set(prev);
-      next.has(job.url) ? next.delete(job.url) : next.add(job.url);
+      next.has(url) ? next.delete(url) : next.add(url);
       localStorage.setItem(SAVED_KEY, JSON.stringify([...next]));
       return next;
     });
@@ -82,28 +81,20 @@ export default function JobSearchPage() {
   return (
     <div className="space-y-7">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Job search</h1>
-        <p className="mt-1 text-sm text-muted">
-          Every posting, scored against your résumé — so you know at a glance whether to apply.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">Job Search</h1>
+        <p className="mt-1 text-sm text-muted">Discover jobs that match your profile and career goals.</p>
       </div>
 
-      {/* Search + filters */}
       <div className="space-y-3">
-        <form
-          onSubmit={(e) => { e.preventDefault(); setQuery(input.trim()); }}
-          className="relative"
-        >
+        <form onSubmit={(e) => { e.preventDefault(); setQuery(input.trim()); }} className="relative">
           <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
           <input
             className="input py-3 pl-11 pr-24 text-base"
-            placeholder="Search by title, company, or skill — e.g. Python, ML, backend…"
+            placeholder="Search by title, company, keywords…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
-          <button type="submit" className="btn-primary absolute right-1.5 top-1/2 -translate-y-1/2 !py-2">
-            Search
-          </button>
+          <button type="submit" className="btn-primary absolute right-1.5 top-1/2 -translate-y-1/2 !py-2">Search</button>
         </form>
         <div className="flex flex-wrap items-center gap-2">
           <FilterPill active={remoteOnly} onClick={() => setRemoteOnly((v) => !v)}>Remote only</FilterPill>
@@ -128,12 +119,10 @@ export default function JobSearchPage() {
           <div className="grid gap-6 xl:grid-cols-2">
             {sorted.map((job, i) => (
               <JobCard
-                key={i}
-                job={job}
-                saved={saved.has(job.url)}
-                onSave={() => toggleSave(job)}
+                key={i} job={job} saved={saved.has(job.url)}
+                onSave={() => toggleSave(job.url)}
                 onTailor={() => tailor(job)}
-                onDetails={() => setDetail(job)}
+                onOpen={() => setModal(job)}
               />
             ))}
           </div>
@@ -143,8 +132,13 @@ export default function JobSearchPage() {
         </>
       )}
 
-      {detail && (
-        <JobDrawer job={detail} onClose={() => setDetail(null)} onTailor={() => tailor(detail)} />
+      {modal && (
+        <JobModal
+          job={modal} saved={saved.has(modal.url)}
+          onSave={() => toggleSave(modal.url)}
+          onTailor={() => tailor(modal)}
+          onClose={() => setModal(null)}
+        />
       )}
     </div>
   );
@@ -152,130 +146,108 @@ export default function JobSearchPage() {
 
 function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-        active
-          ? "border-brand-500/60 bg-brand-500/15 text-brand-200"
-          : "border-white/[0.08] bg-surface-2 text-muted hover:text-content"
-      }`}
-    >
-      {children}
-    </button>
+    <button onClick={onClick} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+      active ? "border-brand-500/60 bg-brand-500/15 text-brand-200" : "border-white/[0.08] bg-surface-2 text-muted hover:text-content"
+    }`}>{children}</button>
   );
 }
 
-// --- card -------------------------------------------------------------------
+// --- card (matches the reference: logo, title, ring, meta, skills, actions) -
 
-function JobCard({
-  job, saved, onSave, onTailor, onDetails,
-}: {
-  job: JobSearchResult;
-  saved: boolean;
-  onSave: () => void;
-  onTailor: () => void;
-  onDetails: () => void;
+function JobCard({ job, saved, onSave, onTailor, onOpen }: {
+  job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onOpen: () => void;
 }) {
   const [flipped, setFlipped] = useState(false);
+  const allSkills = [...job.strengths, ...job.gaps];
   return (
-    <div className="group h-[23rem] [perspective:1800px]">
-      <div
-        className={`relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d] ${
-          flipped ? "[transform:rotateY(180deg)]" : ""
-        }`}
-      >
-        {/* ---------- FRONT ---------- */}
-        <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface p-5 transition-all duration-300 [backface-visibility:hidden] group-hover:-translate-y-1 group-hover:border-brand-500/30 group-hover:shadow-glow">
+    <div className="group h-[22rem] [perspective:1800px]">
+      <div className={`relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d] ${flipped ? "[transform:rotateY(180deg)]" : ""}`}>
+        {/* FRONT */}
+        <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface p-5 transition-all duration-300 [backface-visibility:hidden] group-hover:-translate-y-1 group-hover:border-brand-500/25 group-hover:shadow-glow">
+          <button
+            onClick={() => setFlipped(true)}
+            className="absolute right-4 top-4 z-10 text-subtle transition hover:rotate-90 hover:text-content"
+            title="Flip for quick analysis"
+          >
+            <IconRefresh className="h-4 w-4" />
+          </button>
+
           <div className="flex items-start gap-3.5">
             <CompanyLogo company={job.company || job.title} />
-            <div className="min-w-0 flex-1">
-              <h3 className="line-clamp-2 font-semibold leading-snug text-content">{job.title}</h3>
+            <div className="min-w-0 flex-1 pr-6">
+              <h3 className="line-clamp-2 text-[17px] font-semibold leading-snug text-content">{job.title}</h3>
               <div className="mt-0.5 truncate text-sm font-medium text-electric">{job.company || "—"}</div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-start justify-between gap-3">
+            <div className="space-y-1.5 text-sm text-muted">
+              <div className="flex items-center gap-1.5">
+                <IconPin className="h-4 w-4 text-subtle" /> {job.location || "Location N/A"}
+                {job.remote && <span className="text-subtle">• Remote</span>}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <IconBriefcase className="h-4 w-4 text-subtle" /> Full Time
+              </div>
             </div>
             <MatchRing score={job.match_score} verdict={job.verdict} />
           </div>
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle">
-            {job.location && <span>📍 {job.location}</span>}
-            {job.remote && <Chip tone="emerald">Remote</Chip>}
-            {job.created_at && <span>· {timeAgo(job.created_at)}</span>}
-          </div>
-
-          {job.strengths.length > 0 && (
+          {allSkills.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {job.strengths.slice(0, 3).map((s) => (
-                <span key={s} className="badge bg-white/[0.06] text-content">{s}</span>
+              {allSkills.slice(0, 3).map((s) => (
+                <span key={s} className="rounded-lg border border-white/[0.07] bg-surface-2 px-2.5 py-1 text-xs text-content">{s}</span>
               ))}
-              {job.strengths.length + job.gaps.length > 3 && (
-                <span className="badge-muted">+{job.strengths.length + job.gaps.length - 3} more</span>
+              {allSkills.length > 3 && (
+                <span className="rounded-lg border border-white/[0.07] bg-surface-2 px-2.5 py-1 text-xs text-subtle">+{allSkills.length - 3} more</span>
               )}
             </div>
           )}
 
-          {/* The signature: an AI fit summary */}
-          {job.summary && (
-            <div className="mt-3 flex-1 rounded-xl border border-white/[0.05] bg-surface-2/60 p-3">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-brand-300">
-                <IconSparkles className="h-3.5 w-3.5" /> AI take
-              </div>
-              <p className="mt-1 line-clamp-3 text-sm leading-relaxed text-muted">{job.summary}</p>
+          <div className="mt-auto space-y-3 pt-3">
+            <div className="text-xs text-subtle">
+              {job.created_at ? `Posted ${timeAgo(job.created_at)}` : "Recently posted"}
             </div>
-          )}
-
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <button onClick={() => setFlipped(true)} className="btn-ghost btn-sm">Analysis →</button>
-            <div className="flex items-center gap-1.5">
-              <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "text-brand-300" : ""}`} title={saved ? "Saved" : "Save"}>
-                {saved ? "★" : "☆"}
+            <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
+              <button onClick={onOpen} className="inline-flex items-center gap-1 text-sm font-medium text-brand-300 hover:text-brand-200">
+                View More <IconArrowRight className="h-4 w-4" />
               </button>
-              <button onClick={onTailor} className="btn-primary btn-sm">
-                <IconSparkles className="h-4 w-4" /> Tailor
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor Resume</button>
+                <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "text-brand-300" : ""}`} title={saved ? "Saved" : "Save"}>
+                  <IconBookmark className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* ---------- BACK ---------- */}
+        {/* BACK (quick analysis — flip retained) */}
         <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface-2 p-5 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-content">{job.company}</div>
-              <div className="line-clamp-1 text-xs text-subtle">{job.title}</div>
-            </div>
-            <MatchRing score={job.match_score} verdict={job.verdict} small />
+          <button onClick={() => setFlipped(false)} className="absolute right-4 top-4 z-10 text-subtle transition hover:-rotate-90 hover:text-content" title="Flip back">
+            <IconRefresh className="h-4 w-4" />
+          </button>
+          <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-brand-300">
+            <IconSparkles className="h-3.5 w-3.5" /> Quick analysis
           </div>
-
           <div className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1">
             {job.strengths.slice(0, 4).map((s) => (
-              <div key={s} className="flex items-center gap-2 text-sm text-content">
-                <IconCheck className="h-4 w-4 shrink-0 text-emerald" /> {s}
-              </div>
+              <div key={s} className="flex items-center gap-2 text-sm text-content"><IconCheck className="h-4 w-4 shrink-0 text-emerald" /> {s}</div>
             ))}
             {job.gaps.slice(0, 4).map((g) => (
-              <div key={g} className="flex items-center gap-2 text-sm text-muted">
-                <span className="grid h-4 w-4 shrink-0 place-items-center text-coral">⚠</span> Missing {g}
-              </div>
+              <div key={g} className="flex items-center gap-2 text-sm text-muted"><span className="w-4 shrink-0 text-center text-coral">⚠</span> Missing {g}</div>
             ))}
-            {job.strengths.length === 0 && job.gaps.length === 0 && (
-              <p className="text-sm text-subtle">Add a résumé to see a full fit breakdown.</p>
-            )}
+            {job.strengths.length === 0 && job.gaps.length === 0 && <p className="text-sm text-subtle">Add a résumé to see a full breakdown.</p>}
           </div>
-
           {job.interview_chance && (
             <div className="mt-2 flex items-center justify-between rounded-xl bg-surface px-3 py-2 text-sm">
               <span className="text-muted">Interview chance</span>
               <span className={`font-semibold ${chanceTone(job.interview_chance)}`}>{job.interview_chance}</span>
             </div>
           )}
-
           <div className="mt-3 flex items-center justify-between gap-2">
-            <button onClick={() => setFlipped(false)} className="btn-ghost btn-sm">← Back</button>
-            <div className="flex gap-1.5">
-              <button onClick={onDetails} className="btn-secondary btn-sm">Details</button>
-              <button onClick={onTailor} className="btn-primary btn-sm">
-                <IconSparkles className="h-4 w-4" /> Tailor
-              </button>
-            </div>
+            <button onClick={onOpen} className="btn-ghost btn-sm">Full details</button>
+            <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor</button>
           </div>
         </div>
       </div>
@@ -283,15 +255,264 @@ function JobCard({
   );
 }
 
-function Chip({ tone, children }: { tone?: "emerald"; children: React.ReactNode }) {
-  return <span className={tone === "emerald" ? "badge-emerald text-[10px]" : "badge-muted text-[10px]"}>{children}</span>;
+// --- modal (matches the reference: tabs + AI match analysis) ----------------
+
+type Tab = "overview" | "match" | "requirements" | "recruiters";
+
+function JobModal({ job, saved, onSave, onTailor, onClose }: {
+  job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<Tab>("overview");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm sm:p-8" onClick={onClose}>
+      <div
+        className="my-4 w-full max-w-2xl animate-fade-in rounded-3xl border border-white/[0.08] bg-canvas-raised shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative border-b border-white/[0.06] p-6">
+          <button onClick={onClose} className="absolute right-5 top-5 text-subtle transition hover:text-content" aria-label="Close">✕</button>
+          <div className="flex items-start gap-3.5 pr-8">
+            <div className="group"><CompanyLogo company={job.company || job.title} /></div>
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold leading-tight text-content">{job.title}</h2>
+              <div className="text-sm font-medium text-electric">{job.company}</div>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
+            {job.location && <Meta icon={<IconPin className="h-4 w-4" />}>{job.location}</Meta>}
+            <Meta icon={<IconBriefcase className="h-4 w-4" />}>Full Time</Meta>
+            {job.remote && <Meta icon={<IconGlobe className="h-4 w-4" />}>Remote</Meta>}
+            {job.created_at && <Meta icon={<IconClock className="h-4 w-4" />}>Posted {timeAgo(job.created_at)}</Meta>}
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button onClick={onTailor} className={`${GRADIENT_BTN} flex-1 sm:flex-none`} style={GRADIENT_STYLE}>
+              <IconSparkles className="h-4 w-4" /> Tailor My Resume
+            </button>
+            <button onClick={onSave} className="btn-secondary">
+              <IconBookmark className="h-4 w-4" /> {saved ? "Saved" : "Save Job"}
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-white/[0.06] px-6">
+          {(["overview", "match", "requirements", "recruiters"] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`-mb-px whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium capitalize transition ${
+                tab === t ? "border-brand-500 text-content" : "border-transparent text-subtle hover:text-content"
+              }`}>
+              {t === "match" ? "Match Analysis" : t}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-6">
+          {tab === "overview" && <OverviewTab job={job} onWhy={() => setTab("match")} onImprove={onTailor} />}
+          {tab === "match" && <MatchTab job={job} />}
+          {tab === "requirements" && <RequirementsTab job={job} />}
+          {tab === "recruiters" && <RecruitersTab company={job.company} onDraft={() => { onClose(); navigate("/cover-letters"); }} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Meta({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return <span className="inline-flex items-center gap-1.5 text-subtle">{icon}<span className="text-muted">{children}</span></span>;
+}
+
+function OverviewTab({ job, onWhy, onImprove }: { job: JobSearchResult; onWhy: () => void; onImprove: () => void }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-5 md:grid-cols-2">
+        <div>
+          <h3 className="section-title mb-2">About the role</h3>
+          <p className="line-clamp-6 text-sm leading-relaxed text-muted">{job.snippet || "No description available."}</p>
+          {job.url && (
+            <a href={job.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-brand-300 hover:text-brand-200">
+              View Full Description <IconArrowRight className="h-4 w-4" />
+            </a>
+          )}
+        </div>
+        <div className="rounded-2xl border border-white/[0.07] bg-surface-2 p-4">
+          <h3 className="section-title mb-3">Skills you have</h3>
+          {job.strengths.length ? (
+            <ul className="space-y-2">
+              {job.strengths.slice(0, 6).map((s) => (
+                <li key={s} className="flex items-center gap-2.5 text-sm text-content">
+                  <span className="h-2 w-2 rounded-full bg-emerald" /> {s}
+                </li>
+              ))}
+              {job.strengths.length > 6 && <li className="badge-brand mt-1 inline-block">+{job.strengths.length - 6} more</li>}
+            </ul>
+          ) : <p className="text-sm text-subtle">No overlapping skills detected from this posting.</p>}
+        </div>
+      </div>
+
+      {/* AI Match Analysis */}
+      <div className="rounded-2xl border border-white/[0.07] bg-surface-2 p-5">
+        <h3 className="section-title mb-4">AI Match Analysis</h3>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <MatchRing score={job.match_score} verdict={job.verdict} />
+          <div className="text-sm leading-relaxed text-muted">
+            {job.summary || "Add a résumé to see your fit for this role."}
+            <button onClick={onWhy} className="ml-1 inline-flex items-center gap-1 text-brand-300 hover:text-brand-200">
+              Why this score? <IconArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-5 sm:grid-cols-2">
+          <div>
+            <div className="mb-2 text-sm font-medium text-emerald">Your Strengths</div>
+            <ul className="space-y-1.5">
+              {job.strengths.length ? job.strengths.map((s) => (
+                <li key={s} className="flex items-center gap-2 text-sm text-content"><IconCheck className="h-4 w-4 text-emerald" /> {s}</li>
+              )) : <li className="text-sm text-subtle">—</li>}
+            </ul>
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-medium text-coral">Potential Gaps</div>
+            <ul className="space-y-1.5">
+              {job.gaps.length ? job.gaps.map((g) => (
+                <li key={g} className="flex items-center gap-2 text-sm text-muted"><span className="text-coral">⚠</span> {g}</li>
+              )) : <li className="text-sm text-subtle">None detected</li>}
+            </ul>
+            <button onClick={onImprove} className="btn-primary btn-sm mt-3"><IconSparkles className="h-4 w-4" /> Improve Your Match</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Interview chance */}
+      {job.interview_chance && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/[0.07] bg-surface-2 p-5">
+          <div>
+            <h3 className="section-title">Estimated Interview Chance</h3>
+            <div className={`mt-1 text-lg font-semibold ${chanceTone(job.interview_chance)}`}>{job.interview_chance}</div>
+            <p className="text-xs text-subtle">Based on your profile and role requirements</p>
+          </div>
+          <Sparkline tone={job.interview_chance} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatchTab({ job }: { job: JobSearchResult }) {
+  const total = job.strengths.length + job.gaps.length;
+  const coverage = total ? Math.round((job.strengths.length / total) * 100) : job.match_score ?? 0;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.07] bg-surface-2 p-6 sm:flex-row">
+        <MatchRing score={job.match_score} verdict={job.verdict} />
+        <p className="text-sm leading-relaxed text-muted">{job.summary}</p>
+      </div>
+      <div>
+        <div className="mb-1.5 flex justify-between text-sm">
+          <span className="text-muted">Requirement coverage</span>
+          <span className="tabular-nums text-content">{coverage}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+          <div className="h-full rounded-full" style={{ width: `${coverage}%`, backgroundImage: "linear-gradient(90deg,#34d399,#7c4dff)" }} />
+        </div>
+        <p className="mt-1.5 text-xs text-subtle">
+          You cover {job.strengths.length} of {total || "—"} skills this posting mentions.
+        </p>
+      </div>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div>
+          <div className="mb-2 text-sm font-medium text-emerald">Matched</div>
+          <div className="flex flex-wrap gap-1.5">
+            {job.strengths.length ? job.strengths.map((s) => <span key={s} className="badge-emerald">{s}</span>) : <span className="text-sm text-subtle">—</span>}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-sm font-medium text-coral">To strengthen</div>
+          <div className="flex flex-wrap gap-1.5">
+            {job.gaps.length ? job.gaps.map((g) => <span key={g} className="badge-coral">{g}</span>) : <span className="text-sm text-subtle">None</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RequirementsTab({ job }: { job: JobSearchResult }) {
+  const items = [...job.strengths.map((s) => ({ name: s, have: true })), ...job.gaps.map((g) => ({ name: g, have: false }))];
+  return items.length ? (
+    <div className="space-y-2">
+      <p className="text-sm text-subtle">Skills &amp; tools this posting mentions, matched against your résumé.</p>
+      <ul className="mt-3 divide-y divide-white/[0.05] rounded-2xl border border-white/[0.07]">
+        {items.map((it) => (
+          <li key={it.name} className="flex items-center justify-between px-4 py-2.5 text-sm">
+            <span className="text-content">{it.name}</span>
+            {it.have ? (
+              <span className="inline-flex items-center gap-1 text-emerald"><IconCheck className="h-4 w-4" /> You have this</span>
+            ) : (
+              <span className="text-coral">Missing</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : <p className="text-sm text-subtle">No specific requirements were detected in this posting's text.</p>;
+}
+
+function RecruitersTab({ company, onDraft }: { company: string; onDraft: () => void }) {
+  const steps = [
+    `Check ${company || "the company"}'s careers or team page — many list the hiring contact directly.`,
+    `Search LinkedIn (in its own interface) for "recruiter ${company}" to find who's likely hiring.`,
+    "Look for a warm intro first — 2nd-degree connections or your school's alumni network.",
+    "Only use contact details a person has published for this purpose. Don't guess or scrape private addresses.",
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-brand-500/20 bg-brand-500/[0.06] p-4 text-sm text-muted">
+        HireCraft doesn't scrape or store anyone's personal contact data. Here's how to find the right person through
+        legitimate channels — then reach out respectfully.
+      </div>
+      <ol className="space-y-2.5">
+        {steps.map((s, i) => (
+          <li key={i} className="flex gap-3 text-sm text-content">
+            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-semibold text-brand-300">{i + 1}</span>
+            {s}
+          </li>
+        ))}
+      </ol>
+      <button onClick={onDraft} className="btn-secondary">Draft outreach in the studio</button>
+    </div>
+  );
+}
+
+function Sparkline({ tone }: { tone: string }) {
+  const color = tone === "High" ? "#34d399" : tone === "Medium" ? "#4CC9F0" : "#f87171";
+  const pts = "0,26 14,22 28,24 42,16 56,18 70,10 84,12 98,5 112,7 126,2";
+  return (
+    <svg width="130" height="32" viewBox="0 0 130 32" className="shrink-0">
+      <defs>
+        <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polyline points={`${pts} 130,32 0,32`} fill="url(#spark)" stroke="none" />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function chanceTone(c: string): string {
   return c === "High" ? "text-emerald" : c === "Medium" ? "text-electric" : "text-coral";
 }
 
-// --- company logo (real, with graceful avatar fallback) ---------------------
+// --- company logo + match ring ----------------------------------------------
 
 const AVATAR_TONES = [
   "from-brand-500/30 to-brand-700/30 text-brand-200",
@@ -304,8 +525,7 @@ const AVATAR_TONES = [
 function CompanyLogo({ company }: { company: string }) {
   const [failed, setFailed] = useState(false);
   const domain = guessDomain(company);
-  const initials =
-    company.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
+  const initials = company.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
   let hash = 0;
   for (let i = 0; i < company.length; i++) hash = (hash * 31 + company.charCodeAt(i)) | 0;
   const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
@@ -313,13 +533,7 @@ function CompanyLogo({ company }: { company: string }) {
   if (domain && !failed) {
     return (
       <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white p-1.5 shadow-soft transition-transform duration-300 group-hover:scale-105">
-        <img
-          src={`https://logo.clearbit.com/${domain}`}
-          alt={company}
-          className="h-full w-full object-contain"
-          onError={() => setFailed(true)}
-          loading="lazy"
-        />
+        <img src={`https://logo.clearbit.com/${domain}`} alt={company} className="h-full w-full object-contain" onError={() => setFailed(true)} loading="lazy" />
       </div>
     );
   }
@@ -330,20 +544,14 @@ function CompanyLogo({ company }: { company: string }) {
   );
 }
 
-// --- match ring (animated, emerald → purple gradient) -----------------------
-
-function MatchRing({ score, verdict, small }: { score: number | null; verdict?: string | null; small?: boolean }) {
+function MatchRing({ score, verdict }: { score: number | null; verdict?: string | null }) {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 60);
-    return () => clearTimeout(t);
-  }, []);
+  useEffect(() => { const t = setTimeout(() => setMounted(true), 60); return () => clearTimeout(t); }, []);
   if (score == null) return null;
-  const size = small ? 44 : 58;
-  const stroke = small ? 4 : 5;
+  const size = 62, stroke = 6;
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
-  const gid = `grad-${size}`;
+  const gid = `grad-${Math.round(score)}`;
   return (
     <div className="shrink-0 text-center">
       <div className="relative" style={{ width: size, height: size }}>
@@ -355,129 +563,14 @@ function MatchRing({ score, verdict, small }: { score: number | null; verdict?: 
             </linearGradient>
           </defs>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
-          <circle
-            cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
             strokeLinecap="round" strokeDasharray={circ}
             strokeDashoffset={mounted ? circ * (1 - score / 100) : circ}
-            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.22,1,0.36,1)" }}
-          />
+            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.22,1,0.36,1)" }} />
         </svg>
-        <span className={`absolute inset-0 grid place-items-center font-bold tabular-nums text-content ${small ? "text-xs" : "text-base"}`}>
-          {score}%
-        </span>
+        <span className="absolute inset-0 grid place-items-center text-lg font-bold tabular-nums text-content">{score}%</span>
       </div>
-      {!small && verdict && (
-        <div className="mt-1 text-[10px] font-medium text-emerald">{verdict}</div>
-      )}
+      {verdict && <div className="mt-1 text-[11px] font-medium text-emerald">{verdict}</div>}
     </div>
-  );
-}
-
-// --- details drawer ---------------------------------------------------------
-
-function JobDrawer({ job, onClose, onTailor }: { job: JobSearchResult; onClose: () => void; onTailor: () => void }) {
-  const navigate = useNavigate();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg animate-slide-in flex-col overflow-y-auto border-l border-white/[0.08] bg-canvas-raised">
-        <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] p-6">
-          <div className="flex items-start gap-3">
-            <div className="group"><CompanyLogo company={job.company || job.title} /></div>
-            <div className="min-w-0">
-              <h2 className="text-lg font-semibold leading-tight text-content">{job.title}</h2>
-              <div className="text-sm font-medium text-electric">{job.company}</div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle">
-                {job.location && <span>📍 {job.location}</span>}
-                {job.remote && <Chip tone="emerald">Remote</Chip>}
-                {job.created_at && <span>· {timeAgo(job.created_at)}</span>}
-              </div>
-            </div>
-          </div>
-          <button onClick={onClose} className="btn-ghost btn-sm !px-2" aria-label="Close">✕</button>
-        </div>
-
-        <div className="flex gap-2 border-b border-white/[0.06] p-4">
-          <button onClick={onTailor} className="btn-primary flex-1">
-            <IconSparkles className="h-4 w-4" /> Tailor résumé
-          </button>
-          <button onClick={() => { onClose(); navigate("/cover-letters"); }} className="btn-secondary">
-            Cover letter
-          </button>
-          {job.url && (
-            <a href={job.url} target="_blank" rel="noreferrer" className="btn-secondary">Apply ↗</a>
-          )}
-        </div>
-
-        <div className="space-y-6 p-6">
-          {/* Match analysis */}
-          {job.match_score != null && (
-            <section>
-              <h3 className="section-title mb-3">Match analysis</h3>
-              <div className="flex items-center gap-5 rounded-2xl border border-white/[0.06] bg-surface-2 p-5">
-                <MatchRing score={job.match_score} verdict={job.verdict} />
-                <p className="text-sm leading-relaxed text-muted">{job.summary}</p>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div>
-                  <div className="mb-2 text-sm font-medium text-emerald">Your strengths</div>
-                  <ul className="space-y-1.5">
-                    {job.strengths.length ? job.strengths.map((s) => (
-                      <li key={s} className="flex items-center gap-2 text-sm text-content">
-                        <IconCheck className="h-4 w-4 text-emerald" /> {s}
-                      </li>
-                    )) : <li className="text-sm text-subtle">—</li>}
-                  </ul>
-                </div>
-                <div>
-                  <div className="mb-2 text-sm font-medium text-coral">Potential gaps</div>
-                  <ul className="space-y-1.5">
-                    {job.gaps.length ? job.gaps.map((g) => (
-                      <li key={g} className="flex items-center gap-2 text-sm text-muted">
-                        <span className="text-coral">⚠</span> {g}
-                      </li>
-                    )) : <li className="text-sm text-subtle">None detected</li>}
-                  </ul>
-                </div>
-              </div>
-              {job.interview_chance && (
-                <div className="mt-4 flex items-center justify-between rounded-xl border border-white/[0.06] bg-surface-2 px-4 py-3">
-                  <span className="text-sm text-muted">Estimated interview chance</span>
-                  <span className={`font-semibold ${chanceTone(job.interview_chance)}`}>{job.interview_chance}</span>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Overview */}
-          <section>
-            <h3 className="section-title mb-2">About the role</h3>
-            <p className="whitespace-pre-line text-sm leading-relaxed text-muted">
-              {job.snippet || "No description available."}
-            </p>
-            {job.url && (
-              <a href={job.url} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-brand-300 hover:text-brand-200">
-                View the full posting →
-              </a>
-            )}
-          </section>
-
-          {job.tags.length > 0 && (
-            <section>
-              <h3 className="section-title mb-2">Tags</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {job.tags.map((t) => <span key={t} className="badge-muted capitalize">{t}</span>)}
-              </div>
-            </section>
-          )}
-        </div>
-      </div>
-    </>
   );
 }

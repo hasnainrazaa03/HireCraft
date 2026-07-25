@@ -106,6 +106,49 @@ export const IconTemplate = (p: IconProps) => (
   </Base>
 );
 
+export const IconPin = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 21s-6-5.686-6-10a6 6 0 1 1 12 0c0 4.314-6 10-6 10z" />
+    <circle cx="12" cy="11" r="2.2" />
+  </Base>
+);
+
+export const IconBriefcase = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="7" width="18" height="13" rx="2" />
+    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18" />
+  </Base>
+);
+
+export const IconGlobe = (p: IconProps) => (
+  <Base {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3c2.8 3.6 2.8 14.4 0 18M12 3c-2.8 3.6-2.8 14.4 0 18" />
+  </Base>
+);
+
+export const IconClock = (p: IconProps) => (
+  <Base {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Base>
+);
+
+export const IconBookmark = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 4h12a1 1 0 0 1 1 1v16l-7-4-7 4V5a1 1 0 0 1 1-1z" />
+  </Base>
+);
+
+export const IconRefresh = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+    <path d="M3 21v-5h5" />
+  </Base>
+);
+
 export const IconBell = (p: IconProps) => (
   <Base {...p}>
     <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
