@@ -83,7 +83,46 @@ def _result(**kw) -> dict:
         "snippet": (kw.get("snippet") or "")[:600],
         "source": kw.get("source") or "Web",
         "created_at": kw.get("created_at"),
+        # Real registrable domain for a logo lookup, when a source hands us one
+        # (e.g. GitHub listings carry company_url). Empty → the client guesses
+        # from the company name.
+        "company_domain": _domain_of(kw.get("company_domain")),
     }
+
+
+# Application-tracking / aggregator hosts that appear in a listing's
+# "company_url" as a redirect. They are never the employer's own domain, so a
+# logo built from them would be identical for every company — reject them and
+# let the client guess the real domain from the company name instead.
+_AGGREGATOR_HOSTS = frozenset({
+    "simplify.jobs", "greenhouse.io", "boards.greenhouse.io", "lever.co",
+    "jobs.lever.co", "ashbyhq.com", "jobs.ashbyhq.com", "myworkdayjobs.com",
+    "workday.com", "icims.com", "smartrecruiters.com", "workable.com",
+    "bamboohr.com", "linkedin.com", "indeed.com", "glassdoor.com", "github.com",
+})
+
+
+def _domain_of(url: str | None) -> str:
+    """Bare host from a URL (or a bare host), lower-cased, no leading www.
+
+    Used to build a logo URL. Returns "" for anything that isn't a plausible
+    employer domain — including known aggregator/ATS hosts — so the client falls
+    back to guessing from the company name.
+    """
+    if not url:
+        return ""
+    host = url.strip().lower()
+    host = re.sub(r"^[a-z]+://", "", host)  # scheme
+    host = host.split("/")[0].split("?")[0].split("#")[0]  # path/query
+    host = host.split("@")[-1].split(":")[0]  # creds / port
+    if host.startswith("www."):
+        host = host[4:]
+    if "." not in host or " " in host:
+        return ""
+    # Reject aggregators by registrable suffix ("boards.greenhouse.io" too).
+    if any(host == h or host.endswith("." + h) for h in _AGGREGATOR_HOSTS):
+        return ""
+    return host
 
 
 # --- Sources ----------------------------------------------------------------
@@ -229,6 +268,7 @@ def _github_listings_json(repo: str) -> list[dict]:
                     snippet=" · ".join(snippet_bits) or "Internship / new-grad listing.",
                     source=f"GitHub · {repo.split('/')[-1]}",
                     created_at=_to_unix(j.get("date_posted") or j.get("date_updated")),
+                    company_domain=j.get("company_url"),
                 ))
             if out:
                 logger.info("jobsearch.github_listings", repo=repo, count=len(out))

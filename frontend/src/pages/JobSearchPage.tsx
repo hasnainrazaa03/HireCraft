@@ -174,7 +174,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
           </button>
 
           <div className="flex items-start gap-3.5">
-            <CompanyLogo company={job.company || job.title} />
+            <CompanyLogo company={job.company || job.title} domain={job.company_domain} />
             <div className="min-w-0 flex-1 pr-6">
               <h3 className="line-clamp-2 text-[17px] font-semibold leading-snug text-content">{job.title}</h3>
               <div className="mt-0.5 truncate text-sm font-medium text-electric">{job.company || "—"}</div>
@@ -284,7 +284,7 @@ function JobModal({ job, saved, onSave, onTailor, onClose }: {
         <div className="relative border-b border-white/[0.06] p-6">
           <button onClick={onClose} className="absolute right-5 top-5 text-subtle transition hover:text-content" aria-label="Close">✕</button>
           <div className="flex items-start gap-3.5 pr-8">
-            <div className="group"><CompanyLogo company={job.company || job.title} /></div>
+            <div className="group"><CompanyLogo company={job.company || job.title} domain={job.company_domain} /></div>
             <div className="min-w-0">
               <h2 className="text-xl font-semibold leading-tight text-content">{job.title}</h2>
               <div className="text-sm font-medium text-electric">{job.company}</div>
@@ -526,18 +526,22 @@ const AVATAR_TONES = [
   "from-coral/30 to-orange-600/20 text-coral",
 ];
 
-function CompanyLogo({ company }: { company: string }) {
-  const [failed, setFailed] = useState(false);
-  const domain = guessDomain(company);
+function CompanyLogo({ company, domain }: { company: string; domain?: string }) {
+  // Try the real domain a source handed us first (accurate), then one guessed
+  // from the name, then fall to initials. DuckDuckGo's icon service is the
+  // provider — Clearbit's free logo API was sunset and now returns nothing.
+  const candidates = [...new Set([domain, guessDomain(company)].filter(Boolean))]
+    .map((d) => `https://icons.duckduckgo.com/ip3/${d}.ico`);
+  const [idx, setIdx] = useState(0);
   const initials = company.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
   let hash = 0;
   for (let i = 0; i < company.length; i++) hash = (hash * 31 + company.charCodeAt(i)) | 0;
   const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
 
-  if (domain && !failed) {
+  if (idx < candidates.length) {
     return (
       <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-white p-1.5 shadow-soft transition-transform duration-300 group-hover:scale-105">
-        <img src={`https://logo.clearbit.com/${domain}`} alt={company} className="h-full w-full object-contain" onError={() => setFailed(true)} loading="lazy" />
+        <img src={candidates[idx]} alt={company} className="h-full w-full object-contain" onError={() => setIdx((i) => i + 1)} loading="lazy" />
       </div>
     );
   }

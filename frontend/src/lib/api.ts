@@ -356,6 +356,12 @@ export interface ResumeRewriteResponse {
   cost_usd: number;
 }
 
+export interface ProfileIntroResponse {
+  headline: string;
+  summary: string;
+  cost_usd: number;
+}
+
 export interface ScoreMetric {
   key: string;
   label: string;
@@ -898,6 +904,7 @@ export interface JobSearchResult {
   snippet: string;
   source: string;
   created_at: number | null;
+  company_domain: string;
   match_score: number | null;
   verdict: string | null;
   interview_chance: string | null;

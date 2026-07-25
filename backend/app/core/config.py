@@ -105,7 +105,9 @@ class Settings(BaseSettings):
     # a structured listings.json when present, else parsed from the README table.
     # Add your own repo here (or via the GITHUB_JOB_REPOS env var).
     github_job_repos: str = (
-        "SimplifyJobs/Summer2026-Internships,SimplifyJobs/New-Grad-Positions"
+        "SimplifyJobs/Summer2026-Internships,"
+        "SimplifyJobs/New-Grad-Positions,"
+        "vanshb03/Summer2027-Internships"
     )
 
     # --- LaTeX ---

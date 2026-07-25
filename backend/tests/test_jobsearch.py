@@ -38,6 +38,16 @@ def test_to_unix_variants():
     assert js._to_unix("not a date") is None
 
 
+def test_domain_of_extracts_and_rejects_aggregators():
+    assert js._domain_of("https://www.Stripe.com/careers") == "stripe.com"
+    assert js._domain_of("tesla.com") == "tesla.com"
+    # Aggregator/ATS redirects are not the employer's domain — rejected.
+    assert js._domain_of("https://simplify.jobs/c/Booz-Allen") == ""
+    assert js._domain_of("https://boards.greenhouse.io/acme") == ""
+    assert js._domain_of("not a domain") == ""
+    assert js._domain_of(None) == ""
+
+
 # --- aggregation ------------------------------------------------------------
 
 

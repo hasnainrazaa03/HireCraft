@@ -17,6 +17,7 @@ class JobSearchResult(BaseModel):
     snippet: str
     source: str
     created_at: int | None = None  # unix seconds, for "posted N days ago"
+    company_domain: str = ""  # real host for a logo lookup; "" → guess from name
     # Résumé fit analysis (null / empty if the user has no résumé yet).
     match_score: int | None = None
     verdict: str | None = None
