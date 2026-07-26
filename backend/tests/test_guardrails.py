@@ -427,3 +427,53 @@ class TestExcludedEntries:
         assert resume.experience == []
         assert report.violations == []
         assert report.bullet_confidence == []
+
+
+class TestSkillsDiff:
+    """The diff is the surface the docs tell people to check before sending, so
+    it has to answer "did I lose anything?" without crying wolf."""
+
+    @staticmethod
+    def _regroup(master, groups):
+        after = master.model_copy(deep=True)
+        SkillGroup = type(master.skills[0])
+        after.skills = [SkillGroup(category=name, items=items) for name, items in groups]
+        return after
+
+    @staticmethod
+    def _skills_diff(master, after):
+        return [e for e in build_diff(master, after) if e.section == "skills"]
+
+    def test_renaming_a_category_is_not_reported_as_deletion(self, master):
+        """Regression: keyed on category name, the optimizer renaming
+        "Frameworks" to "Backend Frameworks" read as one category deleted and
+        another added — the Changes tab told the user their whole toolchain had
+        been removed while every skill was still present."""
+        items = [i for g in master.skills for i in g.items]
+        after = self._regroup(master, [("Backend Frameworks & Tools", items)])
+
+        entries = self._skills_diff(master, after)
+        assert [e.change for e in entries] == ["reordered"]
+        assert entries[0].label == "Skill groups"
+        assert not any(e.change == "removed" for e in entries)
+
+    def test_a_genuinely_dropped_skill_is_still_reported(self, master):
+        items = [i for g in master.skills for i in g.items]
+        after = self._regroup(master, [("Everything", items[:-1])])
+
+        removed = [e for e in self._skills_diff(master, after) if e.change == "removed"]
+        assert len(removed) == 1
+        assert removed[0].before == [items[-1]]
+
+    def test_an_unexpected_addition_is_surfaced(self, master):
+        """The merge shouldn't allow this, so if it ever appears the diff must
+        say so rather than hide it."""
+        items = [i for g in master.skills for i in g.items]
+        after = self._regroup(master, [("Everything", [*items, "Kubernetes"])])
+
+        added = [e for e in self._skills_diff(master, after) if e.change == "added"]
+        assert len(added) == 1
+        assert added[0].after == ["Kubernetes"]
+
+    def test_untouched_skills_produce_no_entries(self, master):
+        assert self._skills_diff(master, master.model_copy(deep=True)) == []

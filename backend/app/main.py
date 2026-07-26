@@ -179,7 +179,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
-    expose_headers=["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After"],
+    expose_headers=[
+        "X-Request-ID",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "Retry-After",
+        # Paged list endpoints report the unpaged total here; without it
+        # the browser cannot read the header at all.
+        "X-Total-Count",
+    ],
     max_age=600,
 )
 

@@ -1,28 +1,34 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type ApplicationSummary, type TrackerStatus } from "../lib/api";
+import { api, ApiError, fetchAll, type ApplicationSummary, type TrackerStatus } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { PageLoader, EmptyState } from "../components/ui";
+import { useToast } from "../lib/toast";
 import { IconApplications, IconSearch } from "../components/icons";
 import { BOARD_COLUMNS, columnFor, ALL_STAGES, trackerLabel } from "../lib/tracker";
 
 const ACTIVE = new Set(["pending", "scraping", "extracting", "optimizing", "rendering"]);
 type View = "board" | "list";
+type AppPage = { items: ApplicationSummary[]; total: number; truncated: boolean };
 
 export default function ApplicationsPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("board");
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<TrackerStatus | null>(null);
 
-  const { data: applications = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["applications"],
-    queryFn: () => api.get<ApplicationSummary[]>("/applications?limit=200"),
+    queryFn: () => fetchAll<ApplicationSummary>("/applications"),
     refetchInterval: (q) =>
-      (q.state.data ?? []).some((a) => ACTIVE.has(a.pipeline_status)) ? 3000 : false,
+      (q.state.data?.items ?? []).some((a) => ACTIVE.has(a.pipeline_status)) ? 3000 : false,
   });
+  const applications = data?.items ?? [];
+  const total = data?.total ?? applications.length;
+  const truncated = data?.truncated ?? false;
 
   const move = useMutation({
     mutationFn: ({ id, status }: { id: string; status: TrackerStatus }) =>
@@ -30,14 +36,27 @@ export default function ApplicationsPage() {
     // Optimistic: the card jumps columns instantly, then reconciles.
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({ queryKey: ["applications"] });
-      const prev = queryClient.getQueryData<ApplicationSummary[]>(["applications"]);
-      queryClient.setQueryData<ApplicationSummary[]>(["applications"], (old) =>
-        (old ?? []).map((a) => (a.id === id ? { ...a, tracker_status: status } : a)),
+      const prev = queryClient.getQueryData<AppPage>(["applications"]);
+      queryClient.setQueryData<AppPage>(["applications"], (old) =>
+        old
+          ? {
+              ...old,
+              items: old.items.map((a) =>
+                a.id === id ? { ...a, tracker_status: status } : a,
+              ),
+            }
+          : old,
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
+    // Rolling back silently made a failed move look like a UI glitch: the card
+    // simply snapped back with no explanation.
+    onError: (err, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(["applications"], ctx.prev);
+      toast.error(
+        "Couldn't move that application",
+        err instanceof ApiError ? err.message : "Please try again.",
+      );
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["applications"] });
@@ -71,7 +90,7 @@ export default function ApplicationsPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Applications</h1>
-          <p className="text-sm text-muted">{applications.length} total · drag cards to move them</p>
+          <p className="text-sm text-muted">{total} total · drag cards to move them</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-xl border border-white/[0.08] bg-surface-2 p-0.5">
@@ -100,6 +119,14 @@ export default function ApplicationsPage() {
         />
       ) : (
         <>
+          {truncated && (
+            <div className="mb-4 rounded-xl border border-coral/30 bg-coral/10 px-3 py-2.5 text-sm text-coral">
+              Showing the {applications.length} most recent of {total} applications.
+              Older ones aren't on the board or in this search — narrow it down by
+              stage, or archive what you've finished with.
+            </div>
+          )}
+
           <div className="mb-4 relative max-w-xs">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
             <input

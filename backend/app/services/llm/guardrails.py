@@ -750,27 +750,66 @@ def build_diff(before: MasterResume, after: MasterResume) -> list[DiffEntry]:
                 )
             )
 
-    old_skills = {g.category: list(g.items) for g in before.skills}
-    new_skills = {g.category: list(g.items) for g in after.skills}
-    for category in set(old_skills) | set(new_skills):
-        old_items = old_skills.get(category)
-        new_items = new_skills.get(category)
-        if old_items != new_items:
-            diff.append(
-                DiffEntry(
-                    section="skills",
-                    label=category,
-                    field="items",
-                    before=old_items,
-                    after=new_items,
-                    change=(
-                        "added"
-                        if old_items is None
-                        else "removed"
-                        if new_items is None
-                        else "modified"
-                    ),
-                )
-            )
+    diff.extend(_diff_skills(before, after))
 
     return diff
+
+
+def _diff_skills(before: MasterResume, after: MasterResume) -> list[DiffEntry]:
+    """Report what happened to the skills, by skill rather than by category.
+
+    Comparing category-by-category is misleading, because the optimizer
+    regularly renames and merges them: "Frameworks" and "Tools & Infrastructure"
+    become "Backend Frameworks & Tools". Keyed on the category name, that read
+    as two whole categories deleted and one added, so the Changes tab told the
+    user their entire toolchain had been removed when every skill was still
+    there. Since the diff is the surface the README tells people to check before
+    they send, it has to answer the question they actually have — did I lose
+    anything? — before anything about grouping.
+    """
+    old_groups = [(g.category, list(g.items)) for g in before.skills]
+    new_groups = [(g.category, list(g.items)) for g in after.skills]
+    old_items = {item for _, items in old_groups for item in items}
+    new_items = {item for _, items in new_groups for item in items}
+
+    entries: list[DiffEntry] = []
+
+    if dropped := sorted(old_items - new_items):
+        entries.append(
+            DiffEntry(
+                section="skills",
+                label="Skills no longer shown",
+                field="items",
+                before=dropped,
+                after=None,
+                change="removed",
+            )
+        )
+    if added := sorted(new_items - old_items):
+        # The merge already refuses to introduce a skill the master doesn't
+        # list, so this should stay empty; surfaced anyway rather than trusted.
+        entries.append(
+            DiffEntry(
+                section="skills",
+                label="Skills added",
+                field="items",
+                before=None,
+                after=added,
+                change="added",
+            )
+        )
+
+    # Same skills, different packaging: a regroup, not a removal.
+    if old_groups != new_groups:
+        entries.append(
+            DiffEntry(
+                section="skills",
+                label="Skill groups",
+                field="groups",
+                before=[f"{name} ({len(items)})" for name, items in old_groups],
+                after=[f"{name} ({len(items)})" for name, items in new_groups],
+                change="reordered",
+            )
+        )
+
+    return entries

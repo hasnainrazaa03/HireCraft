@@ -149,6 +149,61 @@ async function request<T>(
   return res.json();
 }
 
+/** One page of a list endpoint, plus the unpaged total the server reports. */
+async function page<T>(path: string): Promise<{ items: T[]; total: number | null }> {
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  const access = tokens.access;
+  if (access) headers.set("Authorization", `Bearer ${access}`);
+
+  const res = await fetch(`${API}${path}`, { headers });
+  if (res.status === 401 && tokens.refresh) {
+    if (await tryRefresh()) return page<T>(path);
+    tokens.clear();
+    window.dispatchEvent(new Event("hirecraft:logout"));
+    throw new ApiError("Your session expired. Please sign in again.", 401);
+  }
+  if (!res.ok) throw await parseError(res);
+
+  const raw = res.headers.get("X-Total-Count");
+  const total = raw === null ? null : Number(raw);
+  return {
+    items: (await res.json()) as T[],
+    total: total === null || Number.isNaN(total) ? null : total,
+  };
+}
+
+/**
+ * Read every page of a list endpoint.
+ *
+ * Views that group or search across the whole collection — the Kanban board,
+ * most obviously — are wrong if they only ever see the first page. Asking for
+ * one big page instead just moves the cliff: the server caps `limit`, so the
+ * request silently returns a prefix and the UI has no idea. Walk the pages
+ * until the server's own total is satisfied, and report honestly when a hard
+ * safety cap stops us early rather than pretending the rest doesn't exist.
+ */
+export async function fetchAll<T>(
+  path: string,
+  { pageSize = 200, cap = 2000 }: { pageSize?: number; cap?: number } = {},
+): Promise<{ items: T[]; total: number; truncated: boolean }> {
+  const join = path.includes("?") ? "&" : "?";
+  const items: T[] = [];
+  let total: number | null = null;
+
+  while (items.length < cap) {
+    const got = await page<T>(`${path}${join}limit=${pageSize}&offset=${items.length}`);
+    if (total === null) total = got.total;
+    items.push(...got.items);
+    // A short page means the end, with or without a total header.
+    if (got.items.length < pageSize) break;
+    if (total !== null && items.length >= total) break;
+  }
+
+  const known = total ?? items.length;
+  return { items, total: known, truncated: items.length < known };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

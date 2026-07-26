@@ -157,3 +157,101 @@ class TestQueueFailure:
         assert tasks.enqueue_tailoring("abc") == "task-123"
         assert seen["ignore_result"] is True
         assert seen["args"] == ["abc"]
+
+
+class TestListingPagination:
+    """A tracker accumulates; the list has to stay honest as it grows."""
+
+    @pytest.fixture
+    def db(self):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session as OrmSession
+        from sqlalchemy.pool import StaticPool
+
+        import app.models  # noqa: F401
+        from app.db.base import Base
+
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+        Base.metadata.create_all(engine)
+        with OrmSession(engine) as session:
+            yield session
+
+    @pytest.fixture
+    def client(self, db):
+        from fastapi.testclient import TestClient
+
+        from app.db.session import get_db
+        from app.main import app
+
+        app.dependency_overrides[get_db] = lambda: db
+        with TestClient(app) as client:
+            yield client
+        app.dependency_overrides.clear()
+
+    @pytest.fixture
+    def seeded(self, db):
+        """220 applications, all created in the same instant."""
+        from datetime import UTC, datetime
+
+        from app.core.security import create_token
+        from app.models.application import Application, PipelineStatus, TrackerStatus
+        from app.models.job import Job
+        from app.models.resume import ResumeProfile
+        from app.models.user import User
+        from tests.conftest import MASTER_RESUME_FIXTURE
+
+        user = User(email="tracker@usc.edu", hashed_password="h")
+        db.add(user)
+        db.flush()
+        profile = ResumeProfile(user_id=user.id, name="M", content=MASTER_RESUME_FIXTURE)
+        db.add(profile)
+        db.flush()
+
+        stamp = datetime.now(UTC)
+        for index in range(220):
+            job = Job(user_id=user.id, raw_text="jd", title=f"Role {index:03d}")
+            db.add(job)
+            db.flush()
+            db.add(
+                Application(
+                    user_id=user.id, job_id=job.id, resume_profile_id=profile.id,
+                    pipeline_status=PipelineStatus.COMPLETED,
+                    # Identical timestamps: created_at alone is not a total order.
+                    created_at=stamp, updated_at=stamp,
+                    tracker_status=(
+                        TrackerStatus.APPLIED if index % 2 else TrackerStatus.OFFER
+                    ),
+                )
+            )
+        db.commit()
+        return {"Authorization": f"Bearer {create_token(user.id, 'access')}"}
+
+    def test_total_count_header_reports_the_whole_collection(self, client, seeded):
+        """Regression: a page could not convey how many existed, so the board
+        rendered its own length as the user's total — 200 in the tracker while
+        the dashboard said 220, with the remainder unreachable even by search."""
+        response = client.get("/api/v1/applications?limit=200", headers=seeded)
+        assert response.status_code == 200
+        assert len(response.json()) == 200
+        assert response.headers["X-Total-Count"] == "220"
+
+    def test_total_count_respects_the_stage_filter(self, client, seeded):
+        response = client.get(
+            "/api/v1/applications?tracker_status=offer&limit=1", headers=seeded
+        )
+        assert response.headers["X-Total-Count"] == "110"
+
+    def test_walking_the_pages_yields_every_row_exactly_once(self, client, seeded):
+        """With identical created_at values, ordering needs a tiebreaker or rows
+        repeat on one page and vanish from another."""
+        seen: list[str] = []
+        for offset in range(0, 220, 50):
+            page = client.get(
+                f"/api/v1/applications?limit=50&offset={offset}", headers=seeded
+            ).json()
+            seen.extend(item["id"] for item in page)
+
+        assert len(seen) == 220
+        assert len(set(seen)) == 220, "a row appeared on more than one page"

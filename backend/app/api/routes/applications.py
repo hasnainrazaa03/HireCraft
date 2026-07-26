@@ -8,7 +8,7 @@ import zipfile
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
@@ -185,20 +185,38 @@ def _queue_run(db: DbSession, application: Application) -> None:
 def list_applications(
     user: CurrentUser,
     db: DbSession,
+    response: Response,
     tracker_status: TrackerStatus | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[ApplicationSummary]:
+    """One page of the caller's applications, newest first.
+
+    ``X-Total-Count`` reports how many match the filter in total, which the page
+    itself cannot convey. Without it a client had no way to know it was seeing a
+    truncated view: the board asked for 200, silently dropped everything beyond
+    that, and then rendered its own page length as the user's total — so the
+    tracker disagreed with the dashboard and older applications were unreachable
+    even by search.
+    """
+    filters = [Application.user_id == user.id]
+    if tracker_status is not None:
+        filters.append(Application.tracker_status == tracker_status)
+
+    response.headers["X-Total-Count"] = str(
+        db.scalar(select(func.count(Application.id)).where(*filters)) or 0
+    )
+
     stmt = (
         select(Application)
-        .where(Application.user_id == user.id)
+        .where(*filters)
         .options(selectinload(Application.job))
-        .order_by(Application.created_at.desc())
+        # created_at alone is not a total order - applications created in the
+        # same instant could otherwise repeat or vanish across pages.
+        .order_by(Application.created_at.desc(), Application.id.desc())
         .limit(limit)
         .offset(offset)
     )
-    if tracker_status is not None:
-        stmt = stmt.where(Application.tracker_status == tracker_status)
 
     return [
         ApplicationSummary(
