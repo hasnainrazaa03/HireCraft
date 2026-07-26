@@ -29,7 +29,7 @@ from app.schemas.api import (
 )
 from app.services import storage
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
-from app.workers.tasks import run_tailoring_task
+from app.workers.tasks import enqueue_tailoring
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 logger = get_logger(__name__)
@@ -136,15 +136,13 @@ def create_application(
     db.commit()
     db.refresh(application)
 
-    task = run_tailoring_task.delay(str(application.id))
-    application.celery_task_id = task.id
-    db.commit()
+    _queue_run(db, application)
     db.refresh(application)
 
     logger.info(
         "application.queued",
         application_id=str(application.id),
-        task_id=task.id,
+        task_id=application.celery_task_id,
         user_id=str(user.id),
     )
     return _to_detail(application)
@@ -152,6 +150,35 @@ def create_application(
 
 def _to_detail(application: Application) -> ApplicationDetail:
     return ApplicationDetail.model_validate(application)
+
+
+def _queue_run(db: DbSession, application: Application) -> None:
+    """Hand the run to the worker, or fail the application loudly.
+
+    If the broker is unreachable the row would otherwise sit at PENDING for
+    ever, with the UI polling a run that nobody is ever going to pick up. Mark
+    it failed with a message that invites a retry, and tell the caller it was
+    an infrastructure problem rather than returning a bare 500.
+    """
+    try:
+        application.celery_task_id = enqueue_tailoring(application.id)
+    except Exception as exc:  # noqa: BLE001 - any publish failure is a 503
+        application.pipeline_status = PipelineStatus.FAILED
+        application.error_message = (
+            "This run could not be queued because the job queue was "
+            "unavailable. Press Retry to try again."
+        )
+        db.commit()
+        logger.error(
+            "application.enqueue_failed",
+            application_id=str(application.id),
+            error=str(exc)[:200],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The job queue is unavailable right now. Please try again shortly.",
+        ) from exc
+    db.commit()
 
 
 @router.get("", response_model=list[ApplicationSummary])
@@ -263,9 +290,7 @@ def retry_application(
     application.error_message = None
     db.commit()
 
-    task = run_tailoring_task.delay(str(application.id))
-    application.celery_task_id = task.id
-    db.commit()
+    _queue_run(db, application)
     db.refresh(application)
     return _to_detail(application)
 

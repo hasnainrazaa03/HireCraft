@@ -126,6 +126,26 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
             job.location = job.location or outcome.requirements.location
 
 
+def enqueue_tailoring(application_id: uuid.UUID | str) -> str:
+    """Publish a tailoring run and return the task id.
+
+    ``ignore_result=True`` is load-bearing rather than an optimisation. Without
+    it, publishing makes Celery pre-subscribe to the task's result channel, and
+    with Redis unreachable that reconnect loop blocked the calling request for
+    ~19 seconds before failing — long enough for an outage to occupy every
+    request thread and take down endpoints that need nothing from Redis. With
+    it, the publish gives up in ~0.2s and raises a broker error the route can
+    turn into a 503.
+
+    Nothing ever reads a task's return value: progress is the application's
+    own ``pipeline_status``, polled over HTTP. The subscription was pure cost.
+    """
+    async_result = run_tailoring_task.apply_async(
+        args=[str(application_id)], ignore_result=True
+    )
+    return async_result.id
+
+
 @celery_app.task(
     bind=True,
     name="hirecraft.run_tailoring",
