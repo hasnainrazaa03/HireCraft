@@ -62,6 +62,22 @@ class ScrapeError(Exception):
     """Raised when a job posting cannot be retrieved or parsed."""
 
 
+def _is_blocked_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for any address we must never fetch from.
+
+    ``is_link_local`` is what covers the cloud metadata endpoints -
+    169.254.169.254 and, on IPv6, fd00:ec2::254 (which ``is_private`` catches).
+    """
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
 def _is_blocked_ip(host: str) -> bool:
     """True if ``host`` resolves to any address we must not fetch from."""
     try:
@@ -69,18 +85,39 @@ def _is_blocked_ip(host: str) -> bool:
     except socket.gaierror as exc:
         raise ScrapeError(f"Could not resolve host {host!r}.") from exc
 
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0])
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-            or address.is_unspecified
-        ):
-            return True
-    return False
+    return any(_is_blocked_address(ipaddress.ip_address(info[4][0])) for info in infos)
+
+
+def _assert_peer_allowed(response: httpx.Response) -> None:
+    """Re-check the address we actually connected to.
+
+    Validating the hostname before the request leaves a gap: the name is
+    resolved once for the check and again by the connection, so a DNS entry
+    that flips between the two (rebinding, or simply a short-TTL record with
+    several answers) can pass the check and still land on an internal host.
+    Reading the peer off the open socket is the only way to know where the
+    bytes are really coming from, and it happens before the body is read.
+
+    If the transport doesn't expose a peer - a mock in tests, some proxy
+    setups - fall back to the pre-request check rather than failing the fetch.
+    """
+    stream = response.extensions.get("network_stream")
+    if stream is None:
+        return
+    try:
+        peer = stream.get_extra_info("server_addr")
+    except Exception:  # noqa: BLE001 - transport-specific; absence isn't fatal
+        return
+    if not peer:
+        return
+    try:
+        address = ipaddress.ip_address(peer[0])
+    except ValueError:
+        return
+    if _is_blocked_address(address):
+        raise ScrapeError(
+            "That URL resolves to a private or internal address and will not be fetched."
+        )
 
 
 def validate_url(url: str) -> str:
@@ -261,6 +298,13 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
             # before the body is pulled into memory.
             for _ in range(5):
                 response = client.send(client.build_request("GET", current), stream=True)
+                # Checked on every hop, not just the first: a redirect chain is
+                # exactly where a rebind would be aimed.
+                try:
+                    _assert_peer_allowed(response)
+                except ScrapeError:
+                    response.close()
+                    raise
                 if not response.is_redirect:
                     break
                 response.close()
