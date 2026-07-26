@@ -96,3 +96,111 @@ class TestEnvOverrides:
         assert settings.llm_temperature == 0.7
         assert settings.debug is True
         assert settings.rate_limit_requests == 250
+
+
+# --- Rate-limit identity -----------------------------------------------------
+
+
+def test_rate_limit_follows_the_account_not_the_token():
+    """Regression: the bucket key was the tail of the bearer token.
+
+    Access tokens rotate on every refresh, so a client got a brand-new quota
+    just by refreshing and the coarse limit enforced nothing.
+    """
+    from types import SimpleNamespace
+
+    from app.core.security import create_token
+    from app.main import _rate_limit_identity
+
+    def request(auth=None, ip="1.2.3.4"):
+        return SimpleNamespace(
+            headers={"authorization": auth} if auth else {},
+            client=SimpleNamespace(host=ip),
+        )
+
+    user = "11111111-1111-1111-1111-111111111111"
+    first, second = create_token(user, "access"), create_token(user, "access")
+    assert first != second  # rotation really does produce a different token
+
+    assert _rate_limit_identity(request(f"Bearer {first}")) == _rate_limit_identity(
+        request(f"Bearer {second}")
+    )
+    other = create_token("22222222-2222-2222-2222-222222222222", "access")
+    assert _rate_limit_identity(request(f"Bearer {other}")) != _rate_limit_identity(
+        request(f"Bearer {first}")
+    )
+
+
+def test_rate_limit_falls_back_to_ip_when_unauthenticated():
+    from types import SimpleNamespace
+
+    from app.main import _rate_limit_identity
+
+    def request(auth=None):
+        return SimpleNamespace(
+            headers={"authorization": auth} if auth else {},
+            client=SimpleNamespace(host="9.9.9.9"),
+        )
+
+    assert _rate_limit_identity(request()) == "ip:9.9.9.9"
+    assert _rate_limit_identity(request("Bearer garbage")) == "ip:9.9.9.9"
+
+
+# --- Outbound-call and auth surface -----------------------------------------
+
+
+def test_every_api_route_requires_authentication():
+    """No endpoint should be reachable without a bearer token except the
+    handful that genuinely cannot be (login, token refresh, the email-link
+    flows, the OAuth handshake, and the public runtime config)."""
+    import importlib
+    import pkgutil
+
+    import app.api.routes as routes_pkg
+    from app.api.deps import enforce_generation_quota, get_current_user, require_admin
+
+    guards = {get_current_user, require_admin, enforce_generation_quota}
+    public = {
+        ("POST", "/auth/register"), ("POST", "/auth/login"), ("POST", "/auth/refresh"),
+        ("POST", "/auth/verify-email"), ("POST", "/auth/forgot-password"),
+        ("POST", "/auth/reset-password"), ("GET", "/auth/oauth/providers"),
+        ("GET", "/auth/oauth/{provider}/authorize"),
+        ("GET", "/auth/oauth/{provider}/callback"), ("GET", "/config"),
+        # Orchestrator probes: an unauthenticated liveness/readiness check is
+        # the point of them.
+        ("GET", "/health"), ("GET", "/ready"),
+    }
+
+    unguarded, seen = [], 0
+    for module in pkgutil.iter_modules(routes_pkg.__path__):
+        router = getattr(
+            importlib.import_module(f"app.api.routes.{module.name}"), "router", None
+        )
+        if router is None:
+            continue
+        for route in router.routes:
+            if not hasattr(route, "dependant"):
+                continue
+            seen += 1
+            stack, found = [route.dependant], False
+            while stack:
+                dep = stack.pop()
+                found = found or dep.call in guards
+                stack.extend(dep.dependencies)
+            for method in route.methods - {"HEAD", "OPTIONS"}:
+                if not found and (method, route.path) not in public:
+                    unguarded.append(f"{method} {route.path}")
+
+    assert seen > 50, f"route discovery broke — only saw {seen}"
+    assert unguarded == [], f"unauthenticated routes: {unguarded}"
+
+
+def test_key_validation_cannot_drive_unbounded_provider_calls():
+    """Saving an API key makes a live outbound request to the provider, so it
+    needs its own throttle — it isn't covered by the generation quota."""
+    import inspect
+
+    from app.api.routes import account
+
+    for handler in (account.set_api_key, account.set_llm_key):
+        assert "_throttle_key_probe" in inspect.getsource(handler), handler.__name__

@@ -31,6 +31,26 @@ celery_app.conf.update(
     task_track_started=True,
     result_expires=60 * 60 * 24,
     broker_connection_retry_on_startup=True,
+    # --- Publishing must fail fast ---------------------------------------
+    # These bound the *API side* of Celery. Enqueuing happens inside a request,
+    # and with Redis unreachable the defaults spent ~19s retrying the result
+    # store before raising: long enough that a Redis outage would occupy every
+    # request thread and stall endpoints that need nothing from Redis at all.
+    # The limiter already fails open for exactly that reason; enqueuing should
+    # give up quickly too, and let the route say so.
+    #
+    # Deliberately NOT setting broker_connection_max_retries: that is the
+    # worker's reconnect loop, which should keep trying indefinitely so a
+    # restarted Redis heals itself.
+    broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 3},
+    result_backend_transport_options={"socket_connect_timeout": 3, "socket_timeout": 3},
+    result_backend_always_retry=False,
+    task_publish_retry_policy={
+        "max_retries": 2,
+        "interval_start": 0,
+        "interval_step": 0.2,
+        "interval_max": 0.5,
+    },
 )
 
 # Scheduled jobs. Runs only when a `celery beat` process is started alongside

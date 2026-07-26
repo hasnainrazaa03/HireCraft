@@ -7,8 +7,32 @@ A single ``_layout`` wraps the branded shell so every message looks consistent.
 
 from __future__ import annotations
 
+from html import escape
+
 from app.core.config import settings
 from app.services.email.sender import Email
+
+
+def _h(value: object) -> str:
+    """Escape a value for interpolation into the HTML body.
+
+    Everything here is user-influenced: a display name they typed, or a
+    notification title built from a job title that came off a scraped posting.
+    Interpolating that raw into the template let arbitrary markup into the
+    message.
+    """
+    return escape("" if value is None else str(value), quote=True)
+
+
+def _subject(value: str) -> str:
+    """Collapse whitespace in a header value.
+
+    A subject is assembled from the same untrusted job title, and a CR/LF in a
+    header is how extra headers get smuggled in. Python's email policy rejects
+    those on its own; stripping them here means a stray newline degrades to a
+    tidy subject line rather than an exception in the send worker.
+    """
+    return " ".join(value.split())
 
 _BRAND = "#7C5CFF"
 _BG = "#0A0B12"
@@ -20,7 +44,12 @@ _MUTED = "#9AA2B8"
 def _layout(*, heading: str, body_html: str, button: tuple[str, str] | None = None) -> str:
     button_html = ""
     if button:
-        label, url = button
+        label, raw_url = button
+        # Escaped even though callers build the URL from config plus an id:
+        # it lands in an href attribute, and "&" in a query string genuinely
+        # needs to be "&amp;" there anyway.
+        url = _h(raw_url)
+        label = _h(label)
         button_html = f"""
         <tr><td style="padding:8px 0 4px;">
           <a href="{url}" style="display:inline-block;background:{_BRAND};color:#ffffff;
@@ -67,10 +96,11 @@ def _layout(*, heading: str, body_html: str, button: tuple[str, str] | None = No
 def verification_email(to: str, token: str, name: str | None = None) -> Email:
     url = f"{settings.frontend_base_url}/verify-email?token={token}"
     hi = f"Hi {name}," if name else "Welcome to HireCraft,"
+    hi_html = f"Hi {_h(name)}," if name else "Welcome to HireCraft,"
     html = _layout(
         heading="Confirm your email",
         body_html=(
-            f"{hi} confirm your email address to finish setting up your account. "
+            f"{hi_html} confirm your email address to finish setting up your account. "
             f"This link expires in {settings.email_verify_ttl_hours} hours."
         ),
         button=("Verify email", url),
@@ -85,10 +115,11 @@ def verification_email(to: str, token: str, name: str | None = None) -> Email:
 def password_reset_email(to: str, token: str, name: str | None = None) -> Email:
     url = f"{settings.frontend_base_url}/reset-password?token={token}"
     hi = f"Hi {name}," if name else "Hi,"
+    hi_html = f"Hi {_h(name)}," if name else "Hi,"
     html = _layout(
         heading="Reset your password",
         body_html=(
-            f"{hi} we received a request to reset your HireCraft password. This link "
+            f"{hi_html} we received a request to reset your HireCraft password. This link "
             f"expires in {settings.password_reset_ttl_minutes} minutes. If you didn't "
             f"ask for this, you can safely ignore this email."
         ),
@@ -107,9 +138,9 @@ def notification_email(to: str, title: str, body: str, link: str | None = None) 
     the weekly summary). The link, when present, deep-links into the app."""
     url = f"{settings.frontend_base_url}{link}" if link else settings.frontend_base_url
     html = _layout(
-        heading=title,
-        body_html=body or "You have a new update in HireCraft.",
+        heading=_h(title),
+        body_html=_h(body) if body else "You have a new update in HireCraft.",
         button=("Open HireCraft", url),
     )
     text = f"{title}\n\n{body}\n\n{url}\n"
-    return Email(to=to, subject=f"HireCraft — {title}", html=html, text=text)
+    return Email(to=to, subject=_subject(f"HireCraft — {title}"), html=html, text=text)

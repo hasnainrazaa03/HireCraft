@@ -111,7 +111,7 @@ def _record(db: DbSession, user_id: uuid.UUID, ledger: UsageLedger) -> None:
 
 
 @router.get("/cover-letters/tones", response_model=list[ToneInfo])
-def list_tones() -> list[ToneInfo]:
+def list_tones(user: CurrentUser) -> list[ToneInfo]:
     return [
         ToneInfo(id=key, label=_TONE_LABELS.get(key, key.title()), description=desc)
         for key, desc in COVER_LETTER_TONES.items()
@@ -119,7 +119,7 @@ def list_tones() -> list[ToneInfo]:
 
 
 @router.get("/outreach/kinds", response_model=list[OutreachKindInfo])
-def list_outreach_kinds() -> list[OutreachKindInfo]:
+def list_outreach_kinds(user: CurrentUser) -> list[OutreachKindInfo]:
     return [
         OutreachKindInfo(id=key, label=_KIND_LABELS.get(key, key.title()), description=desc)
         for key, desc in OUTREACH_KINDS.items()
@@ -178,7 +178,10 @@ def render_cover_letter_file(
     """
     profile = _owned_resume(db, user.id, payload.resume_profile_id)
     resume = MasterResume.model_validate(profile.content)
-    date_line = datetime.now(UTC).strftime("%B %-d, %Y")
+    # Not strftime("%B %-d, %Y"): "%-d" is a glibc/BSD extension that raises on
+    # Windows, so a dev running the API natively there can't export a letter.
+    now = datetime.now(UTC)
+    date_line = f"{now:%B} {now.day}, {now.year}"
     safe = storage.safe_filename(
         f"{(payload.company or resume.basics.name)}_cover_letter".replace(" ", "_"),
         fallback="cover_letter",

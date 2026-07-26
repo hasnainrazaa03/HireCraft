@@ -126,6 +126,18 @@
     backdrop-filter: blur(16px) saturate(140%);
   }
 
+  /* Height cap for a centred dialog. A flex item centred with `items-center`
+     overflows its container equally at BOTH ends, and the part above the top
+     edge cannot be scrolled to - so a tall dialog (the résumé score panel, with
+     its metrics, ATS checks and every finding) ran off the screen with its
+     header unreachable. Capping the panel keeps it inside the viewport so its
+     body can scroll instead. Two declarations on purpose: dvh tracks mobile
+     browser chrome as it collapses, and browsers without it keep the vh value. */
+  .modal-panel {
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+  }
+
   /* The vibrant focal card. Gradient background, ambient glow. Use sparingly. */
   .hero-card {
     @apply relative overflow-hidden rounded-hero shadow-glow;

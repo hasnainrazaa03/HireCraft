@@ -9,11 +9,13 @@ silently presented as fact.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app.core.logging import get_logger
 from app.schemas.interview import InterviewQuestion, QuestionSet, StarAnswer
 from app.schemas.resume import MasterResume
 from app.schemas.writing import VoiceProfile
-from app.services.llm.client import GeminiClient, LlmResult, get_client
+from app.services.llm.client import LlmResult, get_client
 from app.services.llm.prompts import (
     INTERVIEW_ANSWER_SYSTEM,
     INTERVIEW_QUESTIONS_SYSTEM,
@@ -21,6 +23,9 @@ from app.services.llm.prompts import (
     build_questions_prompt,
 )
 from app.services.pipeline import UsageLedger, _advisory_number_check
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
@@ -33,7 +38,7 @@ def generate_questions(
     keywords: list[str] | None = None,
     categories: list[str] | None = None,
     count: int = 8,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> list[InterviewQuestion]:
     client = client or get_client()
@@ -61,7 +66,7 @@ def draft_star_answer(
     question: str,
     *,
     voice: VoiceProfile | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[StarAnswer, list[str]]:
     client = client or get_client()

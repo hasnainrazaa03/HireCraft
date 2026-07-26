@@ -37,6 +37,7 @@ from app.api.routes import (
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger, request_id_var
 from app.core.rate_limit import check_api_limit
+from app.core.security import TokenError, token_subject
 
 configure_logging()
 logger = get_logger(__name__)
@@ -127,6 +128,23 @@ async def request_context(
     return response
 
 
+def _rate_limit_identity(request: Request) -> str:
+    """Who this request counts against: the account if signed in, else the IP.
+
+    Keying on the bearer token itself (as this once did, via its last 32 chars)
+    made the limit meaningless: access tokens rotate on every refresh, so any
+    client could mint a brand-new quota just by refreshing. The limit has to
+    follow the account, not the credential that happens to represent it.
+    """
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() == "bearer" and token:
+        try:
+            return f"user:{token_subject(token)}"
+        except TokenError:
+            pass  # expired or bogus - fall through and limit by IP
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
 @app.middleware("http")
 async def rate_limit(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -135,11 +153,7 @@ async def rate_limit(
     if request.url.path in ("/health", "/ready") or request.method == "OPTIONS":
         return await call_next(request)
 
-    # Prefer the authenticated user; fall back to client IP for anonymous calls.
-    identifier = request.headers.get("authorization", "")[-32:] or (
-        request.client.host if request.client else "unknown"
-    )
-    result = check_api_limit(identifier)
+    result = check_api_limit(_rate_limit_identity(request))
     if not result.allowed:
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

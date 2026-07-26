@@ -171,11 +171,16 @@ export default function Layout({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen flex-1 flex-col lg:pl-64">
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-white/[0.06] bg-canvas/70 px-5 py-3.5 backdrop-blur-xl">
+          {/* Global search isn't built yet. It was rendered as a live, focusable
+              text box that silently did nothing on Enter; marked unavailable
+              instead, the same way the sidebar flags routes that aren't live. */}
           <div className="relative hidden max-w-md flex-1 md:block">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
             <input
-              className="input pl-9"
-              placeholder="Search jobs, resumes, companies…"
+              className="input cursor-not-allowed pl-9 opacity-60"
+              placeholder="Global search — coming soon"
+              disabled
+              aria-label="Global search (not yet available)"
             />
           </div>
 
@@ -246,7 +251,13 @@ export default function Layout({ children }: { children: ReactNode }) {
 
         {/* Mobile nav strip */}
         <nav className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
-          {NAV.filter((n) => LIVE_ROUTES.has(n.to)).map((item) => {
+          {/* The adminOnly filter has to be applied here too, not just in the
+              sidebar: /admin is a live route, so below the lg breakpoint every
+              user was shown an Admin link. The page itself redirects a
+              non-superuser, so nothing leaked, but the link should not be there. */}
+          {NAV.filter(
+            (n) => LIVE_ROUTES.has(n.to) && (!n.adminOnly || user?.is_superuser),
+          ).map((item) => {
             const Icon = item.icon;
             const active = item.end
               ? location.pathname === item.to

@@ -26,8 +26,19 @@ class StorageError(Exception):
 
 
 def _root() -> Path:
+    """The artifacts root, created on demand.
+
+    Filesystem failures are re-raised as ``StorageError`` — this module's
+    documented failure mode and the only thing callers catch. A bare OSError
+    escaping from here defeated every ``except StorageError`` in the codebase:
+    "delete my account" is written to treat artifact cleanup as best-effort,
+    but an unwritable root turned it into a 500 that left the account intact.
+    """
     root = Path(settings.artifacts_dir).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise StorageError(f"Artifacts root {root} is unavailable: {exc}") from exc
     return root
 
 
@@ -50,8 +61,11 @@ def save_bytes(relative_path: str, data: bytes) -> int:
     if not target.is_relative_to(root):
         raise StorageError(f"Refusing to write outside the artifacts root: {relative_path!r}")
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(data)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    except OSError as exc:
+        raise StorageError(f"Could not write {relative_path}: {exc}") from exc
     logger.info("storage.saved", path=relative_path, bytes=len(data))
     return len(data)
 
@@ -63,7 +77,10 @@ def read_bytes(relative_path: str) -> bytes:
         raise StorageError(f"Refusing to read outside the artifacts root: {relative_path!r}")
     if not target.is_file():
         raise StorageError(f"Artifact not found: {relative_path}")
-    return target.read_bytes()
+    try:
+        return target.read_bytes()
+    except OSError as exc:
+        raise StorageError(f"Could not read {relative_path}: {exc}") from exc
 
 
 def resolve_path(relative_path: str) -> Path:
@@ -85,11 +102,14 @@ def delete_prefix(relative_prefix: str) -> int:
         return 0
 
     removed = 0
-    for path in sorted(target.rglob("*"), reverse=True):
-        if path.is_file():
-            path.unlink()
-            removed += 1
-        elif path.is_dir():
-            path.rmdir()
-    target.rmdir()
+    try:
+        for path in sorted(target.rglob("*"), reverse=True):
+            if path.is_file():
+                path.unlink()
+                removed += 1
+            elif path.is_dir():
+                path.rmdir()
+        target.rmdir()
+    except OSError as exc:
+        raise StorageError(f"Could not delete {relative_prefix}: {exc}") from exc
     return removed

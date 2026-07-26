@@ -138,3 +138,82 @@ def test_scan_user_is_idempotent(db, user, resume):
     second = scan_user(db, user)
     assert first >= 1
     assert second == 0  # dedupe keys prevent re-creation
+
+
+def test_duplicate_does_not_discard_earlier_uncommitted_notifications(
+    db, user, monkeypatch
+):
+    """Regression: the dedupe collision rolled back the whole transaction.
+
+    The daily scan calls notify() for every user and commits once at the end, so
+    a single lost race used to wipe every reminder created for every user
+    scanned before it - while the loop still counted them as created.
+    """
+    first = notify(db, user, kind="follow_up", title="Keep me", dedupe_key="a")
+    assert first is not None
+
+    db.add(
+        Notification(user_id=user.id, kind="follow_up", title="Racer", dedupe_key="b")
+    )
+    db.flush()
+
+    # Lose the race for real: blind the pre-check SELECT so the unique
+    # constraint is what rejects the insert, which is the path that used to
+    # take the whole transaction down with it.
+    monkeypatch.setattr(db, "scalar", lambda *a, **k: None)
+    duplicate = notify(db, user, kind="follow_up", title="Dupe", dedupe_key="b")
+    monkeypatch.undo()
+
+    assert duplicate is None
+    # The earlier notification survived and is still pending in this transaction.
+    db.commit()
+    titles = set(db.scalars(select(Notification.title)))
+    assert {"Keep me", "Racer"} <= titles
+    assert "Dupe" not in titles
+
+
+class TestNotificationRoutes:
+    """Route-level checks: the feed handlers are reachable over HTTP."""
+
+    @pytest.fixture
+    def client(self, db):
+        from fastapi.testclient import TestClient
+
+        from app.db.session import get_db
+        from app.main import app
+
+        app.dependency_overrides[get_db] = lambda: db
+        with TestClient(app) as client:
+            yield client
+        app.dependency_overrides.clear()
+
+    @pytest.fixture
+    def auth(self, db, user):
+        from app.core.security import create_token
+
+        return {"Authorization": f"Bearer {create_token(user.id, 'access')}"}
+
+    def test_mark_all_read_returns_the_feed(self, client, db, auth, user):
+        """Regression: mark_all_read called the list handler as a plain
+        function, so `limit` arrived as FastAPI's Query(default=30) sentinel
+        rather than 30 — only the request cycle resolves those — and passing a
+        Query object to .limit() made the endpoint a hard 500. The notification
+        bell's "mark all read" was broken for every user."""
+        notify(db, user, kind="follow_up", title="One")
+        notify(db, user, kind="follow_up", title="Two")
+        db.commit()
+
+        response = client.post("/api/v1/notifications/read-all", headers=auth)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["unread_count"] == 0
+        assert {item["title"] for item in body["items"]} == {"One", "Two"}
+
+    def test_listing_still_honours_its_query_params(self, client, db, auth, user):
+        for i in range(3):
+            notify(db, user, kind="follow_up", title=f"N{i}")
+        db.commit()
+        response = client.get("/api/v1/notifications?limit=2", headers=auth)
+        assert response.status_code == 200
+        assert len(response.json()["items"]) == 2
+        assert response.json()["unread_count"] == 3

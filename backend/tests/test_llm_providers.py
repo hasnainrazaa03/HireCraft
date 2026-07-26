@@ -124,3 +124,85 @@ def test_byo_key_preferred_over_server(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "server")
     user = _user(encrypted_gemini_key=encrypt("my-own-key"))
     assert factory.user_key(user, "gemini") == "my-own-key"
+
+
+# --- generate_raw must not validate -----------------------------------------
+
+
+class _FakeBlock:
+    type = "tool_use"
+
+    def __init__(self, payload):
+        self.input = payload
+
+
+class _FakeMessages:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def create(self, **_kw):
+        return SimpleNamespace(
+            content=[_FakeBlock(self._payload)],
+            usage=SimpleNamespace(input_tokens=10, output_tokens=20),
+        )
+
+
+def _anthropic_returning(payload):
+    client = factory.build_client("anthropic", model="claude-haiku-4-5-20251001", api_key="k")
+    client._client = SimpleNamespace(messages=_FakeMessages(payload))
+    return client
+
+
+def _openai_returning(text):
+    client = factory.build_client("openai", model="gpt-4o-mini", api_key="k")
+    client._call = lambda **_kw: SimpleNamespace(  # type: ignore[method-assign]
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=20),
+    )
+    return client
+
+
+# A résumé whose dates arrive in prose form - exactly what generate_raw exists
+# to hand back so _repair can normalise it before validation.
+_UNREPAIRED = {
+    "basics": {"name": "Jane", "email": "jane@x.co"},
+    "experience": [{"company": "Acme", "title": "SWE", "start_date": "May 2024"}],
+}
+
+
+@pytest.mark.parametrize(
+    "make_client",
+    [
+        lambda: _anthropic_returning(_UNREPAIRED),
+        lambda: _openai_returning(__import__("json").dumps(_UNREPAIRED)),
+    ],
+    ids=["anthropic", "openai"],
+)
+def test_generate_raw_returns_unvalidated_payload(make_client):
+    """Regression: both providers routed generate_raw through
+    generate_structured, which validates. Résumé import calls generate_raw
+    precisely because the reply needs repairing first, so any date the model
+    wrote as "May 2024" made the whole import fail on those providers."""
+    from app.schemas.resume import MasterResume
+
+    payload, usage, _raw = make_client().generate_raw(
+        prompt="x", schema=MasterResume
+    )
+    assert payload["experience"][0]["start_date"] == "May 2024"
+    assert usage.input_tokens == 10
+
+
+@pytest.mark.parametrize(
+    "make_client",
+    [
+        lambda: _anthropic_returning(_UNREPAIRED),
+        lambda: _openai_returning(__import__("json").dumps(_UNREPAIRED)),
+    ],
+    ids=["anthropic", "openai"],
+)
+def test_generate_structured_still_validates(make_client):
+    from app.schemas.resume import MasterResume
+    from app.services.llm.client import LlmResponseError
+
+    with pytest.raises(LlmResponseError):
+        make_client().generate_structured(prompt="x", schema=MasterResume)

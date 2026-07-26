@@ -32,6 +32,20 @@ function loadSaved(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || "[]")); } catch { return new Set(); }
 }
 
+/**
+ * Stable identity for a posting — the same rule the backend dedupes on.
+ *
+ * Not every source supplies a URL (it normalises a missing one to ""), so
+ * keying on `job.url` alone lumped every URL-less posting together under "":
+ * saving one showed all of them as saved. It's also the React key, so it has to
+ * follow the job rather than its position — JobCard keeps its flipped state,
+ * and an index key handed that state to whatever job landed at the same slot
+ * after a re-sort.
+ */
+function jobKey(job: JobSearchResult): string {
+  return job.url || `${job.source}|${job.title}|${job.company}`;
+}
+
 const GRADIENT_BTN =
   "btn text-white shadow-[0_4px_20px_rgba(255,79,216,0.25)] hover:-translate-y-px";
 const GRADIENT_STYLE = { backgroundImage: "linear-gradient(135deg,#ff4fd8 0%,#7c4dff 55%,#5a2bde 100%)" };
@@ -57,14 +71,20 @@ export default function JobSearchPage() {
       ),
   });
 
-  function toggleSave(url: string) {
+  function toggleSave(job: JobSearchResult) {
+    const key = jobKey(job);
     setSaved((prev) => {
       const next = new Set(prev);
-      next.has(url) ? next.delete(url) : next.add(url);
-      localStorage.setItem(SAVED_KEY, JSON.stringify([...next]));
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }
+
+  // Persist as an effect, not inside the updater: React double-invokes state
+  // updaters in StrictMode, and a write buried in one runs twice.
+  useEffect(() => {
+    localStorage.setItem(SAVED_KEY, JSON.stringify([...saved]));
+  }, [saved]);
 
   function tailor(job: JobSearchResult) {
     navigate("/new", {
@@ -117,10 +137,10 @@ export default function JobSearchPage() {
       ) : (
         <>
           <div className="grid gap-6 xl:grid-cols-2">
-            {sorted.map((job, i) => (
+            {sorted.map((job) => (
               <JobCard
-                key={i} job={job} saved={saved.has(job.url)}
-                onSave={() => toggleSave(job.url)}
+                key={jobKey(job)} job={job} saved={saved.has(jobKey(job))}
+                onSave={() => toggleSave(job)}
                 onTailor={() => tailor(job)}
                 onOpen={() => setModal(job)}
               />
@@ -135,8 +155,8 @@ export default function JobSearchPage() {
 
       {modal && (
         <JobModal
-          job={modal} saved={saved.has(modal.url)}
-          onSave={() => toggleSave(modal.url)}
+          job={modal} saved={saved.has(jobKey(modal))}
+          onSave={() => toggleSave(modal)}
           onTailor={() => tailor(modal)}
           onClose={() => setModal(null)}
         />

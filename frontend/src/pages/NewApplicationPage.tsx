@@ -14,23 +14,35 @@ export default function NewApplicationPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const prefill = (location.state as PrefillState | null) ?? null;
-  const clip = new URLSearchParams(location.search).get("clip") === "1";
+  const params = new URLSearchParams(location.search);
+  const clip = params.get("clip") === "1";
 
   const [mode, setMode] = useState<"url" | "text">(
     prefill?.text || clip ? "text" : "url",
   );
   const [url, setUrl] = useState(prefill?.url ?? "");
   const [text, setText] = useState(prefill?.text ?? "");
-  const [title, setTitle] = useState(prefill?.title ?? "");
-  const [company, setCompany] = useState(prefill?.company ?? "");
+  // The extension passes title/company in the query string; it cannot hand them
+  // over any other way, since a web page can't read chrome.storage.
+  const [title, setTitle] = useState(prefill?.title ?? params.get("title") ?? "");
+  const [company, setCompany] = useState(
+    prefill?.company ?? params.get("company") ?? "",
+  );
   const [profileId, setProfileId] = useState("");
   const [coverLetter, setCoverLetter] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clipBlocked, setClipBlocked] = useState(false);
 
   // Extension clip: the posting is on the clipboard — pull it in automatically.
+  // Chrome often refuses a clipboard read that isn't tied to a user gesture, so
+  // a failure here is expected rather than exceptional; tell the user to paste
+  // instead of leaving them with a silently empty box.
   useEffect(() => {
     if (clip && !text) {
-      navigator.clipboard.readText().then((t) => t && setText(t)).catch(() => {});
+      navigator.clipboard
+        .readText()
+        .then((t) => (t ? setText(t) : setClipBlocked(true)))
+        .catch(() => setClipBlocked(true));
     }
   }, [clip, text]);
 
@@ -141,6 +153,12 @@ export default function NewApplicationPage() {
             </>
           ) : (
             <div className="space-y-3">
+              {clipBlocked && !text && (
+                <div className="rounded-xl border border-white/[0.07] bg-surface-2 px-3 py-2.5 text-xs text-muted">
+                  Your browser blocked the automatic clipboard read. The clipped job
+                  description is still on your clipboard — press ⌘V / Ctrl+V below.
+                </div>
+              )}
               <textarea
                 className="input min-h-[200px] font-mono text-xs leading-relaxed"
                 placeholder="Paste the full job description here…"

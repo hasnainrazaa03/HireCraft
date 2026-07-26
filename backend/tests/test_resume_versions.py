@@ -85,3 +85,88 @@ def test_rollback_restores_and_is_reversible(db, profile):
 
 def test_rollback_to_missing_version_returns_false(db, profile):
     assert resume_versions.rollback(db, profile, 99) is False
+
+
+class TestDefaultProfile:
+    """Exactly one résumé should carry the default flag at any time."""
+
+    @pytest.fixture
+    def db(self):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session as OrmSession
+        from sqlalchemy.pool import StaticPool
+
+        from app.db.base import Base
+
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+        Base.metadata.create_all(engine)
+        with OrmSession(engine) as session:
+            yield session
+
+    @pytest.fixture
+    def client(self, db):
+        from fastapi.testclient import TestClient
+
+        from app.db.session import get_db
+        from app.main import app
+
+        app.dependency_overrides[get_db] = lambda: db
+        with TestClient(app) as client:
+            yield client
+        app.dependency_overrides.clear()
+
+    @pytest.fixture
+    def auth(self, db):
+        from app.core.security import create_token
+        from app.models.user import User
+
+        user = User(email="default@usc.edu", hashed_password="h")
+        db.add(user)
+        db.commit()
+        return {"Authorization": f"Bearer {create_token(user.id, 'access')}"}
+
+    def _create(self, client, auth, name):
+        from tests.conftest import MASTER_RESUME_FIXTURE
+
+        response = client.post(
+            "/api/v1/resumes",
+            json={"name": name, "content": MASTER_RESUME_FIXTURE},
+            headers=auth,
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    def _defaults(self, client, auth):
+        listing = client.get("/api/v1/resumes", headers=auth).json()
+        return [r["name"] for r in listing if r["is_default"]]
+
+    def test_first_is_default_and_switching_moves_the_flag(self, client, auth):
+        first = self._create(client, auth, "A")
+        second = self._create(client, auth, "B")
+        assert first["is_default"] and not second["is_default"]
+
+        client.patch(
+            f"/api/v1/resumes/{second['id']}", json={"is_default": True}, headers=auth
+        )
+        assert self._defaults(client, auth) == ["B"]
+
+    def test_deleting_the_default_promotes_another(self, client, auth):
+        """Regression: only the very first résumé is auto-defaulted, so deleting
+        the default left the account with none and nothing ever reclaimed the
+        flag — the library showed no default from then on."""
+        default = self._create(client, auth, "A")
+        self._create(client, auth, "B")
+
+        assert client.delete(
+            f"/api/v1/resumes/{default['id']}", headers=auth
+        ).status_code == 204
+        assert self._defaults(client, auth) == ["B"]
+
+    def test_deleting_the_last_resume_is_still_fine(self, client, auth):
+        only = self._create(client, auth, "Only")
+        assert client.delete(
+            f"/api/v1/resumes/{only['id']}", headers=auth
+        ).status_code == 204
+        assert client.get("/api/v1/resumes", headers=auth).json() == []

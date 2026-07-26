@@ -96,15 +96,20 @@ export function Modal({
         className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
+      {/* Capped to the viewport and laid out as a column, so tall content
+          scrolls inside the body while the title and footer stay put. Without
+          the cap the panel overflowed the centred flex container at both ends
+          and the top was unreachable — the page itself can't scroll either,
+          since opening the modal sets body overflow to hidden. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`glass relative z-10 w-full animate-fade-in ${
+        className={`glass modal-panel relative z-10 flex w-full flex-col animate-fade-in ${
           wide ? "max-w-2xl" : "max-w-md"
         }`}
       >
-        <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4">
           <h2 className="text-base font-semibold text-content">{title}</h2>
           <button
             onClick={onClose}
@@ -116,9 +121,11 @@ export function Modal({
             </svg>
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {children}
+        </div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-white/[0.07] px-5 py-4">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-white/[0.07] px-5 py-4">
             {footer}
           </div>
         )}

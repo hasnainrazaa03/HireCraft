@@ -62,6 +62,22 @@ class ScrapeError(Exception):
     """Raised when a job posting cannot be retrieved or parsed."""
 
 
+def _is_blocked_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for any address we must never fetch from.
+
+    ``is_link_local`` is what covers the cloud metadata endpoints -
+    169.254.169.254 and, on IPv6, fd00:ec2::254 (which ``is_private`` catches).
+    """
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
 def _is_blocked_ip(host: str) -> bool:
     """True if ``host`` resolves to any address we must not fetch from."""
     try:
@@ -69,18 +85,39 @@ def _is_blocked_ip(host: str) -> bool:
     except socket.gaierror as exc:
         raise ScrapeError(f"Could not resolve host {host!r}.") from exc
 
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0])
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-            or address.is_unspecified
-        ):
-            return True
-    return False
+    return any(_is_blocked_address(ipaddress.ip_address(info[4][0])) for info in infos)
+
+
+def _assert_peer_allowed(response: httpx.Response) -> None:
+    """Re-check the address we actually connected to.
+
+    Validating the hostname before the request leaves a gap: the name is
+    resolved once for the check and again by the connection, so a DNS entry
+    that flips between the two (rebinding, or simply a short-TTL record with
+    several answers) can pass the check and still land on an internal host.
+    Reading the peer off the open socket is the only way to know where the
+    bytes are really coming from, and it happens before the body is read.
+
+    If the transport doesn't expose a peer - a mock in tests, some proxy
+    setups - fall back to the pre-request check rather than failing the fetch.
+    """
+    stream = response.extensions.get("network_stream")
+    if stream is None:
+        return
+    try:
+        peer = stream.get_extra_info("server_addr")
+    except Exception:  # noqa: BLE001 - transport-specific; absence isn't fatal
+        return
+    if not peer:
+        return
+    try:
+        address = ipaddress.ip_address(peer[0])
+    except ValueError:
+        return
+    if _is_blocked_address(address):
+        raise ScrapeError(
+            "That URL resolves to a private or internal address and will not be fetched."
+        )
 
 
 def validate_url(url: str) -> str:
@@ -219,6 +256,43 @@ def _extract_metadata(html: str) -> dict[str, str | None]:
     return meta
 
 
+def _decode_body(body: bytes, declared: str | None) -> str:
+    """Decode a response body using its declared charset, tolerating nonsense.
+
+    The charset comes from a header on a page we do not control, so it can name
+    a codec Python has never heard of - ``bytes.decode`` raises LookupError for
+    those, which is not something any caller here expects. httpx's ``.text``
+    absorbed that for us; decoding by hand means handling it by hand. Fall back
+    to UTF-8, which is right far more often than not, and let ``errors=replace``
+    deal with whatever doesn't fit.
+    """
+    for encoding in (declared, "utf-8"):
+        if not encoding:
+            continue
+        try:
+            return body.decode(encoding, errors="replace")
+        except LookupError:
+            logger.info("scraper.unknown_charset", declared=encoding)
+    return body.decode("utf-8", errors="replace")
+
+
+def _read_capped(response: httpx.Response, limit: int) -> bytes:
+    """Read a streamed body, aborting as soon as it exceeds ``limit``.
+
+    Checking ``len(response.content)`` after the fact (as this once did) means
+    the whole page is already in memory before it is rejected - a hostile or
+    merely broken URL could stream gigabytes at a worker first.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_bytes():
+        total += len(chunk)
+        if total > limit:
+            raise ScrapeError("The job posting page is unexpectedly large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
     """Fetch ``url`` and return the cleaned posting text plus any metadata."""
     safe_url = validate_url(url)
@@ -240,30 +314,46 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
             response: httpx.Response | None = None
             # Redirects are followed manually so each hop is re-validated; a
             # public host can otherwise redirect into the private network.
+            # Streamed so headers can be inspected, and the size cap enforced,
+            # before the body is pulled into memory.
             for _ in range(5):
-                response = client.get(current)
+                response = client.send(client.build_request("GET", current), stream=True)
+                # Checked on every hop, not just the first: a redirect chain is
+                # exactly where a rebind would be aimed.
+                try:
+                    _assert_peer_allowed(response)
+                except ScrapeError:
+                    response.close()
+                    raise
                 if not response.is_redirect:
                     break
+                response.close()
                 location = response.headers.get("location")
                 if not location:
+                    response = None
                     break
                 current = validate_url(str(response.url.join(location)))
             else:
+                # The final hop was already closed inside the loop.
                 raise ScrapeError("Too many redirects while fetching the job posting.")
 
-            if response is None:  # pragma: no cover - defensive
-                raise ScrapeError("No response received.")
-            response.raise_for_status()
+            if response is None:
+                raise ScrapeError("That URL redirected somewhere we could not follow.")
 
-            content_type = response.headers.get("content-type", "")
-            if "html" not in content_type and "text" not in content_type:
-                raise ScrapeError(
-                    f"Expected an HTML page but the server returned {content_type!r}."
-                )
-            if len(response.content) > settings.scrape_max_bytes:
-                raise ScrapeError("The job posting page is unexpectedly large.")
+            try:
+                response.raise_for_status()
 
-            html = response.text
+                content_type = response.headers.get("content-type", "")
+                if "html" not in content_type and "text" not in content_type:
+                    raise ScrapeError(
+                        f"Expected an HTML page but the server returned {content_type!r}."
+                    )
+
+                body = _read_capped(response, settings.scrape_max_bytes)
+            finally:
+                response.close()
+
+            html = _decode_body(body, response.charset_encoding)
             final_url = str(response.url)
 
     except httpx.HTTPStatusError as exc:

@@ -1,5 +1,8 @@
+import { useEffect, useRef } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./lib/auth";
+import { useTheme } from "./lib/theme";
+import type { User } from "./lib/api";
 import { Spinner } from "./components/ui";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
@@ -23,6 +26,30 @@ import AdminPage from "./pages/AdminPage";
 import OAuthCallbackPage from "./pages/OAuthCallbackPage";
 import JobSearchPage from "./pages/JobSearchPage";
 import TemplatesPage from "./pages/TemplatesPage";
+
+/**
+ * Adopt the theme stored on the account when a user signs in.
+ *
+ * Settings saves the choice both to localStorage and to the account, and the
+ * card says "Applies to this account" — but nothing ever read the account value
+ * back, so the preference was really per-browser: set light on your laptop and
+ * you still got dark everywhere else. Applied once per user rather than
+ * continuously, so a later toggle in this tab isn't immediately undone.
+ */
+function useAccountTheme(user: User | null) {
+  const { setTheme } = useTheme();
+  const appliedFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      appliedFor.current = null;
+      return;
+    }
+    if (appliedFor.current === user.id) return;
+    appliedFor.current = user.id;
+    if (user.theme === "dark" || user.theme === "light") setTheme(user.theme);
+  }, [user, setTheme]);
+}
 
 function AuthedApp() {
   return (
@@ -53,6 +80,7 @@ function AuthedApp() {
 
 export default function App() {
   const { user, loading } = useAuth();
+  useAccountTheme(user);
 
   if (loading) {
     return (

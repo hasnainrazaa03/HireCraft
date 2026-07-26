@@ -253,13 +253,13 @@ async def parse_resume(
 
 
 @router.get("/schema", response_model=dict)
-def resume_json_schema() -> dict:
+def resume_json_schema(user: CurrentUser) -> dict:
     """The Master Resume JSON Schema, for client-side validation and docs."""
     return MasterResume.model_json_schema()
 
 
 @router.get("/templates", response_model=list[TemplateInfo])
-def list_templates() -> list[TemplateInfo]:
+def list_templates(user: CurrentUser) -> list[TemplateInfo]:
     """The available résumé templates a user can pick from."""
     return [TemplateInfo(id=t.id, name=t.name, description=t.description) for t in TEMPLATES]
 
@@ -569,7 +569,24 @@ def delete_profile(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> N
                 "or keep it for your records."
             ),
         )
+    was_default = profile.is_default
     db.delete(profile)
+    db.flush()
+
+    # Deleting the default used to leave the account with none: only the very
+    # first résumé is auto-defaulted, so nothing would ever reclaim the flag and
+    # the library showed no default from then on. Promote the most recently
+    # updated survivor.
+    if was_default:
+        replacement = db.scalar(
+            select(ResumeProfile)
+            .where(ResumeProfile.user_id == user.id)
+            .order_by(ResumeProfile.updated_at.desc())
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_default = True
+
     db.commit()
 
 

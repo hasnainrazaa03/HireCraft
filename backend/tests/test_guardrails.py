@@ -115,6 +115,60 @@ class TestKeywordInjection:
         assert "Kubernetes" not in report.keywords_verified
         assert report.keyword_coverage < 1.0
 
+    def test_short_keyword_is_not_laundered_by_substring_match(
+        self, master, experience_id
+    ):
+        """Regression: a one-letter skill must not count as claimed.
+
+        Provenance used bare substring containment, so "R" matched the "r" in
+        "report"/"React" and every résumé appeared to already claim it. The
+        keyword-injection guard then had nothing to block, and coverage was
+        reported as 100%. Short, ambiguous names are exactly the ones the guard
+        exists for.
+        """
+        requirements = JobRequirements.model_validate(
+            {"required_skills": [{"name": "R", "importance": 5}]}
+        )
+        resume, report = _apply(
+            master,
+            {
+                "experience": [
+                    {
+                        "id": experience_id,
+                        "highlights": ["Wrote R scripts to automate report generation"],
+                    }
+                ]
+            },
+            requirements,
+        )
+        assert "R scripts" not in _bullets(resume)
+        assert any(v.kind == "unverified_keyword_claim" for v in report.violations)
+        assert report.keywords_verified == []
+
+    def test_genuinely_claimed_skills_still_pass(self, master, experience_id):
+        """The boundary rule must not over-block: skills the résumé really lists
+        (including punctuated ones like Node.js) stay allowed."""
+        requirements = JobRequirements.model_validate(
+            {"required_skills": [{"name": "Python"}, {"name": "React"}]}
+        )
+        engine = GuardrailEngine(master, requirements)
+        assert engine.unearned_job_terms == []
+
+        resume, report = _apply(
+            master,
+            {
+                "experience": [
+                    {
+                        "id": experience_id,
+                        "highlights": ["Wrote Python scripts to automate report generation"],
+                    }
+                ]
+            },
+            requirements,
+        )
+        assert "Python" in _bullets(resume)
+        assert not any(v.kind == "unverified_keyword_claim" for v in report.violations)
+
     def test_will_not_add_skill_absent_from_master(self, master, requirements):
         resume, report = _apply(
             master,
@@ -311,3 +365,65 @@ class TestDiff:
     def test_unchanged_resume_produces_empty_diff(self, master):
         resume, _ = _apply(master, {})
         assert build_diff(master, resume) == []
+
+
+class TestEntryIdentity:
+    """Entry ids are the merge key, so a collision silently cross-contaminates."""
+
+    def _twins(self) -> MasterResume:
+        # Same name, no dates: identical inputs to the id hash.
+        return MasterResume.model_validate(
+            {
+                "basics": {"name": "Jane Doe", "email": "jane@example.com"},
+                "projects": [
+                    {"name": "Portfolio Site", "highlights": ["Built a site in React"]},
+                    {"name": "Portfolio Site", "highlights": ["Wrote a Python CLI"]},
+                ],
+            }
+        )
+
+    def test_entries_sharing_factual_fields_get_distinct_ids(self):
+        resume = self._twins()
+        assert resume.projects[0].id != resume.projects[1].id
+
+    def test_tailoring_one_entry_does_not_overwrite_its_twin(self):
+        """Regression: colliding ids made the merge apply one entry's rewritten
+        bullets to the other, so content from one project appeared under a
+        different one - a fabrication the numeric checks cannot catch, because
+        every number really does exist somewhere in the résumé."""
+        resume = self._twins()
+        merged, _ = _apply(
+            resume,
+            {
+                "projects": [
+                    {"id": resume.projects[0].id, "highlights": ["Built a site in React"]}
+                ]
+            },
+        )
+        assert merged.projects[0].highlights == ["Built a site in React"]
+        assert merged.projects[1].highlights == ["Wrote a Python CLI"]
+
+
+class TestExcludedEntries:
+    def test_an_excluded_entry_reports_nothing(self, master, experience_id, requirements):
+        """Regression: entries the model drops with include=False were still
+        vetted, so violations and per-bullet verdicts were filed against a role
+        the tailored résumé does not contain. The user was told a claim had been
+        blocked on an entry they were never going to send, and the headline
+        "claims blocked" count was inflated by it."""
+        resume, report = _apply(
+            master,
+            {
+                "experience": [
+                    {
+                        "id": experience_id,
+                        "include": False,
+                        "highlights": ["Deployed services on Kubernetes"],
+                    }
+                ]
+            },
+            requirements,
+        )
+        assert resume.experience == []
+        assert report.violations == []
+        assert report.bullet_confidence == []

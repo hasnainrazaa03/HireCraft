@@ -14,11 +14,16 @@ processing personal data requires. Until then there is no provider, by design.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app.core.logging import get_logger
 from app.schemas.company import CompanyBrief, ContactGuidance
-from app.services.llm.client import GeminiClient, LlmResult, get_client
+from app.services.llm.client import LlmResult, get_client
 from app.services.llm.prompts import COMPANY_BRIEF_SYSTEM, build_company_brief_prompt
 from app.services.pipeline import UsageLedger
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
@@ -28,7 +33,7 @@ def generate_company_brief(
     *,
     role: str | None = None,
     page_text: str | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> CompanyBrief:
     """One LLM call → a cautious, honesty-first company brief.

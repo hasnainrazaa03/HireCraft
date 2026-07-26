@@ -86,8 +86,9 @@ class AnthropicClient:
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
         return TextResult(text=text.strip(), usage=self._usage(resp, started))
 
-    def generate_structured[T: BaseModel](self, *, prompt: str, schema: type[T], system_instruction: str | None = None,
-                            temperature: float | None = None, max_output_tokens: int | None = None) -> LlmResult[T]:
+    def _tool_call(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None,
+                   temperature: float | None, max_output_tokens: int | None) -> tuple[Any, Usage]:
+        """Force the structured tool call and return its raw, UNVALIDATED input."""
         client = self._ensure()
         tool = {
             "name": "emit_result",
@@ -107,20 +108,34 @@ class AnthropicClient:
         block = next((b for b in resp.content if getattr(b, "type", None) == "tool_use"), None)
         if block is None:
             raise LlmResponseError("Claude did not return the structured result.")
-        try:
-            data = schema.model_validate(block.input)
-        except ValidationError as exc:
-            raise LlmResponseError(f"Claude's reply did not match {schema.__name__}.") from exc
-        return LlmResult(data=data, usage=self._usage(resp, started), raw_text=json.dumps(block.input))
+        return block.input, self._usage(resp, started)
 
-    def generate_raw(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None = None,
-                     temperature: float | None = None, max_output_tokens: int | None = None) -> tuple[dict[str, Any], Usage, str]:
-        result = self.generate_structured(
+    def generate_structured[T: BaseModel](self, *, prompt: str, schema: type[T], system_instruction: str | None = None,
+                            temperature: float | None = None, max_output_tokens: int | None = None) -> LlmResult[T]:
+        payload, usage = self._tool_call(
             prompt=prompt, schema=schema, system_instruction=system_instruction,
             temperature=temperature, max_output_tokens=max_output_tokens,
         )
-        payload = json.loads(result.raw_text)
-        return payload, result.usage, result.raw_text
+        try:
+            data = schema.model_validate(payload)
+        except ValidationError as exc:
+            raise LlmResponseError(f"Claude's reply did not match {schema.__name__}.") from exc
+        return LlmResult(data=data, usage=usage, raw_text=json.dumps(payload))
+
+    def generate_raw(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None = None,
+                     temperature: float | None = None, max_output_tokens: int | None = None) -> tuple[dict[str, Any], Usage, str]:
+        # Deliberately does NOT validate against ``schema`` - callers use this
+        # precisely because the reply needs repairing first (a résumé import
+        # whose dates arrive as "May 2024"). Routing it through
+        # generate_structured would validate and reject exactly those replies,
+        # defeating the repair step that exists to salvage them.
+        payload, usage = self._tool_call(
+            prompt=prompt, schema=schema, system_instruction=system_instruction,
+            temperature=temperature, max_output_tokens=max_output_tokens,
+        )
+        if not isinstance(payload, dict):
+            raise LlmResponseError("Expected a JSON object from Claude.")
+        return payload, usage, json.dumps(payload)
 
     def _usage(self, resp: Any, started: float) -> Usage:
         meta = getattr(resp, "usage", None)
@@ -189,8 +204,9 @@ class OpenAIClient:
         text = (resp.choices[0].message.content or "").strip()
         return TextResult(text=text, usage=self._usage(resp, started))
 
-    def generate_structured[T: BaseModel](self, *, prompt: str, schema: type[T], system_instruction: str | None = None,
-                            temperature: float | None = None, max_output_tokens: int | None = None) -> LlmResult[T]:
+    def _json_call(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None,
+                   temperature: float | None, max_output_tokens: int | None) -> tuple[str, Usage]:
+        """Run the JSON-mode call and return the raw reply text plus usage."""
         schema_hint = (
             "Respond with a single JSON object that matches this JSON Schema exactly, "
             "with no extra prose:\n" + json.dumps(schema.model_json_schema())
@@ -201,20 +217,27 @@ class OpenAIClient:
             messages=self._messages(prompt, system),
             max_output_tokens=max_output_tokens, temperature=temperature, json_mode=True,
         )
-        text = resp.choices[0].message.content or ""
-        data = _parse(text, schema)
-        return LlmResult(data=data, usage=self._usage(resp, started), raw_text=text)
+        return (resp.choices[0].message.content or ""), self._usage(resp, started)
 
-    def generate_raw(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None = None,
-                     temperature: float | None = None, max_output_tokens: int | None = None) -> tuple[dict[str, Any], Usage, str]:
-        result = self.generate_structured(
+    def generate_structured[T: BaseModel](self, *, prompt: str, schema: type[T], system_instruction: str | None = None,
+                            temperature: float | None = None, max_output_tokens: int | None = None) -> LlmResult[T]:
+        text, usage = self._json_call(
             prompt=prompt, schema=schema, system_instruction=system_instruction,
             temperature=temperature, max_output_tokens=max_output_tokens,
         )
-        payload = _loads(result.raw_text)
+        return LlmResult(data=_parse(text, schema), usage=usage, raw_text=text)
+
+    def generate_raw(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None = None,
+                     temperature: float | None = None, max_output_tokens: int | None = None) -> tuple[dict[str, Any], Usage, str]:
+        # No schema validation here on purpose - see AnthropicClient.generate_raw.
+        text, usage = self._json_call(
+            prompt=prompt, schema=schema, system_instruction=system_instruction,
+            temperature=temperature, max_output_tokens=max_output_tokens,
+        )
+        payload = _loads(text)
         if not isinstance(payload, dict):
             raise LlmResponseError("Expected a JSON object from OpenAI.")
-        return payload, result.usage, result.raw_text
+        return payload, usage, text
 
     def _usage(self, resp: Any, started: float) -> Usage:
         meta = getattr(resp, "usage", None)

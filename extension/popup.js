@@ -119,10 +119,16 @@ document.getElementById("clip").addEventListener("click", async () => {
   try {
     const job = await grabPageText();
     const base = (appUrlEl.value.trim() || DEFAULT_APP).replace(/\/$/, "");
-    // Stash the clipped job so the app can pre-fill the new-application form.
-    await chrome.storage.local.set({ clippedJob: job });
+    // The web app is an ordinary page — it cannot read chrome.storage, so
+    // stashing the clip there (as this used to) meant the title and company we
+    // worked to extract were simply thrown away. Small fields ride in the query
+    // string; only the description is too big for a URL, so that goes on the
+    // clipboard.
     await navigator.clipboard.writeText(job.text).catch(() => {});
-    chrome.tabs.create({ url: `${base}/new?clip=1` });
+    const params = new URLSearchParams({ clip: "1" });
+    if (job.title) params.set("title", job.title);
+    if (job.company) params.set("company", job.company);
+    chrome.tabs.create({ url: `${base}/new?${params}` });
     const detected = job.source && job.source !== "page" ? ` (${job.source})` : "";
     statusEl.textContent = `Clipped${detected} — opening HireCraft…`;
   } catch (e) {

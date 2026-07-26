@@ -251,6 +251,32 @@ class MasterResume(HireCraftModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _ensure_unique_entry_ids(self) -> MasterResume:
+        """Guarantee every entry id is unique across the whole resume.
+
+        ``_stable_id`` hashes only a handful of factual fields, so two entries
+        that share them collide - two undated projects called "Portfolio Site",
+        or two stints with the same title at the same employer. The guardrail
+        merge indexes entries by id, so a collision makes it apply one entry's
+        tailored bullets to the other: content from one role silently appears
+        under another. Disambiguate by position, which is deterministic for a
+        given resume, and write through ``__dict__`` to avoid re-triggering
+        validate_assignment.
+        """
+        seen: set[str] = set()
+        for section in ("experience", "education", "projects"):
+            for position, entry in enumerate(getattr(self, section)):
+                entry_id = entry.id
+                if entry_id in seen:
+                    suffix = 1
+                    while (retry := _stable_id(entry_id, position, suffix)) in seen:
+                        suffix += 1
+                    entry_id = retry
+                    entry.__dict__["id"] = entry_id
+                seen.add(entry_id)
+        return self
+
     def entry_index(self) -> dict[str, dict[str, Any]]:
         """Map every stable entry id -> its immutable factual fields.
 

@@ -7,11 +7,20 @@ x-backend-env: &backend-env
   CELERY_BROKER_URL: redis://redis:6379/1
   CELERY_RESULT_BACKEND: redis://redis:6379/2
   SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env - generate with `openssl rand -base64 48`}
+  # All three providers are forwarded, not just Gemini: the tailoring worker
+  # honours whichever provider a user selects in Settings, so a server-side
+  # Claude/OpenAI key has to reach the containers for that selection to work.
+  DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-gemini}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
   TEMPLATES_DIR: /app/templates
   ARTIFACTS_DIR: /app/artifacts
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
   # SMTP is optional: leave SMTP_HOST empty and emails are logged, not sent.
@@ -71,9 +80,18 @@ services:
         condition: service_healthy
     # Migrations run here rather than in the worker so concurrent workers cannot
     # race each other applying the same revision.
+    #
+    # --forwarded-allow-ips decides whose X-Forwarded-For we believe. Login
+    # throttling and anonymous rate limits key on the client IP, so this matters
+    # twice over: trust nobody and every request behind a reverse proxy looks
+    # like one client (ten bad logins lock out the world); trust everybody and
+    # any client can spoof the header to dodge the limit entirely. The default
+    # below trusts nothing beyond the loopback - set FORWARDED_ALLOW_IPS to your
+    # proxy's address or CIDR when you put one in front.
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000
+             --proxy-headers --forwarded-allow-ips $${FORWARDED_ALLOW_IPS:-127.0.0.1}"
     restart: unless-stopped
 
   worker:

@@ -13,7 +13,7 @@ import {
 } from "../lib/api";
 import { Modal, Spinner } from "../components/ui";
 import { TagInput } from "../components/TagInput";
-import { ResumeBuilder, type ResumeContent } from "../components/ResumeBuilder";
+import { ResumeBuilder, pruneEmpty, type ResumeContent } from "../components/ResumeBuilder";
 import { ScorePanel } from "../components/ScorePanel";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
 import { useToast } from "../lib/toast";
@@ -106,8 +106,11 @@ export default function ResumesPage() {
   });
 
   function currentContent(): ResumeContent {
+    // JSON mode is the user's own literal document — don't touch it. Builder
+    // mode is form state, where the placeholder rows "Add bullet"/"Add" create
+    // are ours to clean up rather than to fail the save on.
     if (mode === "json") return JSON.parse(jsonDraft);
-    return content;
+    return pruneEmpty(content);
   }
 
   function close() {
@@ -499,7 +502,8 @@ function Editor(props: any) {
 
   const analyze = useMutation({
     mutationFn: () => {
-      const c = mode === "json" ? JSON.parse(jsonDraft) : content;
+      // Same pruning as save: scoring a draft shouldn't fail on a blank row.
+      const c = mode === "json" ? JSON.parse(jsonDraft) : pruneEmpty(content);
       return api.post<ResumeAnalysis>("/resumes/analyze", c);
     },
     onSuccess: setAnalysis,
@@ -646,7 +650,11 @@ function PreviewModal({ profile, templates, onClose }: { profile: ResumeProfileS
           {templates.map((t) => <option key={t.id} value={t.id} className="bg-surface">{t.name}</option>)}
         </select>
       </div>
-      <div className="h-[70vh] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
+      {/* 70vh on a tall screen, but clamped to what's left inside the dialog
+          once its header, padding and the template row are accounted for —
+          otherwise the panel's own scrollbar appears and you get two nested
+          scroll areas fighting over the same gesture. */}
+      <div className="h-[70vh] max-h-[calc(100dvh-16rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
         {isFetching ? (
           <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>
         ) : isError ? (

@@ -8,6 +8,8 @@ to the frontend's callback page with the tokens in the URL fragment.
 
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
@@ -36,6 +38,13 @@ def list_providers() -> dict[str, list[str]]:
 
 @router.get("/{provider}/authorize")
 def authorize(provider: str, request: Request) -> RedirectResponse:
+    # A provider we don't implement is a client mistake (404); one we implement
+    # but have no credentials for is a server capability gap (501). Collapsing
+    # both into 501 meant any bot walking /auth/oauth/<junk>/authorize counted
+    # as a server error, which is noise in exactly the metric you want quiet.
+    # The name is not echoed back — it is unvalidated input from the URL.
+    if not oauth_service.is_known(provider):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown sign-in provider.")
     try:
         url, state = oauth_service.build_authorize_url(provider, _api_base(request))
     except OAuthError as exc:
@@ -44,7 +53,11 @@ def authorize(provider: str, request: Request) -> RedirectResponse:
     response = RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie(
         _STATE_COOKIE,
-        state,
+        # Bound to the provider it was minted for. A bare state is accepted by
+        # whichever callback receives it, so a state issued for one provider
+        # could be replayed against another's callback along with a code the
+        # attacker controls.
+        f"{provider}:{state}",
         max_age=600,
         httponly=True,
         samesite="lax",
@@ -68,18 +81,30 @@ def callback(
         resp.delete_cookie(_STATE_COOKIE)
         return resp
 
-    if not code or not state or not expected or state != expected:
+    # compare_digest, not ==, so the comparison cannot be walked byte by byte.
+    if (
+        not code
+        or not state
+        or not expected
+        or not secrets.compare_digest(expected, f"{provider}:{state}")
+    ):
         return fail("invalid_state")
 
     try:
         token = oauth_service.exchange_code(provider, code, _api_base(request))
         identity = oauth_service.fetch_identity(provider, token)
         user = oauth_service.link_or_create_user(db, identity)
+        # The password login path refuses a disabled account; this one has to as
+        # well, or a suspended user just walks in through the side door.
+        if not user.is_active:
+            db.rollback()
+            return fail("account_disabled")
         access, refresh, _ = auth_service.create_session(
             db, user, user_agent=request.headers.get("user-agent"), ip_address=None
         )
         db.commit()
     except OAuthError:
+        db.rollback()
         return fail("provider_error")
 
     logger.info("oauth.success", provider=provider, user_id=str(user.id))

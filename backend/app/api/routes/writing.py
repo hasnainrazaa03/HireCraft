@@ -6,6 +6,8 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
 from app.core.logging import get_logger
@@ -26,13 +28,29 @@ logger = get_logger(__name__)
 
 
 def _get_or_create(db: DbSession, user_id: uuid.UUID) -> WritingProfile:
-    profile = (
-        db.query(WritingProfile).filter(WritingProfile.user_id == user_id).one_or_none()
-    )
-    if profile is None:
-        profile = WritingProfile(user_id=user_id)
-        db.add(profile)
-        db.flush()
+    """One profile per user, created lazily. See routes/profile.py for why the
+    insert runs inside a savepoint: concurrent first requests both try it, and
+    the unique constraint on user_id means one has to lose gracefully."""
+
+    def existing() -> WritingProfile | None:
+        return db.scalar(select(WritingProfile).where(WritingProfile.user_id == user_id))
+
+    profile = existing()
+    if profile is not None:
+        return profile
+
+    profile = WritingProfile(user_id=user_id)
+    try:
+        with db.begin_nested():
+            db.add(profile)
+            db.flush()
+    except IntegrityError:
+        profile = existing()
+        if profile is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Your writing profile is being set up. Please retry in a moment.",
+            ) from None
     return profile
 
 
