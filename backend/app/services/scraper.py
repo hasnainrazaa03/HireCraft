@@ -256,6 +256,26 @@ def _extract_metadata(html: str) -> dict[str, str | None]:
     return meta
 
 
+def _decode_body(body: bytes, declared: str | None) -> str:
+    """Decode a response body using its declared charset, tolerating nonsense.
+
+    The charset comes from a header on a page we do not control, so it can name
+    a codec Python has never heard of - ``bytes.decode`` raises LookupError for
+    those, which is not something any caller here expects. httpx's ``.text``
+    absorbed that for us; decoding by hand means handling it by hand. Fall back
+    to UTF-8, which is right far more often than not, and let ``errors=replace``
+    deal with whatever doesn't fit.
+    """
+    for encoding in (declared, "utf-8"):
+        if not encoding:
+            continue
+        try:
+            return body.decode(encoding, errors="replace")
+        except LookupError:
+            logger.info("scraper.unknown_charset", declared=encoding)
+    return body.decode("utf-8", errors="replace")
+
+
 def _read_capped(response: httpx.Response, limit: int) -> bytes:
     """Read a streamed body, aborting as soon as it exceeds ``limit``.
 
@@ -314,8 +334,7 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
                     break
                 current = validate_url(str(response.url.join(location)))
             else:
-                if response is not None:
-                    response.close()
+                # The final hop was already closed inside the loop.
                 raise ScrapeError("Too many redirects while fetching the job posting.")
 
             if response is None:
@@ -334,7 +353,7 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
             finally:
                 response.close()
 
-            html = body.decode(response.charset_encoding or "utf-8", errors="replace")
+            html = _decode_body(body, response.charset_encoding)
             final_url = str(response.url)
 
     except httpx.HTTPStatusError as exc:

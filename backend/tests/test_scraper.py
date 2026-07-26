@@ -41,6 +41,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "/job")
             self.end_headers()
             return
+        if self.path == "/badcharset":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=definitely-not-a-codec")
+            self.send_header("Content-Length", str(len(PAGE)))
+            self.end_headers()
+            self.wfile.write(PAGE)
+            return
         if self.path == "/huge":
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -146,3 +153,44 @@ class TestFetching:
         monkeypatch.setattr(config.settings, "scrape_max_bytes", 500_000)
         with pytest.raises(ScrapeError, match="unexpectedly large"):
             scrape_job(f"{server}/huge")
+
+
+class TestDecoding:
+    """The charset comes from a header on a page we do not control."""
+
+    @pytest.mark.parametrize(
+        ("declared", "expected"),
+        [
+            ("utf-8", "café"),
+            (None, "café"),
+            # Regression: a codec Python has never heard of made bytes.decode
+            # raise LookupError, which nothing caught — an unhandled 500 from
+            # any pasted job URL. httpx's .text absorbed this; decoding by hand
+            # means handling it by hand.
+            ("definitely-not-a-codec", "café"),
+            ("", "café"),
+        ],
+    )
+    def test_unknown_charsets_fall_back_to_utf8(self, declared, expected):
+        from app.services.scraper import _decode_body
+
+        assert _decode_body("café".encode(), declared) == expected
+
+    def test_a_declared_charset_is_honoured_when_real(self):
+        from app.services.scraper import _decode_body
+
+        assert _decode_body("café".encode("latin-1"), "latin-1") == "café"
+
+    def test_undecodable_bytes_do_not_raise(self):
+        from app.services.scraper import _decode_body
+
+        assert _decode_body(b"\xff\xfe\x00bad", "utf-8")  # errors="replace"
+
+    def test_a_bogus_charset_header_does_not_500_the_fetch(self, server, monkeypatch):
+        """End to end through scrape_job, the way a job board would trigger it."""
+        import app.services.scraper as scraper
+
+        monkeypatch.setattr(scraper, "_is_blocked_ip", lambda host: False)
+        monkeypatch.setattr(scraper, "_assert_peer_allowed", lambda response: None)
+        result = scrape_job(f"{server}/badcharset")
+        assert "widget engineer" in result.text.lower()

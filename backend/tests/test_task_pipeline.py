@@ -122,7 +122,7 @@ def stub_llm(monkeypatch):
     return Stub()
 
 
-def _seed(factory) -> tuple[str, str]:
+def _seed(factory) -> str:
     from app.models.job import Job
 
     with factory() as db:
@@ -143,13 +143,13 @@ def _seed(factory) -> tuple[str, str]:
         db.add(application)
         db.flush()
         db.commit()
-        return str(application.id), str(user.id)
+        return str(application.id)
 
 
 def test_task_produces_artifacts_and_enforces_guardrails(sessions, stub_llm):
     import app.workers.tasks as tasks
 
-    application_id, user_id = _seed(sessions)
+    application_id = _seed(sessions)
     result = tasks.run_tailoring_task.run(application_id)
     assert result["status"] == "completed", result
 
@@ -184,7 +184,7 @@ def test_rerunning_does_not_stack_a_second_set_of_artifacts(sessions, stub_llm):
     replaced rather than accumulated."""
     import app.workers.tasks as tasks
 
-    application_id, _ = _seed(sessions)
+    application_id = _seed(sessions)
     tasks.run_tailoring_task.run(application_id)
     with sessions() as db:
         first = len(db.get(Application, uuid.UUID(application_id)).artifacts)
@@ -206,7 +206,7 @@ def test_a_missing_api_key_fails_the_run_without_retrying(sessions, monkeypatch)
         raise LlmConfigurationError("Anthropic Claude isn't configured.")
 
     monkeypatch.setattr(tasks, "client_for_user", boom)
-    application_id, _ = _seed(sessions)
+    application_id = _seed(sessions)
     result = tasks.run_tailoring_task.run(application_id)
 
     assert result == {"status": "failed", "reason": "configuration"}
