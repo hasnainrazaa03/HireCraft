@@ -305,18 +305,22 @@ export default function ApplicationPage() {
           <label className="label" htmlFor="interview_at">
             Interview date
           </label>
+          {/* onBlur, not onChange: a datetime-local fires per component as the
+              user steps through day/month/hour, so onChange sent a PATCH per
+              keystroke — enough of them to trip the rate limiter. */}
           <input
             id="interview_at"
             type="datetime-local"
             className="input"
             defaultValue={toLocalInput(application.interview_at)}
-            onChange={(e) =>
-              update.mutate({
-                interview_at: e.target.value
-                  ? new Date(e.target.value).toISOString()
-                  : null,
-              })
-            }
+            onBlur={(e) => {
+              const next = e.target.value
+                ? new Date(e.target.value).toISOString()
+                : null;
+              if (next !== application.interview_at) {
+                update.mutate({ interview_at: next });
+              }
+            }}
           />
         </div>
         <div>
@@ -328,13 +332,14 @@ export default function ApplicationPage() {
             type="datetime-local"
             className="input"
             defaultValue={toLocalInput(application.reminder_at)}
-            onChange={(e) =>
-              update.mutate({
-                reminder_at: e.target.value
-                  ? new Date(e.target.value).toISOString()
-                  : null,
-              })
-            }
+            onBlur={(e) => {
+              const next = e.target.value
+                ? new Date(e.target.value).toISOString()
+                : null;
+              if (next !== application.reminder_at) {
+                update.mutate({ reminder_at: next });
+              }
+            }}
           />
         </div>
       </div>

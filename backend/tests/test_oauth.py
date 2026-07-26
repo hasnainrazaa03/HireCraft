@@ -159,3 +159,27 @@ def test_github_only_accepts_a_verified_address(configured, monkeypatch, emails,
             configured.fetch_identity("github", "token")
     else:
         assert configured.fetch_identity("github", "token").email == expected
+
+
+# --- CSRF state is bound to its provider ------------------------------------
+
+
+def test_state_cookie_is_scoped_to_the_provider(configured):
+    """A bare state is accepted by whichever callback receives it, so one minted
+    at /google/authorize could be replayed against /github/callback."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app, follow_redirects=False) as client:
+        authorize = client.get("/api/v1/auth/oauth/google/authorize")
+        assert authorize.status_code == 307
+        cookie = client.cookies["hc_oauth_state"]
+        assert cookie.startswith("google:")
+
+        state = cookie.split(":", 1)[1]
+        # Same state, different provider's callback -> refused.
+        wrong = client.get(
+            f"/api/v1/auth/oauth/github/callback?code=c&state={state}"
+        )
+        assert "oauth_error=invalid_state" in wrong.headers["location"]

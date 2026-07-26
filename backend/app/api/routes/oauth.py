@@ -8,6 +8,8 @@ to the frontend's callback page with the tokens in the URL fragment.
 
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
@@ -44,7 +46,11 @@ def authorize(provider: str, request: Request) -> RedirectResponse:
     response = RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie(
         _STATE_COOKIE,
-        state,
+        # Bound to the provider it was minted for. A bare state is accepted by
+        # whichever callback receives it, so a state issued for one provider
+        # could be replayed against another's callback along with a code the
+        # attacker controls.
+        f"{provider}:{state}",
         max_age=600,
         httponly=True,
         samesite="lax",
@@ -68,7 +74,13 @@ def callback(
         resp.delete_cookie(_STATE_COOKIE)
         return resp
 
-    if not code or not state or not expected or state != expected:
+    # compare_digest, not ==, so the comparison cannot be walked byte by byte.
+    if (
+        not code
+        or not state
+        or not expected
+        or not secrets.compare_digest(expected, f"{provider}:{state}")
+    ):
         return fail("invalid_state")
 
     try:

@@ -66,9 +66,15 @@ export function columnFor(status: TrackerStatus): TrackerStatus {
   return COLUMN_FOR[status] ?? status;
 }
 
-/** All stages, in pipeline order — for dropdowns and manual selection. */
-export const ALL_STAGES: TrackerStatus[] = [
-  "wishlist", "saved", "preparing", "applied", "assessment", "screening",
-  "interviewing", "technical", "behavioral", "final", "offer", "accepted",
-  "rejected", "ghosted", "withdrawn", "archived",
-];
+/**
+ * All stages, in pipeline order — for dropdowns and manual selection.
+ *
+ * Derived from TRACKER_META rather than hand-listed. Because TRACKER_META is a
+ * Record<TrackerStatus, …>, TypeScript forces it to cover every status, and
+ * object key order is insertion order — so this stays complete and in pipeline
+ * order by construction. The hand-written version had silently dropped "draft",
+ * which is the backend's default for a newly created application: every fresh
+ * application rendered a <select> whose value matched no <option>, so the stage
+ * shown in the dropdown disagreed with the badge right next to it.
+ */
+export const ALL_STAGES = Object.keys(TRACKER_META) as TrackerStatus[];
