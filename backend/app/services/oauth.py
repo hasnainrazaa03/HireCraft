@@ -61,8 +61,18 @@ def _credentials(provider: str) -> tuple[str, str]:
     raise OAuthError(f"Unknown provider {provider!r}.")
 
 
+def is_known(provider: str) -> bool:
+    """Whether this is a provider we implement at all, configured or not.
+
+    Distinct from ``is_enabled``: the caller needs to tell "no such provider"
+    (the client asked for something that does not exist) apart from "provider
+    exists but this server has no credentials for it".
+    """
+    return provider in _PROVIDERS
+
+
 def is_enabled(provider: str) -> bool:
-    if provider not in _PROVIDERS:
+    if not is_known(provider):
         return False
     cid, secret = _credentials(provider)
     return bool(cid and secret)

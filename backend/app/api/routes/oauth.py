@@ -38,6 +38,13 @@ def list_providers() -> dict[str, list[str]]:
 
 @router.get("/{provider}/authorize")
 def authorize(provider: str, request: Request) -> RedirectResponse:
+    # A provider we don't implement is a client mistake (404); one we implement
+    # but have no credentials for is a server capability gap (501). Collapsing
+    # both into 501 meant any bot walking /auth/oauth/<junk>/authorize counted
+    # as a server error, which is noise in exactly the metric you want quiet.
+    # The name is not echoed back — it is unvalidated input from the URL.
+    if not oauth_service.is_known(provider):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown sign-in provider.")
     try:
         url, state = oauth_service.build_authorize_url(provider, _api_base(request))
     except OAuthError as exc:
