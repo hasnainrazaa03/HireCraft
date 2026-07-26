@@ -68,7 +68,7 @@ def quick_match_score(resume: MasterResume, job_text: str) -> tuple[int, list[st
     for skill in _resume_skills(resume):
         needle = skill.strip().lower()
         parts = _tokens(needle)
-        if needle in job or (parts and parts.issubset(job_vocab)):
+        if _term_present(job, needle) or (parts and parts.issubset(job_vocab)):
             matched.append(skill)
     matched = sorted(set(matched), key=str.lower)
     # 0 hits reads as a weak fit, ~5+ as a strong one.
@@ -164,12 +164,17 @@ def _fit_summary(score: int, strengths: list[str], gaps: list[str]) -> str:
 
 
 def _claims(term: str, corpus_lower: str, vocab: set[str]) -> bool:
-    """Does the résumé support this skill/keyword? Substring for multi-word terms,
-    token-subset otherwise — the same rule the guardrails use for provenance."""
+    """Does the résumé support this skill/keyword? Whole-term phrase match, or
+    token-subset — the same rule the guardrails use for provenance.
+
+    The phrase match is boundary-anchored, not a bare substring: "R" is inside
+    "Resolved", "Go" inside "Google", and "REST" inside "interest", so plain
+    containment scored every résumé as having them and inflated the fit score.
+    """
     needle = term.strip().lower()
     if not needle:
         return False
-    if needle in corpus_lower:
+    if _term_present(corpus_lower, needle):
         return True
     parts = _tokens(needle)
     return bool(parts) and parts.issubset(vocab)

@@ -43,24 +43,53 @@ export class ApiError extends Error {
 
 let refreshPromise: Promise<boolean> | null = null;
 
+const REFRESH_LOCK = "hirecraft.refresh";
+
+/**
+ * Perform the actual rotation. Only ever runs one-at-a-time per browser (see
+ * tryRefresh), and re-reads storage on entry because the tab that went first
+ * has already written the new pair.
+ */
+async function rotate(staleAccess: string | null): Promise<boolean> {
+  // Another tab refreshed while we were queued behind it. Its tokens are
+  // already in localStorage, so there is nothing left to do — and crucially,
+  // nothing to replay.
+  if (tokens.access && tokens.access !== staleAccess) return true;
+
+  const refresh = tokens.refresh;
+  if (!refresh) return false;
+  try {
+    const res = await fetch(`${API}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    tokens.set(data.access_token, data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
+  // Captured before we queue for the lock, so rotate() can tell whether someone
+  // else refreshed while we waited.
+  const staleAccess = tokens.access;
+
   refreshPromise = (async () => {
-    const refresh = tokens.refresh;
-    if (!refresh) return false;
     try {
-      const res = await fetch(`${API}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refresh }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      tokens.set(data.access_token, data.refresh_token);
-      return true;
-    } catch {
-      return false;
+      // Refresh tokens are single-use and presenting a rotated one is treated
+      // server-side as a replay, which revokes the whole session. Deduping
+      // within a tab is not enough: two tabs of the same app would each present
+      // the same token and sign the user out of both. A cross-tab lock
+      // serializes it; whoever waits finds the new token already stored.
+      return navigator.locks
+        ? await navigator.locks.request(REFRESH_LOCK, () => rotate(staleAccess))
+        : await rotate(staleAccess);
     } finally {
       // Clear on the next tick so callers awaiting this promise still see it.
       setTimeout(() => (refreshPromise = null), 0);

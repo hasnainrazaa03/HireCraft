@@ -130,8 +130,47 @@ class Identity:
     name: str | None
 
 
+def _github_verified_email(headers: dict[str, str]) -> str | None:
+    """GitHub's /user email carries no verification flag; /user/emails does.
+
+    Only a verified address may be used. Anyone can put someone else's address
+    on their own GitHub profile, so trusting an unverified one would let an
+    attacker link into - and take over - the HireCraft account that owns it.
+    """
+    try:
+        emails = httpx.get(
+            "https://api.github.com/user/emails", headers=headers, timeout=15
+        ).json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    if not isinstance(emails, list):
+        return None
+    verified = [
+        entry["email"]
+        for entry in emails
+        if isinstance(entry, dict) and entry.get("verified") and entry.get("email")
+    ]
+    primary = next(
+        (
+            entry["email"]
+            for entry in emails
+            if isinstance(entry, dict)
+            and entry.get("verified")
+            and entry.get("primary")
+            and entry.get("email")
+        ),
+        None,
+    )
+    return primary or (verified[0] if verified else None)
+
+
 def fetch_identity(provider: str, access_token: str) -> Identity:
-    """Fetch the verified email + display name from the provider."""
+    """Fetch the *verified* email + display name from the provider.
+
+    Account linking keys on email, so an unverified address is an account
+    takeover primitive, not a minor detail. Every path here requires the
+    provider to have confirmed the address.
+    """
     config = _config(provider)
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     try:
@@ -141,22 +180,19 @@ def fetch_identity(provider: str, access_token: str) -> Identity:
     except (httpx.HTTPError, ValueError) as exc:
         raise OAuthError(f"Could not read your {provider} profile.") from exc
 
-    email = data.get("email")
     name = data.get("name")
-    if provider == "github" and not email:
-        # GitHub may hide the primary email from /user; fetch it explicitly.
-        try:
-            emails = httpx.get(
-                "https://api.github.com/user/emails", headers=headers, timeout=15
-            ).json()
-            primary = next(
-                (e["email"] for e in emails if e.get("primary") and e.get("verified")), None
-            )
-            email = primary or (emails[0]["email"] if emails else None)
-        except (httpx.HTTPError, ValueError, KeyError, IndexError):
-            email = None
+    if provider == "github":
+        email = _github_verified_email(headers)
+    else:
+        # Google returns the OIDC `email_verified` claim; anything else is a
+        # self-asserted address we must not act on.
+        email = data.get("email") if data.get("email_verified") else None
+
     if not email:
-        raise OAuthError(f"Your {provider} account has no accessible verified email.")
+        raise OAuthError(
+            f"Your {provider} account has no verified email address. Verify it "
+            f"with {provider} and try again, or sign in with a password."
+        )
     return Identity(email=str(email).lower(), name=name)
 
 

@@ -210,24 +210,36 @@ function CoverLetterStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
               </div>
             )}
 
-            <div className="space-y-3 rounded-xl border border-white/[0.06] bg-surface-2 p-4">
-              {result.paragraphs.map((p, i) => (
-                <p key={i} className="text-sm leading-relaxed text-content">{p}</p>
-              ))}
-            </div>
+            {result.paragraphs.length === 0 ? (
+              <div className="rounded-xl border border-white/[0.06] bg-surface-2 p-4 text-sm text-muted">
+                Every paragraph made a claim your résumé doesn't back, so nothing was
+                kept — HireCraft won't hand you a letter it can't stand behind. Add the
+                relevant experience to your résumé, or try a different tone, and
+                regenerate.
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-xl border border-white/[0.06] bg-surface-2 p-4">
+                {result.paragraphs.map((p, i) => (
+                  <p key={i} className="text-sm leading-relaxed text-content">{p}</p>
+                ))}
+              </div>
+            )}
 
-            <div className="flex flex-wrap gap-2">
-              <CopyButton text={result.paragraphs.join("\n\n")} label="Copy text" />
-              <button onClick={() => void exportAs("pdf")} disabled={!!exporting} className="btn-secondary btn-sm">
-                {exporting === "pdf" ? "…" : "PDF"}
-              </button>
-              <button onClick={() => void exportAs("docx")} disabled={!!exporting} className="btn-secondary btn-sm">
-                {exporting === "docx" ? "…" : "DOCX"}
-              </button>
-              <button onClick={() => void exportAs("tex")} disabled={!!exporting} className="btn-secondary btn-sm">
-                {exporting === "tex" ? "…" : "LaTeX"}
-              </button>
-            </div>
+            {/* Nothing survived verification — there is no letter to copy or export. */}
+            {result.paragraphs.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <CopyButton text={result.paragraphs.join("\n\n")} label="Copy text" />
+                <button onClick={() => void exportAs("pdf")} disabled={!!exporting} className="btn-secondary btn-sm">
+                  {exporting === "pdf" ? "…" : "PDF"}
+                </button>
+                <button onClick={() => void exportAs("docx")} disabled={!!exporting} className="btn-secondary btn-sm">
+                  {exporting === "docx" ? "…" : "DOCX"}
+                </button>
+                <button onClick={() => void exportAs("tex")} disabled={!!exporting} className="btn-secondary btn-sm">
+                  {exporting === "tex" ? "…" : "LaTeX"}
+                </button>
+              </div>
+            )}
             <p className="text-xs text-subtle">Cost ${result.cost_usd.toFixed(4)}</p>
           </div>
         )}

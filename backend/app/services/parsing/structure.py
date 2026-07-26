@@ -10,12 +10,16 @@ returned, and light repairs (date normalization) are applied first.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
 from app.core.logging import get_logger
 from app.schemas.resume import MasterResume
-from app.services.llm.client import GeminiClient, Usage, get_client
+from app.services.llm.client import Usage, get_client
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
@@ -158,10 +162,20 @@ def _coerce_valid(payload: dict) -> MasterResume:
 
 def _drop_offending(payload: dict, exc: ValidationError) -> bool:
     """Remove the fields/entries the validator complained about. Returns True if
-    it changed anything (so the caller should retry)."""
+    it changed anything (so the caller should retry).
+
+    Entry deletions are collected first and applied in descending index order.
+    Popping as each error is handled would shift every later index by one, so
+    the next error's index would point at - and silently delete - a different,
+    perfectly valid entry further down the résumé.
+    """
     changed = False
-    # Handle deepest paths first so list indices stay valid as we delete.
-    for error in sorted(exc.errors(), key=lambda e: -len(e["loc"])):
+    doomed: dict[str, set[int]] = {}
+
+    def condemn(section: object, index: int) -> None:
+        doomed.setdefault(str(section), set()).add(index)
+
+    for error in exc.errors():
         loc = error["loc"]
         if not loc:
             continue
@@ -169,31 +183,43 @@ def _drop_offending(payload: dict, exc: ValidationError) -> bool:
         if len(loc) >= 3 and isinstance(loc[1], int):
             section, idx, field = loc[0], loc[1], loc[2]
             entries = payload.get(section)
-            if isinstance(entries, list) and 0 <= idx < len(entries):
-                entry = entries[idx]
-                if isinstance(entry, dict) and field in _NULLABLE_ENTRY_FIELDS:
-                    entry.pop(field, None)
+            if not isinstance(entries, list) or not 0 <= idx < len(entries):
+                continue
+            entry = entries[idx]
+            if isinstance(entry, dict) and field in _NULLABLE_ENTRY_FIELDS:
+                if field in entry:
+                    del entry[field]
                     changed = True
-                else:
-                    entries.pop(idx)  # required field bad -> drop whole entry
-                    changed = True
+            else:
+                condemn(section, idx)  # required field bad -> drop whole entry
         # ("experience", 0) -> whole entry is malformed.
         elif len(loc) == 2 and isinstance(loc[1], int):
             entries = payload.get(loc[0])
             if isinstance(entries, list) and 0 <= loc[1] < len(entries):
-                entries.pop(loc[1])
-                changed = True
+                condemn(loc[0], loc[1])
         # ("basics", "github") -> null an optional basics field.
         elif len(loc) == 2 and loc[0] == "basics":
             basics = payload.get("basics")
-            if isinstance(basics, dict) and loc[1] in _NULLABLE_ENTRY_FIELDS:
-                basics.pop(loc[1], None)
+            if (
+                isinstance(basics, dict)
+                and loc[1] in _NULLABLE_ENTRY_FIELDS
+                and loc[1] in basics
+            ):
+                del basics[loc[1]]
                 changed = True
+
+    for section, indices in doomed.items():
+        entries = payload.get(section)
+        if not isinstance(entries, list):
+            continue
+        for idx in sorted(indices, reverse=True):
+            del entries[idx]
+            changed = True
     return changed
 
 
 def structure_resume(
-    text: str, *, client: GeminiClient | None = None
+    text: str, *, client: LlmClient | None = None
 ) -> tuple[MasterResume, Usage]:
     """Turn extracted résumé text into a validated MasterResume plus usage."""
     client = client or get_client()

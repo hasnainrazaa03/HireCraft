@@ -67,12 +67,16 @@ def notify(
     notification = Notification(
         user_id=user.id, kind=kind, title=title, body=body, link=link, dedupe_key=dedupe_key
     )
-    db.add(notification)
     try:
-        db.flush()
+        # A SAVEPOINT, not the whole transaction. The daily scan calls notify()
+        # for every user and commits once at the end, so a plain db.rollback()
+        # here would silently discard every reminder created for every user
+        # scanned so far — and the loop would still report them as created.
+        with db.begin_nested():
+            db.add(notification)
+            db.flush()
     except IntegrityError:
         # Lost a race on the unique (user, dedupe_key) — someone else inserted it.
-        db.rollback()
         return None
 
     if email and _wants_email(user, kind):
@@ -138,7 +142,7 @@ def due_reminders(
                 Reminder(
                     kind="interview_soon",
                     title=f"Interview soon — {label}",
-                    body=f"Your interview is on {interview:%b %-d at %-I:%M %p}. Time to prep.",
+                    body=f"Your interview is on {_friendly(interview)}. Time to prep.",
                     link=link,
                     dedupe_key=f"interview_soon:{app.id}:{interview:%Y-%m-%d}",
                 )
@@ -188,6 +192,13 @@ def _aware(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def _friendly(value: datetime) -> str:
+    """'Mar 4 at 2:30 PM'. Built by hand because the obvious strftime spelling
+    ('%-d', '%-I') is a glibc/BSD extension that raises on Windows."""
+    hour = value.hour % 12 or 12
+    return f"{value:%b} {value.day} at {hour}:{value:%M} {value:%p}"
 
 
 def scan_user(db: Session, user: User) -> int:

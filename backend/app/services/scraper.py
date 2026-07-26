@@ -219,6 +219,23 @@ def _extract_metadata(html: str) -> dict[str, str | None]:
     return meta
 
 
+def _read_capped(response: httpx.Response, limit: int) -> bytes:
+    """Read a streamed body, aborting as soon as it exceeds ``limit``.
+
+    Checking ``len(response.content)`` after the fact (as this once did) means
+    the whole page is already in memory before it is rejected - a hostile or
+    merely broken URL could stream gigabytes at a worker first.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_bytes():
+        total += len(chunk)
+        if total > limit:
+            raise ScrapeError("The job posting page is unexpectedly large.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
     """Fetch ``url`` and return the cleaned posting text plus any metadata."""
     safe_url = validate_url(url)
@@ -240,30 +257,40 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
             response: httpx.Response | None = None
             # Redirects are followed manually so each hop is re-validated; a
             # public host can otherwise redirect into the private network.
+            # Streamed so headers can be inspected, and the size cap enforced,
+            # before the body is pulled into memory.
             for _ in range(5):
-                response = client.get(current)
+                response = client.send(client.build_request("GET", current), stream=True)
                 if not response.is_redirect:
                     break
+                response.close()
                 location = response.headers.get("location")
                 if not location:
+                    response = None
                     break
                 current = validate_url(str(response.url.join(location)))
             else:
+                if response is not None:
+                    response.close()
                 raise ScrapeError("Too many redirects while fetching the job posting.")
 
-            if response is None:  # pragma: no cover - defensive
-                raise ScrapeError("No response received.")
-            response.raise_for_status()
+            if response is None:
+                raise ScrapeError("That URL redirected somewhere we could not follow.")
 
-            content_type = response.headers.get("content-type", "")
-            if "html" not in content_type and "text" not in content_type:
-                raise ScrapeError(
-                    f"Expected an HTML page but the server returned {content_type!r}."
-                )
-            if len(response.content) > settings.scrape_max_bytes:
-                raise ScrapeError("The job posting page is unexpectedly large.")
+            try:
+                response.raise_for_status()
 
-            html = response.text
+                content_type = response.headers.get("content-type", "")
+                if "html" not in content_type and "text" not in content_type:
+                    raise ScrapeError(
+                        f"Expected an HTML page but the server returned {content_type!r}."
+                    )
+
+                body = _read_capped(response, settings.scrape_max_bytes)
+            finally:
+                response.close()
+
+            html = body.decode(response.charset_encoding or "utf-8", errors="replace")
             final_url = str(response.url)
 
     except httpx.HTTPStatusError as exc:

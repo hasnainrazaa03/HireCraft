@@ -10,6 +10,7 @@ rather than inventing plausible-sounding ones.
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -22,10 +23,13 @@ from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.services.analysis import analyze_resume
 from app.services.dashboard import build_overview
-from app.services.llm.client import GeminiClient, get_client
+from app.services.llm.client import get_client
 from app.services.llm.prompts import COPILOT_SYSTEM, build_copilot_prompt
 from app.services.matching import match_resume_to_job, skill_gaps
 from app.services.pipeline import UsageLedger
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
@@ -176,7 +180,7 @@ def answer(
     user_id: uuid.UUID,
     request: CopilotRequest,
     *,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[str, list[str]]:
     client = client or get_client()

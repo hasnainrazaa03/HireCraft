@@ -178,7 +178,10 @@ def render_cover_letter_file(
     """
     profile = _owned_resume(db, user.id, payload.resume_profile_id)
     resume = MasterResume.model_validate(profile.content)
-    date_line = datetime.now(UTC).strftime("%B %-d, %Y")
+    # Not strftime("%B %-d, %Y"): "%-d" is a glibc/BSD extension that raises on
+    # Windows, so a dev running the API natively there can't export a letter.
+    now = datetime.now(UTC)
+    date_line = f"{now:%B} {now.day}, {now.year}"
     safe = storage.safe_filename(
         f"{(payload.company or resume.basics.name)}_cover_letter".replace(" ", "_"),
         fallback="cover_letter",

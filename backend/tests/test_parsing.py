@@ -176,6 +176,25 @@ class TestSalvage:
         assert len(resume.experience) == 1
         assert resume.experience[0].company == "Good"
 
+    def test_multiple_bad_entries_only_drop_themselves(self):
+        """Regression: entries were popped while iterating the error list, so
+        removing an early one shifted every later index and the next deletion
+        landed on a different, perfectly valid entry further down."""
+        from app.services.parsing.structure import _coerce_valid
+
+        payload = {
+            "basics": {"name": "Jane", "email": "jane@x.co"},
+            "experience": [
+                {"company": "Acme", "title": "SWE", "start_date": "2020"},
+                {"title": "No company", "start_date": "2021"},  # invalid
+                {"company": "Good Co", "title": "Senior SWE", "start_date": "2022"},
+                {"company": "Bad Co", "start_date": "2023"},  # invalid, no title
+                {"company": "Keeper", "title": "Staff", "start_date": "2024"},
+            ],
+        }
+        resume = _coerce_valid(payload)
+        assert [e.company for e in resume.experience] == ["Acme", "Good Co", "Keeper"]
+
     def test_unsalvageable_raises_parsing_error(self):
         from app.services.parsing.structure import ParsingError, _coerce_valid
 

@@ -11,7 +11,6 @@ import uuid
 
 from celery.exceptions import SoftTimeLimitExceeded
 
-from app.core.crypto import DecryptionError, decrypt
 from app.core.logging import get_logger
 from app.db.session import session_scope
 from app.models.application import (
@@ -26,7 +25,8 @@ from app.schemas.resume import MasterResume
 from app.services import storage
 from app.services.email.sender import Email, EmailError, send_email
 from app.services.latex.compiler import LatexCompilationError
-from app.services.llm.client import GeminiClient, LlmConfigurationError, LlmError
+from app.services.llm.client import LlmConfigurationError, LlmError
+from app.services.llm.factory import LlmClient, client_for_user
 from app.services.pipeline import TailoringOutcome, run_pipeline
 from app.workers.celery_app import celery_app
 
@@ -148,14 +148,19 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
         include_cover_letter = application.include_cover_letter
         master = MasterResume.model_validate(application.resume_profile.content)
         template = application.resume_profile.template
-        # If the user brought their own Gemini key, their runs bill it instead
-        # of the shared key. Decrypt here while the session is open.
-        user_api_key: str | None = None
-        if application.user.encrypted_gemini_key:
-            try:
-                user_api_key = decrypt(application.user.encrypted_gemini_key)
-            except DecryptionError:
-                logger.warning("task.user_key_undecryptable", application_id=application_id)
+        # Build the client for the provider/model this user actually selected,
+        # billing their own key when they have one. Done here, while the session
+        # is open, because it reads their encrypted keys and saved selection.
+        # Hard-coding Gemini here (as this once did) meant a user who picked
+        # Claude or OpenAI in Settings had every tailoring run silently fall
+        # back to the shared Gemini key - or fail outright when there wasn't one
+        # - while every other AI feature honoured their choice.
+        client: LlmClient | None = None
+        config_error: str | None = None
+        try:
+            client = client_for_user(application.user)
+        except LlmConfigurationError as exc:
+            config_error = str(exc)
         job = application.job
         scrape = ScrapeResult(
             url=job.url,
@@ -178,7 +183,12 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
             _set_status(application_id, mapping[stage])
         logger.info("task.progress", application_id=application_id, stage=stage, message=message)
 
-    client = GeminiClient(api_key=user_api_key) if user_api_key else None
+    if config_error is not None:
+        # Retrying will not conjure an API key.
+        _set_status(application_id, PipelineStatus.FAILED, config_error)
+        logger.error("task.misconfigured", application_id=application_id, error=config_error)
+        return {"status": "failed", "reason": "configuration"}
+
     try:
         outcome = run_pipeline(
             master,

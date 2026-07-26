@@ -75,11 +75,17 @@ def callback(
         token = oauth_service.exchange_code(provider, code, _api_base(request))
         identity = oauth_service.fetch_identity(provider, token)
         user = oauth_service.link_or_create_user(db, identity)
+        # The password login path refuses a disabled account; this one has to as
+        # well, or a suspended user just walks in through the side door.
+        if not user.is_active:
+            db.rollback()
+            return fail("account_disabled")
         access, refresh, _ = auth_service.create_session(
             db, user, user_agent=request.headers.get("user-agent"), ip_address=None
         )
         db.commit()
     except OAuthError:
+        db.rollback()
         return fail("provider_error")
 
     logger.info("oauth.success", provider=provider, user_id=str(user.id))

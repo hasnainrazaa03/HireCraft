@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
@@ -21,7 +22,7 @@ from app.schemas.writing import VoiceProfile
 from app.services.latex.compiler import CompileResult, compile_latex
 from app.services.latex.renderer import render_cover_letter, render_resume
 from app.services.latex.templates import resolve_filename
-from app.services.llm.client import GeminiClient, LlmResult, Usage, get_client
+from app.services.llm.client import LlmResult, Usage, get_client
 from app.services.llm.guardrails import GuardrailEngine, build_diff
 from app.services.llm.prompts import (
     COVER_LETTER_SYSTEM,
@@ -37,6 +38,9 @@ from app.services.llm.prompts import (
     build_outreach_prompt,
     build_rewrite_prompt,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
@@ -89,7 +93,7 @@ class TailoringOutcome:
 def extract_requirements(
     scrape: ScrapeResult,
     *,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> JobRequirements:
     """Stage 2: turn posting text into structured requirements."""
@@ -122,7 +126,7 @@ def optimize_resume(
     requirements: JobRequirements,
     job_text: str,
     *,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
     """Stage 3: rewrite presentation, then enforce truthfulness."""
@@ -160,7 +164,7 @@ def rewrite_resume(
     master: MasterResume,
     *,
     findings: list[str] | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
     """Improve a résumé's wording without a target job.
@@ -200,7 +204,7 @@ class ProfileIntro(BaseModel):
 def generate_profile_intro(
     master: MasterResume,
     *,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> ProfileIntro:
     """Draft a truthful headline + summary from the rest of the résumé.
@@ -245,7 +249,7 @@ def draft_cover_letter(
     *,
     tone: str | None = None,
     voice: VoiceProfile | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> list[str]:
     """Optional stage: draft cover letter paragraphs, vetted like everything else."""
@@ -280,7 +284,7 @@ def compose_cover_letter(
     role: str | None = None,
     tone: str = "modern",
     voice: VoiceProfile | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[list[str], GuardrailReport]:
     """Standalone cover-letter generation for the writing studio.
@@ -315,9 +319,14 @@ def compose_cover_letter(
         bullet_confidence=[],
     )
     if not vetted:
-        # Everything failed verification — fall back to the raw draft rather than
-        # returning nothing, but keep the violations so the UI can warn loudly.
-        vetted = [p for p in result.data.paragraphs if p.strip()]
+        # Everything failed verification. Returning the raw draft here (as this
+        # once did) was the one path where unverified claims reached the user,
+        # which is exactly the promise the guardrails exist to keep. Return
+        # nothing and let the report explain why, so the user can adjust the
+        # inputs and regenerate.
+        logger.warning(
+            "pipeline.cover_letter_fully_rejected", violations=len(errors)
+        )
     return vetted, report
 
 
@@ -330,7 +339,7 @@ def generate_outreach(
     recipient: str | None = None,
     context: str | None = None,
     voice: VoiceProfile | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[OutreachDraft, list[str]]:
     """Short-form outreach for the writing studio.
@@ -387,7 +396,7 @@ def run_pipeline(
     include_cover_letter: bool = False,
     templates_dir: str | None = None,
     template: str | None = None,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> TailoringOutcome:
     """Run every stage after scraping and return the finished artifacts."""

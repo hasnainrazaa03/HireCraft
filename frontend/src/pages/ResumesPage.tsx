@@ -13,7 +13,7 @@ import {
 } from "../lib/api";
 import { Modal, Spinner } from "../components/ui";
 import { TagInput } from "../components/TagInput";
-import { ResumeBuilder, type ResumeContent } from "../components/ResumeBuilder";
+import { ResumeBuilder, pruneEmpty, type ResumeContent } from "../components/ResumeBuilder";
 import { ScorePanel } from "../components/ScorePanel";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
 import { useToast } from "../lib/toast";
@@ -106,8 +106,11 @@ export default function ResumesPage() {
   });
 
   function currentContent(): ResumeContent {
+    // JSON mode is the user's own literal document — don't touch it. Builder
+    // mode is form state, where the placeholder rows "Add bullet"/"Add" create
+    // are ours to clean up rather than to fail the save on.
     if (mode === "json") return JSON.parse(jsonDraft);
-    return content;
+    return pruneEmpty(content);
   }
 
   function close() {
@@ -499,7 +502,8 @@ function Editor(props: any) {
 
   const analyze = useMutation({
     mutationFn: () => {
-      const c = mode === "json" ? JSON.parse(jsonDraft) : content;
+      // Same pruning as save: scoring a draft shouldn't fail on a blank row.
+      const c = mode === "json" ? JSON.parse(jsonDraft) : pruneEmpty(content);
       return api.post<ResumeAnalysis>("/resumes/analyze", c);
     },
     onSuccess: setAnalysis,

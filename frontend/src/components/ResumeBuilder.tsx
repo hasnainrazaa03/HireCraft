@@ -386,3 +386,50 @@ function IconBtn({ onClick, disabled, label, children }: { onClick: () => void; 
     </button>
   );
 }
+
+/**
+ * Strip the placeholder rows the builder creates.
+ *
+ * "Add bullet" inserts an empty string and "Add" inserts a blank entry, but the
+ * Master Resume schema requires non-empty bullets and non-empty company/title/
+ * name. So a half-finished row the user never got round to filling made the
+ * whole save fail with a generic "Validation failed", pointing at nothing. Drop
+ * what's empty on the way out instead: the row the user is actively typing into
+ * is preserved, only the untouched ones disappear.
+ */
+export function pruneEmpty(content: ResumeContent): ResumeContent {
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() : v);
+  const bullets = (list: unknown) =>
+    Array.isArray(list) ? list.map(text).filter((b) => typeof b === "string" && b) : list;
+
+  const next: ResumeContent = { ...content };
+
+  for (const key of ["experience", "education", "projects"]) {
+    const entries = next[key];
+    if (!Array.isArray(entries)) continue;
+    next[key] = entries
+      .map((entry: Record<string, any>) => {
+        const cleaned: Record<string, any> = { ...entry };
+        for (const listKey of ["highlights", "technologies", "coursework", "honors"]) {
+          if (listKey in cleaned) cleaned[listKey] = bullets(cleaned[listKey]);
+        }
+        return cleaned;
+      })
+      // An entry counts as blank only when every field the user could have
+      // filled is still empty — never drop one that has real content but is
+      // merely missing a required field, or their work vanishes without a word.
+      .filter((entry: Record<string, any>) =>
+        Object.entries(entry).some(([k, v]) =>
+          k === "id" ? false : Array.isArray(v) ? v.length > 0 : Boolean(text(v)),
+        ),
+      );
+  }
+
+  if (Array.isArray(next.skills)) {
+    next.skills = next.skills
+      .map((group: Record<string, any>) => ({ ...group, items: bullets(group.items) }))
+      .filter((group: Record<string, any>) => group.items?.length);
+  }
+
+  return next;
+}

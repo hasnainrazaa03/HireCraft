@@ -144,6 +144,21 @@ def _tokens(text: str) -> set[str]:
     return {m.group().lower() for m in TOKEN_RE.finditer(text)}
 
 
+def _mentions(haystack_lower: str, term_lower: str) -> bool:
+    """Does ``haystack_lower`` contain ``term_lower`` as a whole term?
+
+    Plain substring containment is wrong here and dangerously so: a job keyword
+    like "R", "Go", or "REST" is a substring of ordinary English ("Resolved",
+    "going", "interest"), so every résumé would appear to "claim" it. That turns
+    the keyword-injection check into a no-op for exactly the short, ambiguous
+    technology names it most needs to catch. Anchoring on alphanumeric
+    boundaries keeps "C++" and "Node.js" matching while "R" only matches a
+    standalone R.
+    """
+    pattern = rf"(?<![A-Za-z0-9]){re.escape(term_lower)}(?![A-Za-z0-9])"
+    return re.search(pattern, haystack_lower) is not None
+
+
 def _master_numbers(master: MasterResume) -> set[str]:
     """Every number the candidate has actually claimed, anywhere in the master."""
     numbers: set[str] = set()
@@ -221,7 +236,7 @@ class GuardrailEngine:
         needle = term.strip().lower()
         if not needle:
             return True
-        if needle in self.master_text:
+        if _mentions(self.master_text, needle):
             return True
         # Multi-word keyword counts as claimed only if every component is.
         parts = _tokens(needle)
@@ -230,13 +245,7 @@ class GuardrailEngine:
     def _injected_job_terms(self, text: str) -> list[str]:
         """Job keywords present in ``text`` that the master resume never supports."""
         haystack = text.lower()
-        found: list[str] = []
-        for term in self.unearned_job_terms:
-            needle = term.lower()
-            pattern = rf"(?<![A-Za-z0-9]){re.escape(needle)}(?![A-Za-z0-9])"
-            if re.search(pattern, haystack):
-                found.append(term)
-        return found
+        return [term for term in self.unearned_job_terms if _mentions(haystack, term.lower())]
 
     # -- internal helpers -------------------------------------------------
 
@@ -637,10 +646,13 @@ class GuardrailEngine:
         if not self.requirements:
             return []
         haystack = _resume_text(resume).lower()
+        # Whole-term matching, same rule as the provenance check: counting a
+        # substring hit would report "R" as covered because the résumé says
+        # "Resolved", and the coverage figure is supposed to be the honest one.
         return [
             keyword
             for keyword in self.requirements.all_keywords()
-            if keyword.lower() in haystack
+            if _mentions(haystack, keyword.lower())
         ]
 
 

@@ -91,14 +91,20 @@ def _pad_timing(started: float, target_ms: float = 250.0) -> None:
         time.sleep((target_ms - elapsed_ms) / 1000)
 
 
-def _send_verification(db: DbSession, user: User) -> None:
+def _build_verification(db: DbSession, user: User):
+    """Mint a verification token and BUILD the email, without queueing it.
+
+    Queueing has to happen after the commit. A Celery task published from inside
+    the transaction can be picked up and delivered before (or instead of) the
+    commit that persists the token, handing the user a link that does not work.
+    """
     token = auth_service.issue_auth_token(
         db,
         user,
         AuthTokenPurpose.EMAIL_VERIFY,
         ttl=timedelta(hours=settings.email_verify_ttl_hours),
     )
-    _queue_email(verification_email(user.email, token, user.full_name))
+    return verification_email(user.email, token, user.full_name)
 
 
 # --- registration & login ---------------------------------------------------
@@ -136,9 +142,10 @@ def register(payload: RegisterRequest, request: Request, db: DbSession) -> Token
     db.add(user)
     db.flush()
 
-    _send_verification(db, user)
+    message = _build_verification(db, user)
     tokens = _issue_session(request, db, user)
     db.commit()
+    _queue_email(message)
     logger.info("auth.registered", user_id=str(user.id))
     return tokens
 
@@ -280,8 +287,9 @@ def resend_verification(
     _throttle(request, "resend_verify", limit=5, window=600)
     if user.is_verified:
         return MessageResponse(message="Your email is already verified.")
-    _send_verification(db, user)
+    message = _build_verification(db, user)
     db.commit()
+    _queue_email(message)
     return MessageResponse(message="Verification email sent.")
 
 
@@ -301,8 +309,9 @@ def forgot_password(
             AuthTokenPurpose.PASSWORD_RESET,
             ttl=timedelta(minutes=settings.password_reset_ttl_minutes),
         )
-        _queue_email(password_reset_email(user.email, token, user.full_name))
-        db.commit()
+        message = password_reset_email(user.email, token, user.full_name)
+        db.commit()  # commit before queueing, so the link in the email exists
+        _queue_email(message)
     # Always the same response, so the endpoint can't be used to probe which
     # emails have accounts.
     return MessageResponse(
@@ -401,8 +410,9 @@ def change_email(
         ttl=timedelta(hours=settings.email_verify_ttl_hours),
         payload=new_email,
     )
-    _queue_email(verification_email(new_email, token, user.full_name))
+    message = verification_email(new_email, token, user.full_name)
     db.commit()
+    _queue_email(message)
     return MessageResponse(
         message="Check your new inbox for a link to confirm the change."
     )

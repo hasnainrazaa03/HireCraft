@@ -155,9 +155,15 @@ def set_llm_selection(payload: LlmSelectionUpdate, user: CurrentUser, db: DbSess
             status.HTTP_400_BAD_REQUEST,
             f"Add a {registry.provider_label(payload.provider)} API key before selecting it.",
         )
-    model = payload.model or registry.default_model(payload.provider)
-    if not registry.is_valid_model(payload.provider, model):
+    # Validate only what the client actually chose. default_model() may return a
+    # model configured via env that isn't in the catalog (an alias, a preview
+    # build); rejecting it here made the server's own configured default
+    # unselectable.
+    if payload.model and not registry.is_valid_model(payload.provider, payload.model):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown model for that provider.")
+    model = payload.model or registry.default_model(payload.provider)
+    if not model:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That provider has no usable model.")
     user.llm_provider = payload.provider
     user.llm_model = model
     db.commit()

@@ -8,9 +8,14 @@ subsequently generated still passes the truthfulness guardrails.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app.core.logging import get_logger
 from app.schemas.writing import VoiceProfile
-from app.services.llm.client import GeminiClient, Usage, get_client
+from app.services.llm.client import Usage, get_client
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
@@ -48,7 +53,7 @@ def build_voice_prompt(samples: list[tuple[str, str]]) -> str:
 def extract_voice(
     samples: list[tuple[str, str]],
     *,
-    client: GeminiClient | None = None,
+    client: LlmClient | None = None,
 ) -> tuple[VoiceProfile, Usage]:
     """Return the distilled voice plus token usage for the call."""
     client = client or get_client()

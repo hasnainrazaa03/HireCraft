@@ -138,3 +138,35 @@ def test_scan_user_is_idempotent(db, user, resume):
     second = scan_user(db, user)
     assert first >= 1
     assert second == 0  # dedupe keys prevent re-creation
+
+
+def test_duplicate_does_not_discard_earlier_uncommitted_notifications(
+    db, user, monkeypatch
+):
+    """Regression: the dedupe collision rolled back the whole transaction.
+
+    The daily scan calls notify() for every user and commits once at the end, so
+    a single lost race used to wipe every reminder created for every user
+    scanned before it - while the loop still counted them as created.
+    """
+    first = notify(db, user, kind="follow_up", title="Keep me", dedupe_key="a")
+    assert first is not None
+
+    db.add(
+        Notification(user_id=user.id, kind="follow_up", title="Racer", dedupe_key="b")
+    )
+    db.flush()
+
+    # Lose the race for real: blind the pre-check SELECT so the unique
+    # constraint is what rejects the insert, which is the path that used to
+    # take the whole transaction down with it.
+    monkeypatch.setattr(db, "scalar", lambda *a, **k: None)
+    duplicate = notify(db, user, kind="follow_up", title="Dupe", dedupe_key="b")
+    monkeypatch.undo()
+
+    assert duplicate is None
+    # The earlier notification survived and is still pending in this transaction.
+    db.commit()
+    titles = set(db.scalars(select(Notification.title)))
+    assert {"Keep me", "Racer"} <= titles
+    assert "Dupe" not in titles

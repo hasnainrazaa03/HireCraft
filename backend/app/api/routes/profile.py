@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbSession
 from app.models.profile import CareerProfile
@@ -12,12 +14,32 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 
 
 def _get_or_create(db: DbSession, user_id) -> CareerProfile:
-    """One profile per user, created lazily on first access."""
-    profile = db.query(CareerProfile).filter(CareerProfile.user_id == user_id).one_or_none()
-    if profile is None:
-        profile = CareerProfile(user_id=user_id)
-        db.add(profile)
-        db.flush()
+    """One profile per user, created lazily on first access.
+
+    Two requests arriving together on a brand-new account both see "no profile"
+    and both insert; user_id is unique, so one of them loses. The savepoint
+    keeps that loss local to this insert instead of poisoning the session, and
+    we re-read the winner's row.
+    """
+    def existing() -> CareerProfile | None:
+        return db.scalar(select(CareerProfile).where(CareerProfile.user_id == user_id))
+
+    profile = existing()
+    if profile is not None:
+        return profile
+
+    profile = CareerProfile(user_id=user_id)
+    try:
+        with db.begin_nested():
+            db.add(profile)
+            db.flush()
+    except IntegrityError:
+        profile = existing()
+        if profile is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Your profile is being set up. Please retry in a moment.",
+            ) from None
     return profile
 
 

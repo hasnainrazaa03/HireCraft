@@ -83,3 +83,79 @@ def test_authorize_url_requires_config(monkeypatch):
     assert "client_id=test-client" in url
     assert "redirect_uri=" in url and "callback" in url
     assert len(state) > 10
+
+
+# --- Verified-email enforcement ---------------------------------------------
+#
+# Linking keys on email, so accepting an address the provider never confirmed is
+# an account-takeover primitive: anyone can put someone else's address on their
+# own provider profile and would inherit the HireCraft account that owns it.
+
+
+class _Resp:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+@pytest.fixture
+def configured(monkeypatch):
+    from app.services import oauth as oauth_service
+
+    for attr in (
+        "google_client_id", "google_client_secret",
+        "github_client_id", "github_client_secret",
+    ):
+        monkeypatch.setattr(oauth_service.settings, attr, "set")
+    return oauth_service
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"email": "a@b.co", "email_verified": True}, "a@b.co"),
+        ({"email": "a@b.co", "email_verified": False}, None),
+        ({"email": "a@b.co"}, None),  # claim absent entirely
+    ],
+    ids=["verified", "unverified", "no-claim"],
+)
+def test_google_requires_email_verified_claim(configured, monkeypatch, payload, expected):
+    monkeypatch.setattr(configured.httpx, "get", lambda *a, **k: _Resp(payload))
+    if expected is None:
+        with pytest.raises(OAuthError):
+            configured.fetch_identity("google", "token")
+    else:
+        assert configured.fetch_identity("google", "token").email == expected
+
+
+@pytest.mark.parametrize(
+    ("emails", "expected"),
+    [
+        ([{"email": "v@b.co", "primary": True, "verified": True}], "v@b.co"),
+        ([{"email": "u@b.co", "primary": True, "verified": False}], None),
+        (
+            [
+                {"email": "u@b.co", "primary": True, "verified": False},
+                {"email": "v@b.co", "primary": False, "verified": True},
+            ],
+            "v@b.co",
+        ),
+        ([], None),
+    ],
+    ids=["verified-primary", "unverified-primary", "prefers-verified", "none"],
+)
+def test_github_only_accepts_a_verified_address(configured, monkeypatch, emails, expected):
+    def fake_get(url, **_kw):
+        return _Resp({"name": "A"} if url.endswith("/user") else emails)
+
+    monkeypatch.setattr(configured.httpx, "get", fake_get)
+    if expected is None:
+        with pytest.raises(OAuthError):
+            configured.fetch_identity("github", "token")
+    else:
+        assert configured.fetch_identity("github", "token").email == expected
