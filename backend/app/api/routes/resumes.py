@@ -569,7 +569,24 @@ def delete_profile(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> N
                 "or keep it for your records."
             ),
         )
+    was_default = profile.is_default
     db.delete(profile)
+    db.flush()
+
+    # Deleting the default used to leave the account with none: only the very
+    # first résumé is auto-defaulted, so nothing would ever reclaim the flag and
+    # the library showed no default from then on. Promote the most recently
+    # updated survivor.
+    if was_default:
+        replacement = db.scalar(
+            select(ResumeProfile)
+            .where(ResumeProfile.user_id == user.id)
+            .order_by(ResumeProfile.updated_at.desc())
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_default = True
+
     db.commit()
 
 
