@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import {
   api,
   ApiError,
@@ -54,9 +59,17 @@ export default function ApplicationPage() {
       ACTIVE.has(query.state.data?.pipeline_status ?? "") ? 2000 : false,
   });
 
+  // The pipeline status is part of the key so the full record is refetched as
+  // the run advances. Keeping the previous data while the new key loads is what
+  // makes that bearable: without it every transition (pending → extracting →
+  // optimizing → rendering → completed) landed on a key with no cached data, so
+  // `isLoading` flipped true and the whole page was replaced by "Loading…" —
+  // five blank flashes during a single run, right where the user is watching
+  // progress.
   const { data: application, isLoading } = useQuery({
     queryKey: ["application", id, status?.pipeline_status],
     queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`),
+    placeholderData: keepPreviousData,
   });
 
   // Deterministic fit score — only meaningful once the job has been analysed.

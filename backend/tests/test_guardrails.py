@@ -402,3 +402,28 @@ class TestEntryIdentity:
         )
         assert merged.projects[0].highlights == ["Built a site in React"]
         assert merged.projects[1].highlights == ["Wrote a Python CLI"]
+
+
+class TestExcludedEntries:
+    def test_an_excluded_entry_reports_nothing(self, master, experience_id, requirements):
+        """Regression: entries the model drops with include=False were still
+        vetted, so violations and per-bullet verdicts were filed against a role
+        the tailored résumé does not contain. The user was told a claim had been
+        blocked on an entry they were never going to send, and the headline
+        "claims blocked" count was inflated by it."""
+        resume, report = _apply(
+            master,
+            {
+                "experience": [
+                    {
+                        "id": experience_id,
+                        "include": False,
+                        "highlights": ["Deployed services on Kubernetes"],
+                    }
+                ]
+            },
+            requirements,
+        )
+        assert resume.experience == []
+        assert report.violations == []
+        assert report.bullet_confidence == []

@@ -406,9 +406,19 @@ class GuardrailEngine:
         for master_entry in master_entries:
             item = tailored_by_id.get(master_entry.id)
 
-            # Untouched by the model, or explicitly excluded: keep the master as-is.
+            # Untouched by the model: keep the master as-is.
             if item is None:
                 merged.append(master_entry.model_copy(deep=True))
+                continue
+
+            # include=False hides this entry from the tailored version; the
+            # master record is untouched. Skip it before vetting, not after:
+            # verifying bullets that will never be rendered filed violations and
+            # per-bullet verdicts against a role the résumé doesn't contain, so
+            # the user was told a claim had been blocked on an entry they were
+            # never going to send, and the "claims blocked" count was inflated
+            # by it.
+            if not item.include:
                 continue
 
             label = (
@@ -469,11 +479,6 @@ class GuardrailEngine:
                         field="highlights",
                         action="reverted_to_master",
                     )
-
-            # include=False hides an entry from this tailored version; the master
-            # record is untouched.
-            if not item.include:
-                continue
 
             new_entry.__dict__["_rank"] = (
                 item.relevance_rank if item.relevance_rank is not None else 50
