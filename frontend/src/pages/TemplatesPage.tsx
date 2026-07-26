@@ -146,7 +146,9 @@ function TemplatePreviewModal({
         <div className="py-16 text-center"><Spinner className="mx-auto h-6 w-6" /></div>
       ) : (
         <>
-          <iframe title="preview" src={url} className="h-[70vh] w-full rounded-xl border border-white/[0.08] bg-white" />
+          {/* Clamped as in ResumesPage's preview: 70vh normally, but never more
+              than the dialog can actually show without a second scrollbar. */}
+          <iframe title="preview" src={url} className="h-[70vh] max-h-[calc(100dvh-16rem)] w-full rounded-xl border border-white/[0.08] bg-white" />
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => api.download(`/resumes/${resume.id}/render.pdf?template=${template.id}`, `${resume.name}.pdf`).catch(() => toast.error("Download failed"))}

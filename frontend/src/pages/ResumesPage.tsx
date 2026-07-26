@@ -650,7 +650,11 @@ function PreviewModal({ profile, templates, onClose }: { profile: ResumeProfileS
           {templates.map((t) => <option key={t.id} value={t.id} className="bg-surface">{t.name}</option>)}
         </select>
       </div>
-      <div className="h-[70vh] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
+      {/* 70vh on a tall screen, but clamped to what's left inside the dialog
+          once its header, padding and the template row are accounted for —
+          otherwise the panel's own scrollbar appears and you get two nested
+          scroll areas fighting over the same gesture. */}
+      <div className="h-[70vh] max-h-[calc(100dvh-16rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
         {isFetching ? (
           <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>
         ) : isError ? (
