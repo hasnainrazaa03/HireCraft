@@ -36,6 +36,7 @@ export default function ApplicationPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("diff");
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // A rejected download would otherwise be an unhandled promise rejection: the
   // button appears to do nothing and the user has no idea why.
@@ -66,7 +67,11 @@ export default function ApplicationPage() {
   // `isLoading` flipped true and the whole page was replaced by "Loading…" —
   // five blank flashes during a single run, right where the user is watching
   // progress.
-  const { data: application, isLoading } = useQuery({
+  const {
+    data: application,
+    isLoading,
+    error: applicationError,
+  } = useQuery({
     queryKey: ["application", id, status?.pipeline_status],
     queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`),
     placeholderData: keepPreviousData,
@@ -96,15 +101,62 @@ export default function ApplicationPage() {
     },
   });
 
+  // A re-run changes the record and its pipeline badge, not just the polled
+  // status — refreshing only the poll left this page and the board showing the
+  // previous run's artifacts and cost.
   const retry = useMutation({
     mutationFn: () => api.post(`/applications/${id}/retry`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["application-status", id] }),
+    onSuccess: () => {
+      for (const key of [["application-status", id], ["application", id], ["applications"]]) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    },
+    onError: (err) =>
+      setActionError(err instanceof ApiError ? err.message : "Couldn't restart this run."),
   });
 
   const remove = useMutation({
     mutationFn: () => api.delete(`/applications/${id}`),
-    onSuccess: () => navigate("/"),
+    onSuccess: () => {
+      // Drop this record and refresh anything that counted it, or the board
+      // keeps offering a card that 404s and the dashboard funnel stays wrong —
+      // and the funnel is exactly where we land next.
+      queryClient.removeQueries({ queryKey: ["application", id] });
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-overview"] });
+      navigate("/applications");
+    },
+    onError: (err) =>
+      setActionError(err instanceof ApiError ? err.message : "Couldn't delete this application."),
   });
+
+  // A missing application is a settled outcome, not a slow one. Conflating the
+  // two left a deleted, mistyped or shared-but-not-yours id spinning on
+  // "Loading…" for ever: the query had failed, would not retry a 4xx, and
+  // nothing ever set `application`.
+  if (applicationError) {
+    const missing =
+      applicationError instanceof ApiError && applicationError.status === 404;
+    return (
+      <div className="py-16 text-center">
+        <p className="text-sm text-content">
+          {missing
+            ? "This application no longer exists."
+            : "We couldn't load this application."}
+        </p>
+        <p className="mt-1 text-sm text-muted">
+          {missing
+            ? "It may have been deleted."
+            : applicationError instanceof ApiError
+              ? applicationError.message
+              : "Please try again."}
+        </p>
+        <Link to="/applications" className="btn-secondary mt-6">
+          Back to applications
+        </Link>
+      </div>
+    );
+  }
 
   if (isLoading || !application) {
     return <div className="py-16 text-center text-subtle">Loading…</div>;
@@ -122,7 +174,7 @@ export default function ApplicationPage() {
 
   return (
     <div>
-      <Link to="/" className="text-sm text-muted hover:text-content hover:underline">
+      <Link to="/applications" className="text-sm text-muted hover:text-content hover:underline">
         ← All applications
       </Link>
 
@@ -374,10 +426,20 @@ export default function ApplicationPage() {
         />
       </div>
 
+      {actionError && (
+        <div
+          role="alert"
+          className="mt-6 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
+        >
+          {actionError}
+        </div>
+      )}
+
       <div className="mt-10 border-t border-white/[0.08] pt-5">
         <button
           onClick={() => {
             if (confirm("Delete this application and its generated files?")) {
+              setActionError(null);
               remove.mutate();
             }
           }}
