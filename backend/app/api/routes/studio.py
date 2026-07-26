@@ -111,7 +111,7 @@ def _record(db: DbSession, user_id: uuid.UUID, ledger: UsageLedger) -> None:
 
 
 @router.get("/cover-letters/tones", response_model=list[ToneInfo])
-def list_tones() -> list[ToneInfo]:
+def list_tones(user: CurrentUser) -> list[ToneInfo]:
     return [
         ToneInfo(id=key, label=_TONE_LABELS.get(key, key.title()), description=desc)
         for key, desc in COVER_LETTER_TONES.items()
@@ -119,7 +119,7 @@ def list_tones() -> list[ToneInfo]:
 
 
 @router.get("/outreach/kinds", response_model=list[OutreachKindInfo])
-def list_outreach_kinds() -> list[OutreachKindInfo]:
+def list_outreach_kinds(user: CurrentUser) -> list[OutreachKindInfo]:
     return [
         OutreachKindInfo(id=key, label=_KIND_LABELS.get(key, key.title()), description=desc)
         for key, desc in OUTREACH_KINDS.items()

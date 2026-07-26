@@ -253,13 +253,13 @@ async def parse_resume(
 
 
 @router.get("/schema", response_model=dict)
-def resume_json_schema() -> dict:
+def resume_json_schema(user: CurrentUser) -> dict:
     """The Master Resume JSON Schema, for client-side validation and docs."""
     return MasterResume.model_json_schema()
 
 
 @router.get("/templates", response_model=list[TemplateInfo])
-def list_templates() -> list[TemplateInfo]:
+def list_templates(user: CurrentUser) -> list[TemplateInfo]:
     """The available résumé templates a user can pick from."""
     return [TemplateInfo(id=t.id, name=t.name, description=t.description) for t in TEMPLATES]
 

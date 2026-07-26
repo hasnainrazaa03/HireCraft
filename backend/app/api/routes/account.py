@@ -13,6 +13,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.config import settings
 from app.core.crypto import decrypt, encrypt
 from app.core.logging import get_logger
+from app.core.rate_limit import check_rate_limit
 from app.models.application import Application
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
@@ -43,6 +44,26 @@ class _ApiKeyProbe(BaseModel):
     """Minimal schema for the key-validation probe call."""
 
     ok: bool = True
+
+
+def _throttle_key_probe(user: User) -> None:
+    """Limit how often a user can have us call out to a provider to test a key.
+
+    Saving a key makes a live outbound request, so without a limit an
+    authenticated user could drive unbounded traffic at Gemini/Anthropic/OpenAI
+    one request at a time. It gets its own bucket rather than the generation
+    quota: mistyping a key a few times shouldn't eat the budget the user needs
+    for actual tailoring runs.
+    """
+    result = check_rate_limit(
+        str(user.id), limit=10, window_seconds=600, bucket="llm_key_probe"
+    )
+    if not result.allowed:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many key checks. Wait a few minutes and try again.",
+            headers={"Retry-After": str(result.reset_after)},
+        )
 
 
 @router.patch("/settings", response_model=UserResponse)
@@ -80,6 +101,7 @@ def api_key_status(user: CurrentUser) -> ApiKeyStatus:
 @router.put("/api-key", response_model=ApiKeyStatus)
 def set_api_key(payload: ApiKeyUpdate, user: CurrentUser, db: DbSession) -> ApiKeyStatus:
     """Validate a Gemini key with a tiny live call, then store it encrypted."""
+    _throttle_key_probe(user)
     key = payload.api_key.strip()
     try:
         # A cheap generate confirms the key works before we save it, so a bad
@@ -177,6 +199,7 @@ def set_llm_key(provider: str, payload: LlmKeyUpdate, user: CurrentUser, db: DbS
     """Validate a provider API key with a tiny live call, then store it encrypted."""
     if provider not in _KEY_ATTR:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown provider.")
+    _throttle_key_probe(user)
     key = payload.api_key.strip()
     try:
         client = factory.build_client(provider, model=registry.default_model(provider), api_key=key)
