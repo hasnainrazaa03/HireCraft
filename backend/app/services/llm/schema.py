@@ -23,7 +23,8 @@ from typing import Any
 
 # Keywords Gemini's schema dialect understands. Everything else is discarded.
 _ALLOWED_KEYS = frozenset(
-    {"type", "format", "description", "nullable", "enum", "properties", "required", "items"}
+    {"type", "format", "description", "nullable", "enum", "properties", "required",
+     "items", "propertyOrdering"}
 )
 
 # JSON Schema types Gemini accepts, lowercased.
@@ -81,6 +82,21 @@ def _convert(node: Any, defs: dict[str, Any]) -> Any:
     # when properties are present, so restore it.
     if "properties" in out and "type" not in out:
         out["type"] = "object"
+
+    # Pin the field generation order: required (identifying) fields first, then
+    # optional ones. Gemini's structured output emits properties in schema order,
+    # and a nullable field generated *before* the fields that give it meaning
+    # tends to come back null — an entry's start_date, declared on a shared base
+    # class ahead of its company/title, was emitted before the model had "written"
+    # which entry it was on, so every résumé import lost its dates. Ordering the
+    # non-null context fields first fixes that, and steers every structured call
+    # to describe each object before its dependent fields.
+    if "properties" in out:
+        required = set(out.get("required", []))
+        keys = list(out["properties"].keys())
+        ordered = [k for k in keys if k in required] + [k for k in keys if k not in required]
+        out["properties"] = {k: out["properties"][k] for k in ordered}
+        out["propertyOrdering"] = ordered
 
     return out
 
