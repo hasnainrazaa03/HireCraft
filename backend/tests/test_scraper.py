@@ -17,6 +17,7 @@ import pytest
 from app.services.scraper import (
     ScrapeError,
     _assert_peer_allowed,
+    _ats_api_result,
     _is_blocked_address,
     scrape_job,
     validate_url,
@@ -194,3 +195,73 @@ class TestDecoding:
         monkeypatch.setattr(scraper, "_assert_peer_allowed", lambda response: None)
         result = scrape_job(f"{server}/badcharset")
         assert "widget engineer" in result.text.lower()
+
+
+class _JsonResp:
+    """Minimal stand-in for an httpx JSON response."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class TestAtsApi:
+    """Ashby/Greenhouse/Lever serve JS shells; their public JSON APIs don't.
+
+    _ats_api_result recognises the board from the URL and pulls the full
+    description from the API keyed off the org + id already in that URL.
+    """
+
+    _DESC = "We are hiring a machine learning engineer. " * 8
+
+    def test_ashby_posting_is_fetched_from_the_api(self, monkeypatch):
+        import app.services.scraper as scraper
+
+        pid = "3eb7e80e-6a0d-41b6-8ee4-f62421c486e4"
+        payload = {"jobs": [
+            {"id": "other", "title": "Nope", "descriptionPlain": "x"},
+            {"id": pid, "title": "ML Engineer, New Grad",
+             "location": "Remote", "descriptionPlain": self._DESC},
+        ]}
+        monkeypatch.setattr(scraper.httpx, "get", lambda *a, **k: _JsonResp(payload))
+        r = _ats_api_result(f"https://jobs.ashbyhq.com/quora/{pid}", timeout=5)
+        assert r is not None
+        assert r.title == "ML Engineer, New Grad"
+        assert r.company == "Quora" and r.source == "ashby"
+        assert "machine learning engineer" in r.text.lower()
+
+    def test_greenhouse_content_html_is_stripped(self, monkeypatch):
+        import app.services.scraper as scraper
+
+        payload = {"title": "Backend Engineer", "location": {"name": "NYC"},
+                   "content": "&lt;p&gt;" + self._DESC + "&lt;/p&gt;"}
+        monkeypatch.setattr(scraper.httpx, "get", lambda *a, **k: _JsonResp(payload))
+        r = _ats_api_result("https://boards.greenhouse.io/acme/jobs/123456", timeout=5)
+        assert r is not None and r.title == "Backend Engineer"
+        assert "<p>" not in r.text and "machine learning engineer" in r.text.lower()
+
+    def test_lever_posting_joins_description_and_lists(self, monkeypatch):
+        import app.services.scraper as scraper
+
+        pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        payload = {"text": "Data Scientist", "descriptionPlain": self._DESC,
+                   "categories": {"location": "Remote"},
+                   "lists": [{"text": "Requirements", "content": "<li>Python</li>"}]}
+        monkeypatch.setattr(scraper.httpx, "get", lambda *a, **k: _JsonResp(payload))
+        r = _ats_api_result(f"https://jobs.lever.co/acme/{pid}", timeout=5)
+        assert r is not None and r.title == "Data Scientist"
+        assert "Python" in r.text
+
+    def test_non_ats_url_returns_none(self):
+        assert _ats_api_result("https://example.com/careers/123", timeout=5) is None
+
+    def test_a_thin_api_response_is_rejected(self, monkeypatch):
+        """Too little text falls through to None so HTML scraping can try."""
+        import app.services.scraper as scraper
+
+        pid = "3eb7e80e-6a0d-41b6-8ee4-f62421c486e4"
+        payload = {"jobs": [{"id": pid, "title": "T", "descriptionPlain": "short"}]}
+        monkeypatch.setattr(scraper.httpx, "get", lambda *a, **k: _JsonResp(payload))
+        assert _ats_api_result(f"https://jobs.ashbyhq.com/o/{pid}", timeout=5) is None

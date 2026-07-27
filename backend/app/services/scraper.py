@@ -14,6 +14,7 @@ Two hard requirements shape this module:
 
 from __future__ import annotations
 
+import html as _html
 import ipaddress
 import re
 import socket
@@ -293,10 +294,94 @@ def _read_capped(response: httpx.Response, limit: int) -> bytes:
     return b"".join(chunks)
 
 
+# --- ATS public APIs --------------------------------------------------------
+# Ashby, Greenhouse, and Lever render the posting client-side, so the HTML a
+# server fetches is an empty shell — trafilatura and BeautifulSoup both come
+# back with nothing. But each exposes a public JSON API that returns the full
+# description keyed off the org + posting id already in the URL. Recognising
+# these turns "tailor from URL" from a dead end into the common case, since job
+# aggregators (Simplify et al.) mostly link to exactly these boards.
+
+_ASHBY_RE = re.compile(r"ashbyhq\.com/([^/?#]+)/([0-9a-f-]{36})", re.IGNORECASE)
+_LEVER_RE = re.compile(r"lever\.co/([^/?#]+)/([0-9a-f-]{36})", re.IGNORECASE)
+_GREENHOUSE_RE = re.compile(r"greenhouse\.io/(?:embed/job_app\?for=)?([^/?#]+).*?(?:/jobs/|token=)(\d+)", re.IGNORECASE)
+
+
+def _html_to_text(fragment: str) -> str:
+    """Plain text from an HTML fragment (the ATS APIs return escaped HTML)."""
+    soup = BeautifulSoup(_html.unescape(fragment or ""), "html.parser")
+    return clean_text(soup.get_text(separator="\n"))
+
+
+def _ats_api_result(url: str, *, timeout: int) -> ScrapeResult | None:
+    """Fetch a posting from a known ATS's public API, or None if not one.
+
+    The request goes to the ATS's fixed public API host (not a user-controlled
+    host), so it needs no SSRF revalidation. A failure returns None so the caller
+    falls back to normal HTML scraping.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    try:
+        if (m := _ASHBY_RE.search(url)) and host.endswith("ashbyhq.com"):
+            org, pid = m.group(1), m.group(2)
+            data = httpx.get(
+                f"https://api.ashbyhq.com/posting-api/job-board/{org}",
+                params={"includeCompensation": "true"}, timeout=timeout,
+            ).json()
+            job = next((j for j in data.get("jobs", []) if j.get("id") == pid), None)
+            if job:
+                text = clean_text(job.get("descriptionPlain") or "") or _html_to_text(
+                    job.get("descriptionHtml") or ""
+                )
+                return _ats_result(url, text, job.get("title"), org, job.get("location"))
+
+        elif (m := _LEVER_RE.search(url)) and host.endswith("lever.co"):
+            org, pid = m.group(1), m.group(2)
+            job = httpx.get(f"https://api.lever.co/v0/postings/{org}/{pid}", timeout=timeout).json()
+            parts = [job.get("descriptionPlain") or _html_to_text(job.get("description") or "")]
+            for section in job.get("lists", []):
+                parts.append(_html_to_text(f"{section.get('text','')}<br>{section.get('content','')}"))
+            loc = (job.get("categories") or {}).get("location")
+            return _ats_result(url, clean_text("\n\n".join(p for p in parts if p)),
+                               job.get("text"), org, loc)
+
+        elif (m := _GREENHOUSE_RE.search(url)) and host.endswith("greenhouse.io"):
+            org, pid = m.group(1), m.group(2)
+            job = httpx.get(
+                f"https://boards-api.greenhouse.io/v1/boards/{org}/jobs/{pid}", timeout=timeout
+            ).json()
+            loc = (job.get("location") or {}).get("name")
+            return _ats_result(url, _html_to_text(job.get("content") or ""),
+                               job.get("title"), org, loc)
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        logger.info("scraper.ats_api_failed", host=host, error=str(exc)[:200])
+    return None
+
+
+def _ats_result(
+    url: str, text: str, title: str | None, org: str, location: str | None
+) -> ScrapeResult | None:
+    """Wrap ATS-API text as a ScrapeResult, or None if it came back too thin."""
+    if len(text) < 120:
+        return None
+    truncated = len(text) > MAX_TEXT_CHARS
+    logger.info("scraper.ats_api_success", url=url, chars=len(text), source=detect_source(url))
+    return ScrapeResult(
+        url=url, source=detect_source(url), title=title,
+        company=org.replace("-", " ").title() if org else None,
+        location=location, text=text[:MAX_TEXT_CHARS], truncated=truncated,
+    )
+
+
 def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
     """Fetch ``url`` and return the cleaned posting text plus any metadata."""
     safe_url = validate_url(url)
     timeout = timeout or settings.scrape_timeout_seconds
+
+    # Fast path: a known ATS (Ashby/Greenhouse/Lever) serves its posting via a
+    # public JSON API — the HTML would be an empty JS shell.
+    if (ats := _ats_api_result(safe_url, timeout=timeout)) is not None:
+        return ats
 
     headers = {
         "User-Agent": settings.scrape_user_agent,
@@ -375,6 +460,10 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
     text = clean_text(extracted or "")
 
     if len(text) < 120:
+        # A redirect may have landed on an ATS (e.g. a Simplify link resolving to
+        # jobs.ashbyhq.com) whose HTML is an empty shell — try its API first.
+        if final_url != safe_url and (ats := _ats_api_result(final_url, timeout=timeout)):
+            return ats
         raise ScrapeError(
             "Could not extract a usable job description from that page - it is "
             "likely rendered by JavaScript or behind a login. Paste the text "
