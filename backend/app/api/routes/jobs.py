@@ -43,7 +43,9 @@ def job_search(
             resume = MasterResume.model_validate(profile.content)
             for r in results:
                 fit = analyze_job_fit(
-                    resume, f"{r.title} {r.company} {' '.join(r.tags)} {r.snippet}"
+                    resume,
+                    f"{r.title} {r.company} {' '.join(r.tags)} {r.snippet}",
+                    title=r.title,
                 )
                 r.match_score = fit.score
                 r.verdict = fit.verdict

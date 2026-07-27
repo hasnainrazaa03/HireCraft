@@ -7,8 +7,9 @@ skill-detection logic backs both the per-job match and the cross-job gap report.
 
 from __future__ import annotations
 
+import math
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date
 
@@ -24,9 +25,57 @@ from app.schemas.resume import MasterResume
 
 _TOKEN = re.compile(r"[a-z0-9+#.]+")
 
+# Filler that carries no matching signal — English + the German that shows up on
+# EU job boards + the (m/w/d) / (f/m/x) gender markers German postings append to
+# every title. Stripped before any title/text comparison so they can't create
+# spurious overlap or dilute cosine similarity.
+_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "with", "at",
+    "as", "by", "is", "are", "be", "we", "you", "our", "your", "will", "who",
+    "that", "this", "role", "job", "position", "team", "work", "working",
+    "experience", "years", "skills", "including", "etc", "using", "used",
+    "und", "oder", "der", "die", "das", "für", "mit", "im", "ein", "eine",
+    "zur", "zum", "als", "von", "bei", "auf", "wir", "sie", "ihre",
+    "m", "w", "d", "f", "x", "mwd", "fmx",
+})
+
+# Title words that denote seniority, not domain — handled by the seniority
+# signal, so they must not count toward title/domain alignment.
+_SENIORITY_WORDS = frozenset({
+    "intern", "internship", "working", "student", "werkstudent", "praktikum",
+    "graduate", "grad", "junior", "entry", "associate", "mid", "senior", "sr",
+    "staff", "principal", "lead", "manager", "head", "director", "vp", "chief",
+})
+
 
 def _tokens(text: str) -> set[str]:
     return set(_TOKEN.findall(text.lower()))
+
+
+def _content_tokens(text: str) -> list[str]:
+    """Meaningful tokens: lower-cased, stopwords/1-char noise removed, order kept."""
+    return [
+        t for t in _TOKEN.findall(text.lower())
+        if t not in _STOPWORDS and (len(t) > 1 or t in {"c", "r", "go"})
+    ]
+
+
+def _tf_cosine(a: list[str], b: list[str]) -> float:
+    """Cosine similarity of two token lists by term frequency (0–1).
+
+    No IDF: with only two documents there is no corpus to weight against, so
+    plain TF cosine — shared terms normalised by length — is the honest measure.
+    """
+    if not a or not b:
+        return 0.0
+    ca, cb = Counter(a), Counter(b)
+    shared = set(ca) & set(cb)
+    if not shared:
+        return 0.0
+    dot = sum(ca[t] * cb[t] for t in shared)
+    na = math.sqrt(sum(v * v for v in ca.values()))
+    nb = math.sqrt(sum(v * v for v in cb.values()))
+    return dot / (na * nb)
 
 
 def _resume_corpus(resume: MasterResume) -> str:
@@ -109,10 +158,62 @@ def _term_present(job_lower: str, term: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(term.lower())}(?![a-z0-9])", job_lower) is not None
 
 
-def analyze_job_fit(resume: MasterResume, job_text: str) -> JobFit:
+def _role_profile(resume: MasterResume) -> list[str]:
+    """The candidate's domain vocabulary — the words that say what they *do*.
+
+    Titles and headline count several times over so the role (e.g. "machine
+    learning engineer") dominates the profile, with skills and field of study
+    filling in the surrounding domain terms. This is what a job title is scored
+    against, so an ML résumé aligns with "Data Scientist" and not "SEO Manager".
+    """
+    parts: list[str] = []
+    for e in resume.experience:
+        parts += _content_tokens(e.title) * 3
+    parts += _content_tokens(resume.basics.headline or "") * 2
+    for g in resume.skills:
+        parts += _content_tokens(" ".join(g.items))
+    for e in resume.experience:
+        parts += [t for tech in e.technologies for t in _content_tokens(tech)]
+    for ed in resume.education:
+        parts += _content_tokens(ed.field_of_study or "")
+    return parts
+
+
+# Job-title level → the candidate level it best fits, on a 0..4 ladder.
+_TITLE_LEVELS: tuple[tuple[frozenset[str], int], ...] = (
+    (frozenset({"intern", "internship", "werkstudent", "praktikum"}), 0),
+    (frozenset({"working", "student"}), 0),
+    (frozenset({"graduate", "grad", "junior", "entry", "associate"}), 1),
+    (frozenset({"staff", "principal", "lead", "head", "director", "vp", "chief"}), 4),
+    (frozenset({"senior", "sr"}), 3),
+    (frozenset({"manager"}), 3),
+)
+
+
+def _title_level(title: str) -> int | None:
+    toks = set(_TOKEN.findall(title.lower()))
+    for words, level in _TITLE_LEVELS:
+        if toks & words:
+            return level
+    return None  # unmarked → treat as mid, no penalty
+
+
+def _resume_level(resume: MasterResume) -> int:
+    years = _estimate_years(resume)
+    return 0 if years < 0.75 else 1 if years < 2.5 else 2 if years < 5 else 3
+
+
+def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> JobFit:
     """Deterministic, LLM-free fit analysis for a job posting: a fit score,
     the requirements the candidate has vs. lacks, and a plain-language summary —
-    so a job card can answer 'should I apply, and why?' with no API call."""
+    so a job card can answer 'should I apply, and why?' with no API call.
+
+    The score blends four signals — domain/title alignment, importance-shrunk
+    skill coverage, full-text similarity, and seniority fit — then shrinks the
+    result toward a neutral prior when the evidence is thin. That fixes the old
+    failure where a job naming one skill you happen to have (the letter "R" in an
+    SEO posting) scored 100% while a relevant "Data Scientist" role scored 12%.
+    """
     corpus, vocab = _skill_index(resume)
     job = job_text.lower()
 
@@ -120,20 +221,59 @@ def analyze_job_fit(resume: MasterResume, job_text: str) -> JobFit:
     strengths = [t for t in present if _claims(t, corpus, vocab)]
     gaps = [t for t in present if not _claims(t, corpus, vocab)]
 
-    if present:
-        score = round(len(strengths) / len(present) * 100)
+    # --- Signal 1: title / domain alignment (strongest discriminator).
+    profile = _role_profile(resume)
+    profile_set = set(profile)
+    title_tokens = [t for t in _content_tokens(title) if t not in _SENIORITY_WORDS]
+    if title_tokens:
+        overlap = sum(1 for t in set(title_tokens) if t in profile_set) / len(set(title_tokens))
+        cos = _tf_cosine(title_tokens, profile)
+        title_align: float | None = max(overlap, cos) * 100
     else:
-        # No recognised tech named — fall back to raw résumé-skill overlap.
-        score = quick_match_score(resume, job_text)[0]
-    score = max(12, min(100, score))
+        title_align = None
+
+    # --- Signal 2: skill coverage, shrunk toward a neutral prior so a lone hit
+    # can't read as a perfect match ((1 hit)/(1 named) is pulled off 100%).
+    if present:
+        alpha, prior = 3.0, 0.4
+        skill_cov: float | None = (len(strengths) + alpha * prior) / (len(present) + alpha) * 100
+    else:
+        skill_cov = None
+
+    # --- Signal 3: full-text similarity over shared content vocabulary.
+    text_sim = min(100.0, _tf_cosine(_content_tokens(job_text), profile) * 260)
+
+    # --- Signal 4: seniority fit.
+    jl = _title_level(title)
+    seniority = 100.0 if jl is None else max(0.0, 100 - 30 * abs(jl - _resume_level(resume)))
+
+    # Blend the available signals (title/skill may be absent), renormalising.
+    weighted = [(title_align, 0.35), (skill_cov, 0.30), (text_sim, 0.25), (seniority, 0.10)]
+    num = sum(v * w for v, w in weighted if v is not None)
+    den = sum(w for v, w in weighted if v is not None)
+    raw = num / den if den else 42.0
+
+    # Confidence: how much did we actually have to go on? Thin evidence (a short,
+    # foreign, or title-less posting naming ≤1 skill) is pulled toward neutral so
+    # it never masquerades as a strong match.
+    evidence = 0.4
+    if title_tokens:
+        evidence += 0.35
+    if len(present) >= 2:
+        evidence += 0.15
+    if len(_content_tokens(job_text)) >= 40:
+        evidence += 0.10
+    evidence = min(1.0, evidence)
+    neutral = 42.0
+    score = max(8, min(98, round(neutral + (raw - neutral) * evidence)))
 
     verdict = (
-        "Excellent Match" if score >= 85
-        else "Great Match" if score >= 70
+        "Excellent Match" if score >= 82
+        else "Great Match" if score >= 68
         else "Good Match" if score >= 50
         else "Fair Match"
     )
-    chance = "High" if score >= 72 else "Medium" if score >= 50 else "Low"
+    chance = "High" if score >= 70 else "Medium" if score >= 48 else "Low"
     return JobFit(
         score=score,
         verdict=verdict,

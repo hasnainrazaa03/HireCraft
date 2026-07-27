@@ -142,15 +142,49 @@ def test_analyze_job_fit_splits_strengths_and_gaps(resume):
     assert fit.summary
 
 
-def test_analyze_job_fit_full_coverage_scores_high(resume):
-    from app.services.matching import analyze_job_fit
-    # Every tech named is in the résumé → high coverage.
-    fit = analyze_job_fit(resume, "We use Python and SQL. That's it.")
-    assert fit.score >= 85 and fit.gaps == []
-
-
 def test_analyze_job_fit_no_tech_is_graceful(resume):
     from app.services.matching import analyze_job_fit
     fit = analyze_job_fit(resume, "A friendly bakery seeks a morning shift helper.")
     assert 0 <= fit.score <= 100
     assert fit.summary  # still writes a summary
+
+
+def test_a_lone_matching_keyword_does_not_score_100(resume):
+    """The old bug: a posting naming one skill you have (here the letter 'R',
+    inside an unrelated SEO role) scored a perfect match. Shrinkage + title
+    alignment must keep it well below a genuine fit."""
+    from app.services.matching import analyze_job_fit
+    seo = analyze_job_fit(
+        resume,
+        "Manager Search Content SEO GEO. Own the content strategy. R and planning.",
+        title="Manager Search Content - SEO & GEO (m/w/d)",
+    )
+    assert seo.score < 50  # not the old 100%
+
+
+def test_relevant_title_outscores_keyword_coincidence(resume):
+    """A role in the candidate's domain must beat an off-domain role that merely
+    happens to name a skill they have — the exact inversion we're fixing."""
+    from app.services.matching import analyze_job_fit
+    swe = analyze_job_fit(
+        resume,
+        "Software Engineer. Build backend services in Python and SQL on the web.",
+        title="Software Engineer",
+    )
+    seo = analyze_job_fit(
+        resume,
+        "SEO content manager. Editorial calendar and keyword research. Uses R.",
+        title="Manager Search Content - SEO & GEO",
+    )
+    assert swe.score > seo.score
+    assert swe.score >= 50 and seo.score < 45
+
+
+def test_title_alignment_lifts_the_score(resume):
+    """The same body scores higher under an on-domain title than an off-domain
+    one — title/domain alignment is doing real work, not just the body text."""
+    from app.services.matching import analyze_job_fit
+    body = "You will write Python and SQL and collaborate across the team."
+    on = analyze_job_fit(resume, f"Software Engineer. {body}", title="Software Engineer")
+    off = analyze_job_fit(resume, f"Warehouse Associate. {body}", title="Warehouse Associate")
+    assert on.score > off.score
