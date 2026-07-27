@@ -136,6 +136,12 @@ export default function JobSearchPage() {
         />
       ) : (
         <>
+          {!query && (
+            <div className="flex items-center gap-2 text-sm text-brand-200">
+              <IconSparkles className="h-4 w-4" />
+              <span>Recommended for your profile — AI-ranked against your résumé. Search above to explore more.</span>
+            </div>
+          )}
           <div className="grid gap-6 xl:grid-cols-2">
             {sorted.map((job) => (
               <JobCard
@@ -148,7 +154,7 @@ export default function JobSearchPage() {
           </div>
           <p className="pt-1 text-center text-xs text-subtle">
             Aggregated from {[...new Set(sorted.map((j) => j.source.split(" · ")[0]))].join(" · ")}
-            {" "}· match scores are an approximate fit against your résumé
+            {" "}· top matches AI-ranked against your résumé
           </p>
         </>
       )}

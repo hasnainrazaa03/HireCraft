@@ -180,6 +180,26 @@ def test_relevant_title_outscores_keyword_coincidence(resume):
     assert swe.score >= 50 and seo.score < 45
 
 
+def test_default_search_query_from_recent_title(resume):
+    """With no headline, the recommended feed keys off the most recent title,
+    stripped of seniority words."""
+    from app.services.matching import default_search_query
+    q = default_search_query(resume)
+    assert "software" in q and "engineering" in q
+    assert "intern" not in q  # seniority word dropped
+
+
+def test_default_search_query_prefers_headline_role():
+    """A headline's leading role phrase wins over history."""
+    from app.schemas.resume import MasterResume
+    from app.services.matching import default_search_query
+    data = {**MASTER_RESUME_FIXTURE}
+    data["basics"] = {**data["basics"],
+                      "headline": "Machine Learning Engineer specializing in NLP systems"}
+    q = default_search_query(MasterResume.model_validate(data))
+    assert q == "machine learning engineer"
+
+
 def test_title_alignment_lifts_the_score(resume):
     """The same body scores higher under an on-domain title than an off-domain
     one — title/domain alignment is doing real work, not just the body text."""

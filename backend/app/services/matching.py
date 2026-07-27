@@ -104,6 +104,35 @@ def _resume_skills(resume: MasterResume) -> set[str]:
     return {s for s in skills if s.strip()}
 
 
+_ROLE_CONNECTIVES = re.compile(
+    r"\b(specializing|specialising|focused|focusing|with|building|passionate|"
+    r"experienced|driven|who)\b|[—,|/·-]",
+    re.IGNORECASE,
+)
+
+
+def default_search_query(resume: MasterResume) -> str:
+    """A job-search query that reflects who the candidate is, for the default
+    (no query typed) feed — so it opens on relevant roles, not a generic list.
+
+    Prefers the role phrase the candidate leads their headline with (what they
+    position themselves as), then their most recent title, then top skills.
+    """
+    headline = resume.basics.headline or ""
+    lead = " ".join(_content_tokens(_ROLE_CONNECTIVES.split(headline, maxsplit=1)[0]))
+    if len(lead.split()) >= 2:
+        return " ".join(lead.split()[:4])
+    if resume.experience:
+        title = " ".join(
+            t for t in _content_tokens(resume.experience[0].title)
+            if t not in _SENIORITY_WORDS
+        )
+        if title:
+            return title
+    skills = sorted(_resume_skills(resume), key=str.lower)
+    return " ".join(skills[:2])
+
+
 def quick_match_score(resume: MasterResume, job_text: str) -> tuple[int, list[str]]:
     """A lightweight, LLM-free fit signal for job-search results.
 
