@@ -86,15 +86,19 @@ def job_search(
     results = search_jobs(effective_q, remote_only=remote_only, limit=limit)
 
     if resume is not None and results:
-        _score(resume, results)
+        precise = _score(resume, results)
         results.sort(key=lambda r: r.match_score or 0, reverse=True)
-        _maybe_rerank(db, user, profile, resume, results, effective_q, remote_only)
+        _maybe_rerank(db, user, profile, resume, results, precise, effective_q, remote_only)
 
     return results
 
 
-def _score(resume: MasterResume, results: list[JobSearchResult]) -> None:
-    """Deterministic, LLM-free fit score for every result."""
+def _score(resume: MasterResume, results: list[JobSearchResult]) -> dict[str, float]:
+    """Deterministic, LLM-free fit score for every result.
+
+    Returns the *unrounded* deterministic score per job so the LLM re-rank can
+    blend on top of a fine-grained base instead of a whole number."""
+    precise: dict[str, float] = {}
     for r in results:
         with contextlib.suppress(Exception):
             fit = analyze_job_fit(
@@ -108,6 +112,14 @@ def _score(resume: MasterResume, results: list[JobSearchResult]) -> None:
             r.summary = fit.summary
             r.strengths = fit.strengths
             r.gaps = fit.gaps
+            precise[_job_key(r)] = fit.score_precise
+    return precise
+
+
+# How much the model's semantic judgment counts vs. the deterministic factors in
+# the final blended score. The deterministic component is a float, which is what
+# keeps the result off whole-number multiples.
+_LLM_WEIGHT = 0.55
 
 
 def _maybe_rerank(
@@ -116,6 +128,7 @@ def _maybe_rerank(
     profile: ResumeProfile,
     resume: MasterResume,
     results: list[JobSearchResult],
+    precise: dict[str, float],
     query: str | None,
     remote_only: bool,
 ) -> None:
@@ -128,7 +141,7 @@ def _maybe_rerank(
     )
     cached = _rerank_cache_get(cache_key)
     if cached is not None:
-        _apply_rerank(results, cached)
+        _apply_rerank(results, cached, precise)
         return
 
     try:
@@ -150,7 +163,7 @@ def _maybe_rerank(
         for i, (score, reason) in ranked.items()
     }
     _rerank_cache_set(cache_key, by_key)
-    _apply_rerank(results, by_key)
+    _apply_rerank(results, by_key, precise)
 
     for purpose, usage in ledger.entries:
         db.add(LlmUsage(
@@ -161,12 +174,25 @@ def _maybe_rerank(
     db.commit()
 
 
-def _apply_rerank(results: list[JobSearchResult], by_key: dict[str, list]) -> None:
+def _apply_rerank(
+    results: list[JobSearchResult],
+    by_key: dict[str, list],
+    precise: dict[str, float],
+) -> None:
+    """Blend the model's semantic score with the deterministic factor score.
+
+    The final number weighs the LLM's holistic judgment against the deterministic
+    breakdown (title/skills/text/seniority), keeping the model's reason. Blending
+    a float base is also what makes the score granular instead of the model's
+    habitual multiples of five."""
     for r in results:
         hit = by_key.get(_job_key(r))
         if not hit:
             continue
-        score, reason = int(hit[0]), (hit[1] or "").strip()
+        llm_score, reason = float(hit[0]), (hit[1] or "").strip()
+        base = precise.get(_job_key(r), float(r.match_score or llm_score))
+        blended = _LLM_WEIGHT * llm_score + (1 - _LLM_WEIGHT) * base
+        score = max(1, min(99, round(blended)))
         r.match_score = score
         r.verdict = _verdict(score)
         r.interview_chance = _chance(score)

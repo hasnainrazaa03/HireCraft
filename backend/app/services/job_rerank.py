@@ -39,8 +39,11 @@ For every job, return a fit score 0-100 and a one-line reason:
 - 0-24: unrelated.
 
 Judge on the actual role and requirements, not surface keyword matches — a lone
-shared word is not a match. The reason must reference the posting, cite nothing
-that isn't there, and stay under 16 words. Return one entry per job index."""
+shared word is not a match. Weigh domain fit, seniority, the specific tech stack,
+and how many of the candidate's real strengths the role uses. Score precisely —
+use the full range (e.g. 63, 78, 41), not round multiples of five or ten. The
+reason must reference the posting, cite nothing that isn't there, and stay under
+16 words. Return one entry per job index."""
 
 
 class _Ranked(BaseModel):

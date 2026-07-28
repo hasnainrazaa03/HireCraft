@@ -64,6 +64,23 @@ def test_rerank_ignores_out_of_range_indices():
     assert set(out) == {0}
 
 
+def test_apply_rerank_blends_llm_with_deterministic_base():
+    """The final score is a blend of the model's score and the fine-grained
+    deterministic base — not the model's (often round) number verbatim."""
+    from app.api.routes.jobs import _LLM_WEIGHT, _apply_rerank, _job_key
+
+    job = _job("ML Engineer", "A")
+    job.match_score = 60  # deterministic rounded (display) value
+    key = _job_key(job)
+    precise = {key: 58.4}  # fine-grained deterministic base
+    by_key = {key: [90, "Strong fit"]}
+    _apply_rerank([job], by_key, precise)
+    expected = round(_LLM_WEIGHT * 90 + (1 - _LLM_WEIGHT) * 58.4)
+    assert job.match_score == expected
+    assert 58 < job.match_score < 90  # strictly between the two inputs
+    assert job.summary == "Strong fit"
+
+
 def test_rerank_empty_jobs_makes_no_call():
     called = {"n": 0}
 

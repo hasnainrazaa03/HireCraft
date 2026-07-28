@@ -181,6 +181,11 @@ class JobFit:
     gaps: list[str]
     interview_chance: str  # High | Medium | Low
     summary: str
+    # The unrounded score, kept so a caller (the LLM re-rank) can blend on top
+    # without collapsing everything onto whole numbers.
+    score_precise: float = 0.0
+    # Per-signal breakdown (0–100 each), for explainability / future tuning.
+    factors: dict[str, float] | None = None
 
 
 def _term_present(job_lower: str, term: str) -> bool:
@@ -276,25 +281,41 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
     jl = _title_level(title)
     seniority = 100.0 if jl is None else max(0.0, 100 - 30 * abs(jl - _resume_level(resume)))
 
-    # Blend the available signals (title/skill may be absent), renormalising.
-    weighted = [(title_align, 0.35), (skill_cov, 0.30), (text_sim, 0.25), (seniority, 0.10)]
+    # --- Signal 5: skill breadth — how many distinct real skills the posting
+    # actually hits, not just the ratio. A job that names five of your skills is a
+    # better bet than one that names one, even if both are "fully covered". Scaled
+    # so ~6 concrete hits saturates.
+    breadth = min(100.0, len(strengths) * 16.0) if strengths else 0.0
+    breadth_signal: float | None = breadth if present else None
+
+    # Blend the available signals (title/skill may be absent), renormalising over
+    # whatever is present so a missing signal doesn't silently drag the score.
+    weighted = [
+        (title_align, 0.32),
+        (skill_cov, 0.24),
+        (text_sim, 0.22),
+        (breadth_signal, 0.12),
+        (seniority, 0.10),
+    ]
     num = sum(v * w for v, w in weighted if v is not None)
     den = sum(w for v, w in weighted if v is not None)
     raw = num / den if den else 42.0
 
     # Confidence: how much did we actually have to go on? Thin evidence (a short,
     # foreign, or title-less posting naming ≤1 skill) is pulled toward neutral so
-    # it never masquerades as a strong match.
-    evidence = 0.4
-    if title_tokens:
-        evidence += 0.35
-    if len(present) >= 2:
-        evidence += 0.15
-    if len(_content_tokens(job_text)) >= 40:
-        evidence += 0.10
-    evidence = min(1.0, evidence)
+    # it never masquerades as a strong match. Graduated, not a step, so the final
+    # score varies smoothly rather than snapping between bands.
+    jd_len = len(_content_tokens(job_text))
+    evidence = min(
+        1.0,
+        0.4
+        + (0.32 if title_tokens else 0.0)
+        + min(0.18, 0.06 * len(present))
+        + min(0.10, jd_len / 400),
+    )
     neutral = 42.0
-    score = max(8, min(98, round(neutral + (raw - neutral) * evidence)))
+    precise = max(6.0, min(98.0, neutral + (raw - neutral) * evidence))
+    score = round(precise)
 
     verdict = (
         "Excellent Match" if score >= 82
@@ -310,6 +331,15 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
         gaps=gaps[:6],
         interview_chance=chance,
         summary=_fit_summary(score, strengths, gaps),
+        score_precise=precise,
+        factors={
+            "title_alignment": round(title_align, 1) if title_align is not None else -1.0,
+            "skill_coverage": round(skill_cov, 1) if skill_cov is not None else -1.0,
+            "text_similarity": round(text_sim, 1),
+            "skill_breadth": round(breadth, 1),
+            "seniority_fit": round(seniority, 1),
+            "confidence": round(evidence, 2),
+        },
     )
 
 
