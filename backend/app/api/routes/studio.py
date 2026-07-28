@@ -8,6 +8,7 @@ exports to PDF, DOCX, or LaTeX just like a résumé does.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -42,9 +43,35 @@ from app.services.llm.client import (
 from app.services.llm.factory import client_for_user
 from app.services.llm.prompts import COVER_LETTER_TONES, OUTREACH_KINDS
 from app.services.pipeline import UsageLedger, compose_cover_letter, generate_outreach
+from app.services.scraper import ScrapeError, scrape_job
 
 router = APIRouter(prefix="/studio", tags=["studio"])
 logger = get_logger(__name__)
+
+_URL_ONLY = re.compile(r"^https?://\S+$", re.IGNORECASE)
+
+
+def _resolve_job(
+    job_text: str, company: str | None, role: str | None
+) -> tuple[str, str | None, str | None]:
+    """Turn a job field that may be a URL into real posting text + company/role.
+
+    A user can paste either the description or a link. A bare URL is scraped (via
+    the same fetcher tailoring uses, so Ashby/Greenhouse/Lever resolve through
+    their APIs), and the company/role are filled from the posting when the user
+    left them blank — so the letter is addressed to the actual employer instead
+    of "the company". Pasted text is used as-is."""
+    text = job_text.strip()
+    if not _URL_ONLY.match(text):
+        return job_text, company, role
+    try:
+        scraped = scrape_job(text)
+    except ScrapeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Couldn't read that job link — {exc} Paste the description text instead.",
+        ) from exc
+    return scraped.text, (company or scraped.company), (role or scraped.title)
 
 _TONE_LABELS = {
     "traditional": "Traditional",
@@ -134,13 +161,17 @@ def generate_cover_letter(
     resume = MasterResume.model_validate(profile.content)
     voice = _voice_for(db, user.id) if payload.use_voice else None
 
+    job_text, company, role = _resolve_job(
+        payload.job_text, payload.company, payload.role
+    )
+
     ledger = UsageLedger()
     try:
         paragraphs, report = compose_cover_letter(
             resume,
-            payload.job_text,
-            company=payload.company,
-            role=payload.role,
+            job_text,
+            company=company,
+            role=role,
             tone=payload.tone,
             voice=voice,
             client=_client_for(user),

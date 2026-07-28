@@ -142,13 +142,16 @@ function CoverLetterStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
       <div className="card space-y-4 p-5">
         <ResumePicker resumes={resumes} value={resumeId} onChange={setResumeId} />
         <div>
-          <label className="label">Job description</label>
+          <label className="label">Job description or link</label>
           <textarea
             className="input min-h-[140px]"
-            placeholder="Paste the job posting here…"
+            placeholder="Paste the job posting text — or a job URL and we'll pull it in…"
             value={jobText}
             onChange={(e) => setJobText(e.target.value)}
           />
+          <p className="mt-1 text-xs text-subtle">
+            Paste a link (Ashby, Greenhouse, Lever…) and we'll fetch the posting and fill in the company &amp; role.
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Company" value={company} onChange={setCompany} placeholder="Globex" />

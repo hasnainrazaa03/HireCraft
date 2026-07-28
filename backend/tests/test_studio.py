@@ -159,3 +159,59 @@ def test_cover_letter_docx_is_a_valid_document(master: MasterResume):
     )
     assert data[:2] == b"PK"  # .docx is a zip
     assert len(data) > 1000
+
+
+# --- Cover-letter job field: URL vs. pasted text ----------------------------
+
+
+class _FakeScrape:
+    def __init__(self, text, company, title):
+        self.text, self.company, self.title = text, company, title
+        self.url = self.source = self.location = None
+        self.truncated = False
+
+
+def test_resolve_job_passes_through_pasted_text():
+    from app.api.routes import studio
+
+    text, company, role = studio._resolve_job("We need a Python engineer.", None, None)
+    assert text == "We need a Python engineer." and company is None and role is None
+
+
+def test_resolve_job_scrapes_a_url_and_fills_company_and_role(monkeypatch):
+    from app.api.routes import studio
+
+    monkeypatch.setattr(
+        studio, "scrape_job",
+        lambda url: _FakeScrape("Full posting text for the ML role.", "Quora", "ML Engineer"),
+    )
+    text, company, role = studio._resolve_job("https://jobs.ashbyhq.com/quora/abc", None, None)
+    assert text.startswith("Full posting") and company == "Quora" and role == "ML Engineer"
+
+
+def test_resolve_job_keeps_user_company_and_role_over_scraped(monkeypatch):
+    from app.api.routes import studio
+
+    monkeypatch.setattr(
+        studio, "scrape_job",
+        lambda url: _FakeScrape("Posting.", "ScrapedCo", "ScrapedRole"),
+    )
+    _, company, role = studio._resolve_job("https://x.co/1", "MyCo", "My Role")
+    assert company == "MyCo" and role == "My Role"
+
+
+def test_resolve_job_unreadable_url_raises_422(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+
+    from app.api.routes import studio
+    from app.services.scraper import ScrapeError
+
+    def _boom(url):
+        raise ScrapeError("rendered by JavaScript.")
+
+    monkeypatch.setattr(studio, "scrape_job", _boom)
+    with pytest.raises(HTTPException) as exc:
+        studio._resolve_job("https://jobs.bytedance.com/x", None, None)
+    assert exc.value.status_code == 422
+    assert "Paste the description" in exc.value.detail
