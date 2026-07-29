@@ -195,7 +195,18 @@ def generate_cover_letter(
         tone=payload.tone,
         used_voice=voice is not None,
         cost_usd=ledger.cost_usd,
+        greeting=_greeting(payload.hiring_manager, company),
+        signature=resume.basics.name,
     )
+
+
+def _greeting(hiring_manager: str | None, company: str | None) -> str:
+    """Same salutation the export template builds, so preview matches export."""
+    if hiring_manager:
+        return f"Dear {hiring_manager},"
+    if company:
+        return f"Dear Hiring Team at {company},"
+    return "Dear Hiring Team,"
 
 
 @router.post("/cover-letters/render.{fmt}")

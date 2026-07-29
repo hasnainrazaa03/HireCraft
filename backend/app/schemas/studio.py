@@ -57,6 +57,10 @@ class CoverLetterResult(StudioModel):
     tone: CoverLetterTone
     used_voice: bool
     cost_usd: float
+    # Salutation + sign-off so the preview reads as a real letter, matching what
+    # the PDF/DOCX export renders around the body paragraphs.
+    greeting: str = ""
+    signature: str = ""
 
 
 class CoverLetterRenderRequest(StudioModel):

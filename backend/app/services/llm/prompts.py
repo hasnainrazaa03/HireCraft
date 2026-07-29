@@ -287,12 +287,16 @@ Constraints, all mechanically verified afterwards:
 - Use ONLY facts present in the candidate's resume. No invented metrics, employers, \
 technologies, or motivations.
 - Never claim a skill the candidate has not listed.
-- 3 to 4 paragraphs, under 320 words total. No filler, no "I am writing to express my \
-interest in".
-- Open with something concrete about the candidate's most relevant real experience.
-- Reference the specific company and role.
-- Close briefly and professionally. Do not include a salutation or sign-off - those are \
-added by the template.
+- Four well-developed paragraphs, roughly 300-380 words total. No filler, no "I am \
+writing to express my interest in".
+- Paragraph 1 (opening): hook with the single most relevant, concrete piece of real \
+experience, and name the specific role and company.
+- Paragraphs 2-3 (body): connect the candidate's actual experience, skills, and \
+projects to what this role needs — specific, evidence-backed, not a restatement of \
+the resume.
+- Paragraph 4 (closing): a brief, confident close referencing the company and a \
+forward-looking note. Do not include a salutation or sign-off - those are added by \
+the template.
 
 Return a JSON object with a `paragraphs` array of strings.
 """

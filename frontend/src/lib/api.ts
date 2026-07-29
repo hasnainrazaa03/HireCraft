@@ -746,6 +746,8 @@ export interface CoverLetterResult {
   tone: string;
   used_voice: boolean;
   cost_usd: number;
+  greeting: string;
+  signature: string;
 }
 
 export interface OutreachResult {

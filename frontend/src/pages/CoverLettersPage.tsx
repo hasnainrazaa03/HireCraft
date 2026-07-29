@@ -221,17 +221,31 @@ function CoverLetterStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
                 regenerate.
               </div>
             ) : (
-              <div className="space-y-3 rounded-xl border border-white/[0.06] bg-surface-2 p-4">
+              <div className="space-y-4 rounded-xl border border-white/[0.06] bg-surface-2 p-5">
+                {result.greeting && (
+                  <p className="text-sm leading-relaxed text-content">{result.greeting}</p>
+                )}
                 {result.paragraphs.map((p, i) => (
                   <p key={i} className="text-sm leading-relaxed text-content">{p}</p>
                 ))}
+                <div className="pt-1 text-sm leading-relaxed text-content">
+                  <p>Sincerely,</p>
+                  {result.signature && <p className="mt-3 font-medium">{result.signature}</p>}
+                </div>
               </div>
             )}
 
             {/* Nothing survived verification — there is no letter to copy or export. */}
             {result.paragraphs.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                <CopyButton text={result.paragraphs.join("\n\n")} label="Copy text" />
+                <CopyButton
+                  text={[
+                    result.greeting,
+                    ...result.paragraphs,
+                    `Sincerely,\n${result.signature}`,
+                  ].filter(Boolean).join("\n\n")}
+                  label="Copy text"
+                />
                 <button onClick={() => void exportAs("pdf")} disabled={!!exporting} className="btn-secondary btn-sm">
                   {exporting === "pdf" ? "…" : "PDF"}
                 </button>

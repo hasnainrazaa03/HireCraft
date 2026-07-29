@@ -53,7 +53,7 @@ export default function NotificationBell() {
       >
         <IconBell className="h-[18px] w-[18px]" />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-hotpink px-1 text-[10px] font-semibold text-white">
+          <span className="pointer-events-none absolute right-1 top-1 flex h-4 min-w-[16px] -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full bg-hotpink px-1 text-[10px] font-bold leading-none tabular-nums text-white ring-2 ring-canvas">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
