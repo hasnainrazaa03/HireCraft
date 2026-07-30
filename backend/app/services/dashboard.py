@@ -273,11 +273,14 @@ def _best_resume(db: Session, apps: list) -> NamedCount | None:
     ranking = interviews if interviews else usage
     if not ranking:
         return None
-    profile_id, count = ranking.most_common(1)[0]
+    profile_id, _ = ranking.most_common(1)[0]
     profile = db.get(ResumeProfile, profile_id)
     if profile is None:
         return None
-    return NamedCount(name=profile.name, count=count)
+    # count is always the interview count for the chosen résumé — 0 when nothing
+    # has reached interview yet — so the UI never claims a draft "landed an
+    # interview" just because it was the most-used (the ranking fallback).
+    return NamedCount(name=profile.name, count=interviews[profile_id])
 
 
 def _activity(db: Session, user_id: uuid.UUID, apps: list) -> list[ActivityItem]:

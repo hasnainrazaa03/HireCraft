@@ -200,6 +200,20 @@ def test_best_resume_prefers_interviews(db, user):
     assert best is not None and best.name == "Résumé A"
 
 
+def test_best_resume_reports_zero_interviews_when_none(db, user):
+    """A résumé that's only been used — nothing has reached interview — must
+    report count 0, so the UI shows 'most-used' instead of claiming an interview
+    it never landed."""
+    a = ResumeProfile(user_id=user.id, name="Draft-only", content=MASTER_RESUME_FIXTURE)
+    db.add(a)
+    db.flush()
+    _app(db, user, a, tracker=TrackerStatus.DRAFT)
+
+    best = build_overview(db, user.id).best_resume
+    assert best is not None and best.name == "Draft-only"
+    assert best.count == 0
+
+
 def test_activity_feed_is_sorted_and_bounded(db, user, resume):
     for i in range(20):
         _app(db, user, resume, title=f"Role {i}", tracker=TrackerStatus.OFFER)
