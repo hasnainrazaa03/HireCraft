@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   api,
+  fetchAll,
   type AnalyticsOverview,
   type ApplicationSummary,
   type TrackerStats,
@@ -31,6 +32,7 @@ const ACTIVE_PIPELINE = new Set([
 ]);
 
 const BOARD: { status: TrackerStatus; label: string; accent: string }[] = [
+  { status: "preparing", label: "Preparing", accent: "bg-coral" },
   { status: "applied", label: "Applied", accent: "bg-electric" },
   { status: "screening", label: "Screening", accent: "bg-brand-400" },
   { status: "interviewing", label: "Interviewing", accent: "bg-hotpink" },
@@ -48,14 +50,15 @@ function greeting() {
 export default function DashboardPage() {
   const { user } = useAuth();
 
-  const { data: applications = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["applications"],
-    queryFn: () => api.get<ApplicationSummary[]>("/applications?limit=200"),
+    queryFn: () => fetchAll<ApplicationSummary>("/applications"),
     refetchInterval: (q) =>
-      (q.state.data ?? []).some((a) => ACTIVE_PIPELINE.has(a.pipeline_status))
+      (q.state.data?.items ?? []).some((a) => ACTIVE_PIPELINE.has(a.pipeline_status))
         ? 3000
         : false,
   });
+  const applications = data?.items ?? [];
 
   const { data: stats } = useQuery({
     queryKey: ["tracker-stats"],
@@ -73,10 +76,14 @@ export default function DashboardPage() {
   });
 
   const grouped = useMemo(() => {
-    // Fold the full tracker stage set into the dashboard's five summary columns.
+    // Fold the full tracker stage set into the dashboard's summary columns. This
+    // mirrors the Applications board: a draft is "Preparing" (not yet submitted),
+    // NOT "Applied" — otherwise the dashboard claims an application you haven't
+    // sent, and the card the board files under Preparing looks missing here.
     const bucket: Record<TrackerStatus, TrackerStatus> = {
-      wishlist: "applied", saved: "applied", preparing: "applied",
-      draft: "applied", applied: "applied", assessment: "applied",
+      wishlist: "preparing", saved: "preparing", preparing: "preparing",
+      draft: "preparing",
+      applied: "applied", assessment: "applied",
       screening: "screening",
       interviewing: "interviewing", technical: "interviewing",
       behavioral: "interviewing", final: "interviewing",
