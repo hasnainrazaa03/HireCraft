@@ -15,6 +15,7 @@ from app.db.base import Base, JsonB, TimestampMixin
 if TYPE_CHECKING:
     from app.models.application import Application
     from app.models.auth import AuthToken, Session
+    from app.models.evidence import EvidenceItem
     from app.models.job import Job
     from app.models.notification import Notification
     from app.models.profile import CareerProfile
@@ -90,6 +91,11 @@ class User(Base, TimestampMixin):
     )
     notifications: Mapped[list[Notification]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    evidence_items: Mapped[list[EvidenceItem]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="EvidenceItem.created_at.desc()",
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

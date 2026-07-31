@@ -22,6 +22,7 @@ from app.api.routes import (
     companies,
     config,
     copilot,
+    evidence,
     export,
     health,
     insights,
@@ -212,9 +213,9 @@ async def validation_exception_handler(
 
 app.include_router(health.router)
 for module in (
-    auth, oauth, account, profile, writing, resumes, applications, studio, companies,
-    insights, interview, jobs, notifications, copilot, export, admin, config,
-    analytics,
+    auth, oauth, account, profile, writing, evidence, resumes, applications, studio,
+    companies, insights, interview, jobs, notifications, copilot, export, admin,
+    config, analytics,
 ):
     app.include_router(module.router, prefix=settings.api_v1_prefix)
 

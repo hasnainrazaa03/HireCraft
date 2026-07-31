@@ -11,6 +11,7 @@ from app.models.application import (
     TrackerStatus,
 )
 from app.models.auth import AuthToken, AuthTokenPurpose, Session
+from app.models.evidence import EvidenceItem, EvidenceKind
 from app.models.feature_flag import FeatureFlag
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
@@ -26,6 +27,8 @@ __all__ = [
     "AuthToken",
     "AuthTokenPurpose",
     "CareerProfile",
+    "EvidenceItem",
+    "EvidenceKind",
     "FeatureFlag",
     "Job",
     "LlmUsage",
