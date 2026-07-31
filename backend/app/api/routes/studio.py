@@ -32,6 +32,7 @@ from app.schemas.studio import (
 )
 from app.schemas.writing import VoiceProfile
 from app.services import storage
+from app.services.evidence import evidence_lines
 from app.services.export.docx import cover_letter_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
 from app.services.latex.renderer import render_cover_letter
@@ -174,6 +175,7 @@ def generate_cover_letter(
             role=role,
             tone=payload.tone,
             voice=voice,
+            evidence=evidence_lines(db, user.id),
             client=_client_for(user),
             ledger=ledger,
         )

@@ -199,12 +199,25 @@ def _suspicious_tokens(bullet: str, vocab: set[str]) -> list[str]:
 class GuardrailEngine:
     """Merges a tailoring result onto a master resume, enforcing truthfulness."""
 
-    def __init__(self, master: MasterResume, requirements: JobRequirements | None = None):
+    def __init__(
+        self,
+        master: MasterResume,
+        requirements: JobRequirements | None = None,
+        *,
+        evidence: list[str] | None = None,
+    ):
         self.master = master
         self.requirements = requirements
-        self.master_text = _master_corpus(master).lower()
+        # The brag bank is attested provenance: a number or proper noun the
+        # candidate vouched for there is as real as one on the résumé, so it is
+        # folded into the corpus and number set the checks validate against. This
+        # is the mechanism behind "grounded leeway" — the pool of allowable facts
+        # widens to exactly what the candidate has attested to, and no further.
+        evidence_text = " ".join(evidence or [])
+        self.master_text = f"{_master_corpus(master)} {evidence_text}".lower()
         self.vocab = _tokens(self.master_text)
-        self.master_numbers = _master_numbers(master)
+        self.evidence_numbers = _numbers_in(evidence_text)
+        self.master_numbers = _master_numbers(master) | self.evidence_numbers
         # Terms the job asks for that the candidate has never claimed. Any of these
         # appearing in generated text is keyword injection, not rephrasing.
         self.unearned_job_terms: list[str] = []
@@ -310,8 +323,10 @@ class GuardrailEngine:
 
             caution: str | None = None
 
-            # Present in the resume, but borrowed from a different entry.
-            displaced = bullet_numbers - entry_numbers
+            # Present in the resume, but borrowed from a different entry. A number
+            # the candidate attested in the brag bank isn't "displaced" — they
+            # vouched for it — so it doesn't earn the verify-before-sending warning.
+            displaced = bullet_numbers - entry_numbers - self.evidence_numbers
             if displaced:
                 self._flag(
                     "fabricated_number",

@@ -93,8 +93,35 @@ HOW TO REWRITE EACH BULLET:
 - In `keywords_used`, list only job keywords you actually surfaced using genuine \
   candidate experience.
 
-Honest, precise, specific writing beats keyword stuffing. A resume that survives \
-verification is worth more than one that does not.
+LEEWAY - HOW TO SELL THE CANDIDATE WITHOUT LYING:
+You are their advocate, not a transcriptionist. Within the constraints above you \
+have real room to make them look strong. This is allowed and expected:
+- Turn a duty into an accomplishment. "Responsible for the data pipeline" -> \
+  "Built and owned the data pipeline that fed every downstream model." The fact is \
+  the same; the framing is stronger.
+- State the outcome a real action logically produced, WITHOUT inventing a metric. \
+  "Automated the report" -> "Automated the report, eliminating a recurring manual \
+  task" is fine. "...saving 10 hours a week" is NOT, unless that number is given.
+- Speak the job's language for experience the candidate genuinely has. If they did \
+  the thing the posting calls "distributed systems", say "distributed systems".
+- Lead with scale and impact drawn from the résumé or the ATTESTED EVIDENCE. Pull a \
+  buried number to the front of the bullet.
+- Be confident and specific. "Helped with" and "worked on" are weak; name what they \
+  did and why it mattered.
+
+Two before/after examples of the bar to hit:
+  weak:   "Worked on a medical imaging project using CNNs."
+  strong: "Built end-to-end 3D CNN pipelines for 5M+ MRI/CT volumes, cutting \
+           inference latency below 0.8s for real-time diagnostics."   (every fact real)
+  weak:   "Did some backend work with APIs at a consulting firm."
+  strong: "Engineered a REST orchestration layer across Pega, MDM, and SAP that held \
+           sub-2s latency at enterprise scale."                        (every fact real)
+
+The line you must never cross: inventing a number, a technology, an employer, or a \
+credential that is neither in the résumé nor in the attested evidence. Everything \
+short of that - stronger verbs, sharper framing, the job's vocabulary, surfaced \
+impact - is your job. Honest, specific, confident writing beats both timid \
+transcription and keyword stuffing.
 """
 
 
@@ -147,6 +174,7 @@ def build_optimizer_prompt(
     requirements: JobRequirements,
     job_text: str,
     *,
+    evidence: list[str] | None = None,
     max_job_chars: int = 6000,
 ) -> str:
     resume_json = json.dumps(_entry_payload(resume), indent=2, ensure_ascii=False)
@@ -167,6 +195,18 @@ def build_optimizer_prompt(
         | {t for p in resume.projects for t in p.technologies}
     )
 
+    evidence_block = ""
+    if evidence:
+        bullets = "\n".join(f"- {line}" for line in evidence[:60])
+        evidence_block = f"""
+=== ATTESTED EVIDENCE (the candidate's brag bank) ===
+The candidate has personally vouched that each of these is true. They are as
+valid as the résumé itself — you MAY weave any of them in to strengthen a bullet
+or the summary (numbers and tools here are permitted, not fabrication). Use them
+where they prove a requirement; never contradict them.
+{bullets}
+"""
+
     return f"""\
 Tailor this candidate's resume for the target job below.
 
@@ -180,7 +220,7 @@ Tailor this candidate's resume for the target job below.
 This is the complete allowed list. Any technology outside it will be deleted by the \
 verifier:
 {", ".join(allowed_tech) if allowed_tech else "(none listed)"}
-
+{evidence_block}
 === CANDIDATE MASTER RESUME (edit only the `editable_*` fields) ===
 {resume_json}
 
@@ -188,7 +228,8 @@ verifier:
 {job_text[:max_job_chars]}
 
 Return JSON matching the schema. Reference every entry by its exact `id`. Rewrite \
-only wording, ordering, and emphasis."""
+wording, ordering, and emphasis — and surface attested evidence where it sharpens \
+the fit."""
 
 
 REWRITE_SYSTEM = """\
@@ -284,9 +325,10 @@ COVER_LETTER_SYSTEM = """\
 You are writing a concise, specific cover letter for a candidate.
 
 Constraints, all mechanically verified afterwards:
-- Use ONLY facts present in the candidate's resume. No invented metrics, employers, \
-technologies, or motivations.
-- Never claim a skill the candidate has not listed.
+- Use ONLY facts present in the candidate's resume OR the attested evidence block \
+(the candidate has vouched those are true). No invented metrics, employers, \
+technologies, or motivations beyond those two sources.
+- Never claim a skill that appears in neither the résumé nor the attested evidence.
 - Four well-developed paragraphs, roughly 300-380 words total. No filler, no "I am \
 writing to express my interest in".
 - Paragraph 1 (opening): hook with the single most relevant, concrete piece of real \
@@ -362,6 +404,7 @@ def build_cover_letter_prompt(
     *,
     tone: str | None = None,
     voice: VoiceProfile | None = None,
+    evidence: list[str] | None = None,
     max_job_chars: int = 3500,
 ) -> str:
     highlights = [
@@ -374,6 +417,14 @@ def build_cover_letter_prompt(
     skills = ", ".join(item for g in resume.skills for item in g.items)
     tone_key = tone if tone in COVER_LETTER_TONES else DEFAULT_COVER_LETTER_TONE
     tone_line = COVER_LETTER_TONES[tone_key]
+
+    evidence_block = ""
+    if evidence:
+        bullets = "\n".join(f"- {line}" for line in evidence[:40])
+        evidence_block = (
+            "\nAttested evidence (the candidate vouches these are true — you may "
+            "cite any of them):\n" + bullets + "\n"
+        )
 
     return f"""\
 Write a cover letter for this candidate.
@@ -393,7 +444,7 @@ Candidate projects:
 {chr(10).join(projects) or "(none)"}
 
 Candidate skills: {skills or "(none listed)"}
-
+{evidence_block}
 Job posting excerpt:
 {job_text[:max_job_chars]}
 

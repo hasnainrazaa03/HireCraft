@@ -24,6 +24,7 @@ from app.schemas.job import ScrapeResult
 from app.schemas.resume import MasterResume
 from app.services import storage
 from app.services.email.sender import Email, EmailError, send_email
+from app.services.evidence import evidence_lines
 from app.services.latex.compiler import LatexCompilationError
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.llm.factory import LlmClient, client_for_user
@@ -168,6 +169,9 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
         include_cover_letter = application.include_cover_letter
         master = MasterResume.model_validate(application.resume_profile.content)
         template = application.resume_profile.template
+        # The brag bank: attested facts the engine may surface and the guardrails
+        # treat as valid provenance. Loaded here while the session is open.
+        evidence = evidence_lines(db, user_id)
         # Build the client for the provider/model this user actually selected,
         # billing their own key when they have one. Done here, while the session
         # is open, because it reads their encrypted keys and saved selection.
@@ -214,6 +218,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
             master,
             scrape,
             include_cover_letter=include_cover_letter,
+            evidence=evidence,
             template=template,
             on_progress=on_progress,
             client=client,

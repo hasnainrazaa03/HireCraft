@@ -126,13 +126,17 @@ def optimize_resume(
     requirements: JobRequirements,
     job_text: str,
     *,
+    evidence: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
-    """Stage 3: rewrite presentation, then enforce truthfulness."""
+    """Stage 3: rewrite presentation, then enforce truthfulness.
+
+    ``evidence`` is the candidate's brag bank — attested facts the model may draw
+    on and the guardrails treat as valid provenance (see GuardrailEngine)."""
     client = client or get_client()
     result: LlmResult[TailoringResult] = client.generate_structured(
-        prompt=build_optimizer_prompt(master, requirements, job_text),
+        prompt=build_optimizer_prompt(master, requirements, job_text, evidence=evidence),
         schema=TailoringResult,
         system_instruction=OPTIMIZER_SYSTEM,
         temperature=settings.llm_temperature,
@@ -140,7 +144,9 @@ def optimize_resume(
     if ledger is not None:
         ledger.record("optimize_resume", result.usage)
 
-    tailored, report = GuardrailEngine(master, requirements).apply(result.data)
+    tailored, report = GuardrailEngine(
+        master, requirements, evidence=evidence
+    ).apply(result.data)
     diff = build_diff(master, tailored)
 
     errors = [v for v in report.violations if v.severity == "error"]
@@ -249,6 +255,7 @@ def draft_cover_letter(
     *,
     tone: str | None = None,
     voice: VoiceProfile | None = None,
+    evidence: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> list[str]:
@@ -256,7 +263,7 @@ def draft_cover_letter(
     client = client or get_client()
     result: LlmResult[CoverLetterDraft] = client.generate_structured(
         prompt=build_cover_letter_prompt(
-            resume, requirements, job_text, tone=tone, voice=voice
+            resume, requirements, job_text, tone=tone, voice=voice, evidence=evidence
         ),
         schema=CoverLetterDraft,
         system_instruction=COVER_LETTER_SYSTEM,
@@ -265,8 +272,9 @@ def draft_cover_letter(
     if ledger is not None:
         ledger.record("cover_letter", result.usage)
 
-    # Reuse the resume guardrails: a cover letter must not out-claim the resume.
-    engine = GuardrailEngine(resume, requirements)
+    # Reuse the resume guardrails: a cover letter must not out-claim the resume
+    # (plus the attested brag bank).
+    engine = GuardrailEngine(resume, requirements, evidence=evidence)
     vetted: list[str] = []
     for paragraph in result.data.paragraphs:
         if engine.vet_paragraph(paragraph) is not None:
@@ -284,6 +292,7 @@ def compose_cover_letter(
     role: str | None = None,
     tone: str = "modern",
     voice: VoiceProfile | None = None,
+    evidence: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[list[str], GuardrailReport]:
@@ -291,14 +300,14 @@ def compose_cover_letter(
 
     No job extraction is run — a lightweight requirements object (just role +
     company) is enough for the prompt, so this is a single LLM call. Paragraphs
-    that make a claim the résumé does not support are dropped, and the report
-    surfaces exactly what (if anything) was removed.
+    that make a claim neither the résumé nor the attested brag bank supports are
+    dropped, and the report surfaces exactly what (if anything) was removed.
     """
     client = client or get_client()
     requirements = JobRequirements(title=role, company=company)
     result: LlmResult[CoverLetterDraft] = client.generate_structured(
         prompt=build_cover_letter_prompt(
-            resume, requirements, job_text, tone=tone, voice=voice
+            resume, requirements, job_text, tone=tone, voice=voice, evidence=evidence
         ),
         schema=CoverLetterDraft,
         system_instruction=COVER_LETTER_SYSTEM,
@@ -307,7 +316,7 @@ def compose_cover_letter(
     if ledger is not None:
         ledger.record("cover_letter", result.usage)
 
-    engine = GuardrailEngine(resume, requirements)
+    engine = GuardrailEngine(resume, requirements, evidence=evidence)
     vetted = [p for p in result.data.paragraphs if engine.vet_paragraph(p) is not None]
     # Only hard failures matter here; the soft proper-noun flags fire on the
     # company name itself (which of course isn't in the résumé) and would be noise.
@@ -394,12 +403,16 @@ def run_pipeline(
     scrape: ScrapeResult,
     *,
     include_cover_letter: bool = False,
+    evidence: list[str] | None = None,
     templates_dir: str | None = None,
     template: str | None = None,
     client: LlmClient | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> TailoringOutcome:
-    """Run every stage after scraping and return the finished artifacts."""
+    """Run every stage after scraping and return the finished artifacts.
+
+    ``evidence`` is the candidate's brag bank, threaded into both the tailoring
+    and cover-letter stages so attested facts are usable and never flagged."""
     templates_dir = templates_dir or settings.templates_dir
     client = client or get_client()
     ledger = UsageLedger()
@@ -413,7 +426,7 @@ def run_pipeline(
 
     progress("optimizing", "Tailoring your experience to the role")
     tailored, report, diff = optimize_resume(
-        master, requirements, scrape.text, client=client, ledger=ledger
+        master, requirements, scrape.text, evidence=evidence, client=client, ledger=ledger
     )
 
     cover_tex: str | None = None
@@ -421,7 +434,7 @@ def run_pipeline(
     if include_cover_letter:
         progress("optimizing", "Drafting your cover letter")
         paragraphs = draft_cover_letter(
-            tailored, requirements, scrape.text, client=client, ledger=ledger
+            tailored, requirements, scrape.text, evidence=evidence, client=client, ledger=ledger
         )
         if paragraphs:
             cover_tex = render_cover_letter(

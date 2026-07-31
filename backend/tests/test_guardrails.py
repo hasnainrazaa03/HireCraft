@@ -14,14 +14,41 @@ from app.services.llm.guardrails import GuardrailEngine, build_diff
 
 
 def _apply(
-    master: MasterResume, payload: dict, requirements: JobRequirements | None = None
+    master: MasterResume,
+    payload: dict,
+    requirements: JobRequirements | None = None,
+    evidence: list[str] | None = None,
 ):
     result = TailoringResult.model_validate(payload)
-    return GuardrailEngine(master, requirements).apply(result)
+    return GuardrailEngine(master, requirements, evidence=evidence).apply(result)
 
 
 def _bullets(resume: MasterResume) -> str:
     return " ".join(h for e in resume.experience for h in e.highlights)
+
+
+class TestBragBankProvenance:
+    """The brag bank is attested provenance: a number or proper noun the
+    candidate vouched for there is real, so a bullet citing it must survive —
+    while the very same claim, without the evidence, is still dropped."""
+
+    def test_evidence_number_and_noun_are_allowed(self, master, experience_id):
+        bullet = "Secured $50,000 pre-seed from First Round Capital"
+        resume, report = _apply(
+            master,
+            {"experience": [{"id": experience_id, "highlights": [bullet]}]},
+            evidence=["Prana.ai — Secured $50,000 pre-seed from First Round Capital."],
+        )
+        assert bullet in _bullets(resume)
+        assert not any(v.kind == "fabricated_number" for v in report.violations)
+
+    def test_same_claim_without_evidence_is_dropped(self, master, experience_id):
+        resume, _ = _apply(
+            master,
+            {"experience": [{"id": experience_id,
+                             "highlights": ["Secured $50,000 pre-seed from First Round Capital"]}]},
+        )
+        assert "50,000" not in _bullets(resume)
 
 
 class TestNumericProvenance:
