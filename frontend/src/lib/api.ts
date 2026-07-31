@@ -360,6 +360,23 @@ export interface ResumeVersionSummary {
   created_at: string;
 }
 
+export type EvidenceKind =
+  | "impact"
+  | "scope"
+  | "skill"
+  | "achievement"
+  | "context"
+  | "other";
+
+export interface EvidenceItem {
+  id: string;
+  kind: EvidenceKind;
+  text: string;
+  label: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CareerProfile {
   headline: string | null;
   phone: string | null;

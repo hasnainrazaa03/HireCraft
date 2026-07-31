@@ -4,6 +4,7 @@ import { api, ApiError, type CareerProfile } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { PageLoader } from "../components/ui";
 import { TagInput } from "../components/TagInput";
+import { BragBank } from "../components/BragBank";
 
 const ARRANGEMENTS = ["remote", "hybrid", "onsite", "flexible"] as const;
 
@@ -120,6 +121,10 @@ export default function ProfilePage() {
           {save.isPending ? "Saving…" : "Save changes"}
         </button>
       </div>
+
+      <Section title="Brag bank">
+        <BragBank />
+      </Section>
     </div>
   );
 }
