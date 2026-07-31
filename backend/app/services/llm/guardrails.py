@@ -525,15 +525,25 @@ class GuardrailEngine:
             for item in group.items:
                 canonical = known_items.get(item.strip().lower())
                 if canonical is None:
-                    self._flag(
-                        "fabricated_proper_noun",
-                        "error",
-                        f"Skill {item!r} is not in your master resume's skill list. "
-                        f"Dropped - HireCraft will not claim a skill you have not listed.",
-                        field="skills",
-                        action="dropped",
-                    )
-                    continue
+                    # Not in the explicit skills list — but a skill the candidate
+                    # demonstrably used (in an experience bullet, a project, or the
+                    # attested brag bank) is a real skill they may list. Only a
+                    # skill supported nowhere is dropped. This stops the résumé
+                    # burying genuine strengths just because they weren't also
+                    # duplicated into the Skills section.
+                    if self._claimed_in_master(item):
+                        canonical = item.strip()
+                    else:
+                        self._flag(
+                            "fabricated_proper_noun",
+                            "error",
+                            f"Skill {item!r} is supported nowhere in your résumé or "
+                            f"evidence. Dropped - HireCraft will not claim a skill you "
+                            f"have not shown.",
+                            field="skills",
+                            action="dropped",
+                        )
+                        continue
                 if canonical not in kept_items:
                     kept_items.append(canonical)
 
