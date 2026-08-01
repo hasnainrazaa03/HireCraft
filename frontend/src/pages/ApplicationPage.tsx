@@ -15,6 +15,7 @@ import {
   type BulletConfidence,
   type TrackerStatus,
   type JobMatch,
+  type Scorecard,
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
@@ -311,6 +312,8 @@ export default function ApplicationPage() {
               </p>
             </div>
           )}
+
+          {application.scorecard && <ScorecardPanel card={application.scorecard} />}
 
           <div className="mt-8">
             <div className="flex gap-1 border-b border-white/[0.08]">
@@ -731,6 +734,55 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <div>
       <h3 className="mb-2 text-sm font-medium">{title}</h3>
       {children}
+    </div>
+  );
+}
+
+function barTone(score: number): string {
+  if (score >= 85) return "bg-emerald";
+  if (score >= 65) return "bg-brand-400";
+  if (score >= 45) return "bg-electric";
+  return "bg-coral";
+}
+
+/** Résumé-quality readout for the finished tailoring — deterministic, no LLM. */
+function ScorecardPanel({ card }: { card: Scorecard }) {
+  const ring =
+    card.overall >= 85 ? "text-emerald"
+    : card.overall >= 65 ? "text-brand-300"
+    : card.overall >= 45 ? "text-electric" : "text-coral";
+  return (
+    <div className="mt-8 card p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Résumé quality</h3>
+          <p className="mt-0.5 text-xs text-subtle">
+            How strong this tailored résumé is for the role — scored on the signals
+            recruiters and ATS reward.
+          </p>
+        </div>
+        <div className="text-right">
+          <div className={`text-3xl font-semibold tabular-nums ${ring}`}>{card.overall}</div>
+          <div className="text-[11px] uppercase tracking-wide text-subtle">overall / 100</div>
+        </div>
+      </div>
+      <div className="mt-4 space-y-2.5">
+        {card.metrics.map((m) => (
+          <div key={m.key}>
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="text-content">{m.label}</span>
+              <span className="tabular-nums text-muted" title={m.detail}>{m.score}</span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+              <div
+                className={`h-full rounded-full ${barTone(m.score)} transition-[width] duration-500`}
+                style={{ width: `${m.score}%` }}
+              />
+            </div>
+            <p className="mt-0.5 text-[11px] text-subtle">{m.detail}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

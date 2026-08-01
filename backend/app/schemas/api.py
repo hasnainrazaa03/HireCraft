@@ -305,6 +305,20 @@ class ApplicationSummary(ApiModel):
     updated_at: datetime
 
 
+class ScorecardMetric(ApiModel):
+    key: str
+    label: str
+    score: int
+    detail: str
+
+
+class Scorecard(ApiModel):
+    """Deterministic résumé-quality readout for a finished tailoring."""
+
+    overall: int
+    metrics: list[ScorecardMetric]
+
+
 class ApplicationDetail(ApiModel):
     id: uuid.UUID
     pipeline_status: PipelineStatus
@@ -318,6 +332,7 @@ class ApplicationDetail(ApiModel):
     tailored_resume: dict[str, Any] | None
     diff: list[dict[str, Any]] | None
     guardrail_report: dict[str, Any] | None
+    scorecard: Scorecard | None = None
     total_input_tokens: int
     total_output_tokens: int
     total_cost_usd: float

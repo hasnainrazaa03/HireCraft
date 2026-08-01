@@ -26,8 +26,13 @@ from app.schemas.api import (
     ApplicationStatusResponse,
     ApplicationSummary,
     ApplicationUpdate,
+    Scorecard,
+    ScorecardMetric,
 )
+from app.schemas.resume import MasterResume
+from app.schemas.tailoring import GuardrailReport
 from app.services import storage
+from app.services.resume_eval import score_from_report
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
 from app.workers.tasks import enqueue_tailoring
 
@@ -149,7 +154,32 @@ def create_application(
 
 
 def _to_detail(application: Application) -> ApplicationDetail:
-    return ApplicationDetail.model_validate(application)
+    detail = ApplicationDetail.model_validate(application)
+    detail.scorecard = _scorecard_for(application)
+    return detail
+
+
+def _scorecard_for(application: Application) -> Scorecard | None:
+    """Deterministic quality readout from what's already stored — no LLM.
+
+    Only for a finished run that produced a tailored résumé + guardrail report.
+    A malformed stored blob must never 500 the detail page, so it's best-effort.
+    """
+    if not application.tailored_resume or not application.guardrail_report:
+        return None
+    try:
+        tailored = MasterResume.model_validate(application.tailored_resume)
+        report = GuardrailReport.model_validate(application.guardrail_report)
+        card = score_from_report(tailored, report)
+        return Scorecard(
+            overall=card.overall,
+            metrics=[
+                ScorecardMetric(key=m.key, label=m.label, score=m.score, detail=m.detail)
+                for m in card.metrics
+            ],
+        )
+    except Exception:  # noqa: BLE001 - a bad blob shouldn't break the page
+        return None
 
 
 def _queue_run(db: DbSession, application: Application) -> None:

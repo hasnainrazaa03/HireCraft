@@ -603,6 +603,18 @@ export interface DiffEntry {
   change: "added" | "removed" | "modified" | "reordered" | "unchanged";
 }
 
+export interface ScorecardMetric {
+  key: string;
+  label: string;
+  score: number;
+  detail: string;
+}
+
+export interface Scorecard {
+  overall: number;
+  metrics: ScorecardMetric[];
+}
+
 export interface ApplicationDetail {
   id: string;
   pipeline_status: PipelineStatus;
@@ -615,6 +627,7 @@ export interface ApplicationDetail {
   tailored_resume: MasterResume | null;
   diff: DiffEntry[] | null;
   guardrail_report: GuardrailReport | null;
+  scorecard: Scorecard | null;
   total_input_tokens: number;
   total_output_tokens: number;
   total_cost_usd: number;

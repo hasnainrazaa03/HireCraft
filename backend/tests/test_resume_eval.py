@@ -48,6 +48,24 @@ def test_metric_bullet_raises_impact_score():
     assert hi.get("impact") > lo.get("impact")
 
 
+def test_score_from_report_uses_stored_signals():
+    """The application-detail scorecard reads job fit off the guardrail report's
+    verified vs. requested keywords — no requirements, no LLM."""
+    from app.schemas.tailoring import GuardrailReport
+    from app.services.resume_eval import score_from_report
+
+    resume = MasterResume.model_validate(MASTER_RESUME_FIXTURE)
+    report = GuardrailReport(
+        keywords_requested=["Python", "SQL", "React", "AWS"],
+        keywords_verified=["Python", "SQL", "React"],
+        violations=[],
+    )
+    card = score_from_report(resume, report)
+    assert card.get("ats") == 75  # 3 of 4 keywords verified
+    assert card.get("grounding") == 100  # no error violations
+    assert 0 <= card.overall <= 100
+
+
 def test_compare_reports_overall_and_per_metric_delta():
     before = score_resume(MasterResume.model_validate(MASTER_RESUME_FIXTURE), _req())
     boosted = copy.deepcopy(MASTER_RESUME_FIXTURE)

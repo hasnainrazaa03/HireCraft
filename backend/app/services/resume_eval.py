@@ -130,6 +130,40 @@ def score_resume(
     return ResumeScorecard(overall=overall, metrics=metrics)
 
 
+def score_from_report(
+    tailored: MasterResume, report: GuardrailReport
+) -> ResumeScorecard:
+    """Scorecard for a completed tailoring, from data already stored on it.
+
+    The application persists the tailored résumé and the guardrail report but not
+    the extracted requirements, so job fit is read off the report's verified vs.
+    requested keywords (already computed) — no re-extraction, no LLM. The other
+    dimensions come straight off the tailored bullets.
+    """
+    bullets = _bullets(tailored)
+    requested = list(report.keywords_requested)
+    verified = list(report.keywords_verified)
+    ats = _pct(len(verified), len(requested)) if requested else 100
+    ats_d = (
+        f"{len(verified)}/{len(requested)} job keywords surfaced"
+        if requested else "no ATS keywords extracted"
+    )
+    impact, impact_d = _impact_density(bullets)
+    verb, verb_d = _verb_strength(bullets)
+    concise, concise_d = _conciseness(bullets)
+    ground, ground_d = _grounding(report)
+
+    metrics = [
+        EvalMetric("ats", "Job-fit keywords", ats, 0.30, ats_d),
+        EvalMetric("impact", "Quantified impact", impact, 0.20, impact_d),
+        EvalMetric("verbs", "Action-verb strength", verb, 0.15, verb_d),
+        EvalMetric("conciseness", "Conciseness", concise, 0.10, concise_d),
+        EvalMetric("grounding", "Truthfulness", ground, 0.25, ground_d),
+    ]
+    overall = round(sum(m.score * m.weight for m in metrics))
+    return ResumeScorecard(overall=overall, metrics=metrics)
+
+
 def compare(before: ResumeScorecard, after: ResumeScorecard) -> dict[str, int]:
     """Per-metric delta (after − before), plus 'overall'. For A/B on changes."""
     deltas = {m.key: m.score - before.get(m.key) for m in after.metrics}
