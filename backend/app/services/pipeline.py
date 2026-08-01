@@ -26,15 +26,18 @@ from app.services.llm.client import LlmResult, Usage, get_client
 from app.services.llm.guardrails import GuardrailEngine, build_diff
 from app.services.llm.prompts import (
     COVER_LETTER_SYSTEM,
+    COVERAGE_SYSTEM,
     EXTRACTOR_SYSTEM,
     INTRO_SYSTEM,
     OPTIMIZER_SYSTEM,
     OUTREACH_SYSTEM,
     REWRITE_SYSTEM,
     build_cover_letter_prompt,
+    build_coverage_prompt,
     build_extractor_prompt,
     build_intro_prompt,
     build_optimizer_prompt,
+    build_optimizer_prompt_with_plan,
     build_outreach_prompt,
     build_rewrite_prompt,
 )
@@ -121,22 +124,89 @@ def extract_requirements(
     return requirements
 
 
+class RequirementCoverage(BaseModel):
+    requirement: str = Field(max_length=200)
+    covered: bool = False
+    evidence: str = Field(default="", max_length=400)
+
+
+class CoveragePlan(BaseModel):
+    items: list[RequirementCoverage] = Field(default_factory=list)
+
+    def covered_lines(self) -> list[str]:
+        """The requirements the candidate genuinely backs, with their evidence —
+        the plan handed to the writer so real strengths get surfaced."""
+        return [
+            f"{it.requirement}: {it.evidence}".strip().rstrip(":")
+            for it in self.items
+            if it.covered and it.evidence.strip()
+        ]
+
+
+def plan_coverage(
+    master: MasterResume,
+    requirements: JobRequirements,
+    *,
+    evidence: list[str] | None = None,
+    client: LlmClient | None = None,
+    ledger: UsageLedger | None = None,
+) -> CoveragePlan:
+    """Stage 1 of two-stage tailoring: map each requirement to real evidence.
+
+    Deciding coverage up front — with the résumé AND brag bank in view — means
+    the rewrite can be told exactly which requirements to surface and with what,
+    instead of hoping the one-shot optimizer connects them. Genuine gaps stay
+    gaps: the plan never invents support, so this can only raise honest coverage."""
+    client = client or get_client()
+    result: LlmResult[CoveragePlan] = client.generate_structured(
+        prompt=build_coverage_prompt(master, requirements, evidence=evidence),
+        schema=CoveragePlan,
+        system_instruction=COVERAGE_SYSTEM,
+        temperature=0.0,
+    )
+    if ledger is not None:
+        ledger.record("plan_coverage", result.usage)
+    plan = result.data
+    logger.info(
+        "pipeline.coverage_planned",
+        assessed=len(plan.items),
+        covered=sum(1 for it in plan.items if it.covered),
+    )
+    return plan
+
+
 def optimize_resume(
     master: MasterResume,
     requirements: JobRequirements,
     job_text: str,
     *,
     evidence: list[str] | None = None,
+    two_stage: bool = True,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
     """Stage 3: rewrite presentation, then enforce truthfulness.
 
     ``evidence`` is the candidate's brag bank — attested facts the model may draw
-    on and the guardrails treat as valid provenance (see GuardrailEngine)."""
+    on and the guardrails treat as valid provenance (see GuardrailEngine). When
+    ``two_stage`` is set, a coverage-planning pass first maps each requirement to
+    the candidate's real evidence, and that plan steers the rewrite to surface
+    genuine strengths (raising keyword coverage without inventing anything)."""
     client = client or get_client()
+    prompt = build_optimizer_prompt(master, requirements, job_text, evidence=evidence)
+    if two_stage:
+        try:
+            plan = plan_coverage(
+                master, requirements, evidence=evidence, client=client, ledger=ledger
+            )
+            prompt = build_optimizer_prompt_with_plan(prompt, plan.covered_lines())
+        except Exception as exc:  # noqa: BLE001 - the plan is best-effort
+            # The plan is an optimisation, not a requirement — any failure (LLM
+            # error, malformed response) just falls back to the single-stage prompt.
+            logger.info("pipeline.coverage_plan_skipped", error=str(exc)[:200])
+
     result: LlmResult[TailoringResult] = client.generate_structured(
-        prompt=build_optimizer_prompt(master, requirements, job_text, evidence=evidence),
+        prompt=prompt,
         schema=TailoringResult,
         system_instruction=OPTIMIZER_SYSTEM,
         temperature=settings.llm_temperature,

@@ -15,6 +15,23 @@ from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.schemas.writing import VoiceProfile
 
+COVERAGE_SYSTEM = """\
+You map a job's requirements to a candidate's real evidence — the analysis a \
+strong recruiter does before deciding how to pitch someone.
+
+For EACH requirement you are given, decide whether the candidate can genuinely \
+back it, using ONLY their résumé and their attested evidence (the brag bank). Then:
+- `covered: true` only if there is real supporting evidence. Cite it in `evidence` \
+as a short, concrete phrase drawn from their material (a bullet, a project, an \
+attested fact). Adjacent/transferable experience counts if it honestly supports \
+the requirement.
+- `covered: false` if nothing in their material supports it. Leave `evidence` empty. \
+Never invent support to force a match — an honest gap is fine and useful.
+
+This plan tells the résumé writer which requirements to surface and with what \
+evidence, so nothing real gets left buried and nothing unreal gets claimed."""
+
+
 EXTRACTOR_SYSTEM = """\
 You are an expert technical recruiter who reads job postings and extracts their \
 requirements into structured data.
@@ -230,6 +247,54 @@ verifier:
 Return JSON matching the schema. Reference every entry by its exact `id`. Rewrite \
 wording, ordering, and emphasis — and surface attested evidence where it sharpens \
 the fit."""
+
+
+def build_coverage_prompt(
+    resume: MasterResume,
+    requirements: JobRequirements,
+    *,
+    evidence: list[str] | None = None,
+) -> str:
+    """Stage-1 prompt: which requirements can the candidate genuinely back?"""
+    reqs = requirements.all_keywords()[:24]
+    resume_json = json.dumps(_entry_payload(resume), indent=2, ensure_ascii=False)
+    ev_block = ""
+    if evidence:
+        ev_block = "\n=== ATTESTED EVIDENCE (brag bank) ===\n" + "\n".join(
+            f"- {line}" for line in evidence[:60]
+        )
+    return f"""\
+Map each job requirement to the candidate's real evidence.
+
+=== REQUIREMENTS TO ASSESS ===
+{chr(10).join(f"- {r}" for r in reqs) if reqs else "(none)"}
+
+=== CANDIDATE RESUME ===
+{resume_json}
+{ev_block}
+
+For every requirement above, return whether the candidate can genuinely back it \
+and the specific evidence. Invent nothing."""
+
+
+def build_optimizer_prompt_with_plan(base_prompt: str, coverage_lines: list[str]) -> str:
+    """Splice a stage-1 coverage plan into the optimizer prompt."""
+    if not coverage_lines:
+        return base_prompt
+    plan = "\n".join(f"- {line}" for line in coverage_lines)
+    block = f"""
+=== REQUIREMENT COVERAGE PLAN (from a prior analysis of THIS candidate) ===
+Each line is a job requirement the candidate genuinely backs, and the evidence \
+for it. SURFACE each of these in the most relevant bullet or the summary, using \
+that evidence — this is how you raise real keyword coverage without inventing \
+anything. Requirements not listed here are genuine gaps: do NOT claim them.
+{plan}
+"""
+    # Insert the plan just before the final return-instruction line.
+    marker = "Return JSON matching the schema."
+    if marker in base_prompt:
+        return base_prompt.replace(marker, block + "\n" + marker, 1)
+    return base_prompt + block
 
 
 REWRITE_SYSTEM = """\

@@ -13,9 +13,13 @@ from app.schemas.resume import MasterResume
 from app.schemas.tailoring import TailoringResult
 from app.services.llm.client import LlmResult, Usage
 from app.services.pipeline import (
+    CoveragePlan,
     ProfileIntro,
+    RequirementCoverage,
     UsageLedger,
     generate_profile_intro,
+    optimize_resume,
+    plan_coverage,
     rewrite_resume,
 )
 
@@ -162,3 +166,70 @@ def test_generate_intro_keeps_summary_with_resume_number(master: MasterResume):
     )
     intro = generate_profile_intro(master, client=client)
     assert "200" in intro.summary
+
+
+# --- two-stage tailoring (coverage plan) ------------------------------------
+
+
+class TwoStageStub:
+    """Returns a CoveragePlan for stage 1 and a TailoringResult for stage 2,
+    keyed on the schema requested — so it can stand in for the whole pipeline."""
+
+    def __init__(self, plan: dict, tailoring: dict) -> None:
+        self._plan = plan
+        self._tailoring = tailoring
+        self.prompts: list[str] = []
+
+    def generate_structured(self, *, schema, prompt, **kwargs):  # noqa: ANN001
+        self.prompts.append(prompt)
+        data = (
+            CoveragePlan.model_validate(self._plan)
+            if schema is CoveragePlan
+            else TailoringResult.model_validate(self._tailoring)
+        )
+        return LlmResult(
+            data=data,
+            usage=Usage(input_tokens=50, output_tokens=20, model="stub", latency_ms=2),
+            raw_text="{}",
+        )
+
+
+def test_coverage_plan_lists_only_backed_requirements():
+    plan = CoveragePlan(items=[
+        RequirementCoverage(requirement="Python", covered=True, evidence="built Python tooling"),
+        RequirementCoverage(requirement="Kubernetes", covered=False, evidence=""),
+        RequirementCoverage(requirement="SQL", covered=True, evidence=""),  # no evidence → skipped
+    ])
+    assert plan.covered_lines() == ["Python: built Python tooling"]
+
+
+def test_plan_coverage_records_usage(master, requirements):
+    client = TwoStageStub(
+        {"items": [{"requirement": "Python", "covered": True, "evidence": "Python scripts"}]},
+        {},
+    )
+    ledger = UsageLedger()
+    plan = plan_coverage(master, requirements, client=client, ledger=ledger)
+    assert plan.covered_lines() == ["Python: Python scripts"]
+    assert ledger.entries and ledger.entries[0][0] == "plan_coverage"
+
+
+def test_two_stage_injects_the_plan_into_the_optimizer_prompt(master, requirements, experience_id):
+    client = TwoStageStub(
+        {"items": [{"requirement": "Python", "covered": True, "evidence": "wrote Python tools"}]},
+        {"experience": [{"id": experience_id, "highlights": ["Wrote Python tools"]}]},
+    )
+    optimize_resume(master, requirements, "job text", two_stage=True, client=client)
+    # Two prompts: the coverage plan, then the optimizer with the plan spliced in.
+    assert len(client.prompts) == 2
+    assert "REQUIREMENT COVERAGE PLAN" in client.prompts[1]
+    assert "wrote Python tools" in client.prompts[1]
+
+
+def test_single_stage_makes_one_call_and_no_plan(master, requirements, experience_id):
+    client = TwoStageStub(
+        {}, {"experience": [{"id": experience_id, "highlights": ["Wrote Python tools"]}]}
+    )
+    optimize_resume(master, requirements, "job text", two_stage=False, client=client)
+    assert len(client.prompts) == 1
+    assert "REQUIREMENT COVERAGE PLAN" not in client.prompts[0]
