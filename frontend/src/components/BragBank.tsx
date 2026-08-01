@@ -124,7 +124,7 @@ export function BragBank() {
                         {KIND_LABEL[it.kind]}
                       </span>
                       <p className="flex-1 text-sm leading-relaxed text-content">{it.text}</p>
-                      <div className="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100">
+                      <div className="flex shrink-0 gap-1 opacity-100 transition focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                         <button onClick={() => { setEditing(it); setAdding(false); }} className="btn-ghost btn-sm px-2" aria-label="Edit">
                           <IconPen className="h-3.5 w-3.5" />
                         </button>

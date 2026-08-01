@@ -215,7 +215,7 @@ export default function ApplicationsPage() {
                           <select
                             value={a.tracker_status}
                             onChange={(e) => move.mutate({ id: a.id, status: e.target.value as TrackerStatus })}
-                            className={`${TRACKER_STYLES[a.tracker_status]} cursor-pointer border-0`}
+                            className={`${TRACKER_STYLES[a.tracker_status]} cursor-pointer appearance-none border-0 pr-6`}
                           >
                             {ALL_STAGES.map((s) => (
                               <option key={s} value={s} className="bg-surface text-content">

@@ -250,7 +250,7 @@ export default function ResumesPage() {
             <div key={p.id} className="card flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{p.name}</span>
+                  <span className="max-w-[16rem] truncate font-medium">{p.name}</span>
                   {p.is_default && <span className="badge-brand">Default</span>}
                   <span className="badge-muted capitalize">{p.template}</span>
                   {p.tags?.map((t) => <span key={t} className="badge-muted">{t}</span>)}

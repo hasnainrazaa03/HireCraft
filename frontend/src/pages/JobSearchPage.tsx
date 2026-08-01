@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { api, type JobSearchResult } from "../lib/api";
 import { EmptyState, Spinner } from "../components/ui";
 import {
-  IconSearch, IconSparkles, IconCheck, IconPin, IconBriefcase,
+  IconSearch, IconSparkles, IconCheck, IconPin,
   IconGlobe, IconClock, IconBookmark, IconRefresh, IconArrowRight,
 } from "../components/icons";
 
@@ -69,6 +69,9 @@ export default function JobSearchPage() {
       api.get<JobSearchResult[]>(
         `/jobs/search?limit=30${query ? `&q=${encodeURIComponent(query)}` : ""}${remoteOnly ? "&remote_only=true" : ""}`,
       ),
+    // Keep the current results on screen while a new search loads, instead of
+    // blanking the whole grid to a spinner on every keystroke-search.
+    placeholderData: keepPreviousData,
   });
 
   function toggleSave(job: JobSearchResult) {
@@ -125,7 +128,7 @@ export default function JobSearchPage() {
         </div>
       </div>
 
-      {isLoading || isFetching ? (
+      {isLoading ? (
         <div className="py-20 text-center"><Spinner className="mx-auto h-6 w-6" /></div>
       ) : sorted.length === 0 ? (
         <EmptyState
@@ -142,7 +145,7 @@ export default function JobSearchPage() {
               <span>Recommended for your profile — AI-ranked against your résumé. Search above to explore more.</span>
             </div>
           )}
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className={`grid gap-6 transition-opacity xl:grid-cols-2 ${isFetching ? "opacity-60" : ""}`}>
             {sorted.map((job) => (
               <JobCard
                 key={jobKey(job)} job={job} saved={saved.has(jobKey(job))}
@@ -193,7 +196,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
         <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface p-5 transition-all duration-300 [backface-visibility:hidden] group-hover:-translate-y-1 group-hover:border-brand-500/25 group-hover:shadow-glow">
           <button
             onClick={() => setFlipped(true)}
-            className="absolute right-4 top-4 z-10 text-subtle transition hover:rotate-90 hover:text-content"
+            className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-lg text-subtle transition hover:bg-white/[0.06] hover:text-content"
             title="Flip for quick analysis" aria-label="Show quick analysis"
           >
             <IconRefresh className="h-4 w-4" />
@@ -211,11 +214,12 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
             <div className="space-y-1.5 text-sm text-muted">
               <div className="flex items-center gap-1.5">
                 <IconPin className="h-4 w-4 text-subtle" /> {job.location || "Location N/A"}
-                {job.remote && <span className="text-subtle">• Remote</span>}
               </div>
-              <div className="flex items-center gap-1.5">
-                <IconBriefcase className="h-4 w-4 text-subtle" /> Full Time
-              </div>
+              {job.remote && (
+                <div className="flex items-center gap-1.5">
+                  <IconGlobe className="h-4 w-4 text-subtle" /> Remote
+                </div>
+              )}
             </div>
             <MatchRing score={job.match_score} verdict={job.verdict} />
           </div>
@@ -253,7 +257,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
 
         {/* BACK (quick analysis — flip retained) */}
         <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface-2 p-5 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-          <button onClick={() => setFlipped(false)} className="absolute right-4 top-4 z-10 text-subtle transition hover:-rotate-90 hover:text-content" title="Flip back" aria-label="Back to job details">
+          <button onClick={() => setFlipped(false)} className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-lg text-subtle transition hover:bg-white/[0.06] hover:text-content" title="Flip back" aria-label="Back to job details">
             <IconRefresh className="h-4 w-4" />
           </button>
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-brand-300">
@@ -308,7 +312,7 @@ function JobModal({ job, saved, onSave, onTailor, onClose }: {
       >
         {/* Header */}
         <div className="relative border-b border-white/[0.06] p-6">
-          <button onClick={onClose} className="absolute right-5 top-5 text-subtle transition hover:text-content" aria-label="Close">✕</button>
+          <button onClick={onClose} className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-lg text-base text-subtle transition hover:bg-white/[0.06] hover:text-content" aria-label="Close">✕</button>
           <div className="flex items-start gap-3.5 pr-8">
             <div className="group"><CompanyLogo company={job.company || job.title} domain={job.company_domain} /></div>
             <div className="min-w-0">
@@ -318,7 +322,6 @@ function JobModal({ job, saved, onSave, onTailor, onClose }: {
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
             {job.location && <Meta icon={<IconPin className="h-4 w-4" />}>{job.location}</Meta>}
-            <Meta icon={<IconBriefcase className="h-4 w-4" />}>Full Time</Meta>
             {job.remote && <Meta icon={<IconGlobe className="h-4 w-4" />}>Remote</Meta>}
             {job.created_at && <Meta icon={<IconClock className="h-4 w-4" />}>Posted {timeAgo(job.created_at)}</Meta>}
           </div>
@@ -617,7 +620,11 @@ function MatchRing({ score, verdict }: { score: number | null; verdict?: string 
         </svg>
         <span className="absolute inset-0 grid place-items-center text-lg font-bold tabular-nums text-content">{score}%</span>
       </div>
-      {verdict && <div className="-mt-1 text-[11px] font-medium text-emerald">{verdict}</div>}
+      {verdict && (
+        <div className={`-mt-1 text-[11px] font-medium ${
+          score >= 70 ? "text-emerald" : score >= 50 ? "text-electric" : "text-coral"
+        }`}>{verdict}</div>
+      )}
     </div>
   );
 }

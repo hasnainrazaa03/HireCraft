@@ -48,7 +48,7 @@ function VerifyBanner() {
 
   return (
     <div className="border-b border-coral/20 bg-coral/[0.07]">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-5 py-2.5 text-sm">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
         <IconShield className="h-4 w-4 shrink-0 text-coral" />
         <span className="text-content">Confirm your email to secure your account.</span>
         <button onClick={resend} disabled={sending} className="font-medium text-coral hover:underline">
@@ -200,7 +200,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
             <NotificationBell />
 
-            <Link to="/new" className="btn-primary">
+            <Link to="/new" className="btn-primary" aria-label="New application">
               <IconPlus className="h-4 w-4" />
               <span className="hidden sm:inline">New Application</span>
             </Link>

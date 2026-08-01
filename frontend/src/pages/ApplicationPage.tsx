@@ -196,7 +196,7 @@ export default function ApplicationPage() {
             onChange={(e) =>
               update.mutate({ tracker_status: e.target.value as TrackerStatus })
             }
-            className={`badge cursor-pointer border-0 ${
+            className={`badge cursor-pointer appearance-none border-0 pr-6 ${
               TRACKER_STYLES[application.tracker_status]
             }`}
           >
