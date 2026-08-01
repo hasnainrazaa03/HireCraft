@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 WorkArrangement = Literal["remote", "hybrid", "onsite", "flexible"]
+SalaryPeriod = Literal["hourly", "weekly", "monthly", "yearly"]
 
 
 class ProfileModel(BaseModel):
@@ -36,6 +37,7 @@ class CareerProfileUpdate(ProfileModel):
     salary_min: int | None = Field(default=None, ge=0, le=10_000_000)
     salary_max: int | None = Field(default=None, ge=0, le=10_000_000)
     salary_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    salary_period: SalaryPeriod | None = None
 
     work_arrangement: WorkArrangement | None = None
     open_to_relocation: bool | None = None
@@ -68,6 +70,7 @@ class CareerProfileResponse(ProfileModel):
     salary_min: int | None
     salary_max: int | None
     salary_currency: str
+    salary_period: str | None
     work_arrangement: str | None
     open_to_relocation: bool
 

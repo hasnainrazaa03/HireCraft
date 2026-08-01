@@ -394,6 +394,7 @@ export interface CareerProfile {
   salary_min: number | null;
   salary_max: number | null;
   salary_currency: string;
+  salary_period: "hourly" | "weekly" | "monthly" | "yearly" | null;
   work_arrangement: "remote" | "hybrid" | "onsite" | "flexible" | null;
   open_to_relocation: boolean;
 }

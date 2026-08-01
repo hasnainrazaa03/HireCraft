@@ -57,6 +57,8 @@ class CareerProfile(Base, TimestampMixin):
     salary_min: Mapped[int | None] = mapped_column(Integer)
     salary_max: Mapped[int | None] = mapped_column(Integer)
     salary_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    # How the salary range is expressed: hourly / weekly / monthly / yearly.
+    salary_period: Mapped[str | None] = mapped_column(String(12))
 
     # remote / hybrid / onsite / flexible
     work_arrangement: Mapped[str | None] = mapped_column(String(20))
