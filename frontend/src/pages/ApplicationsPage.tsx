@@ -93,14 +93,12 @@ export default function ApplicationsPage() {
           <p className="text-sm text-muted">{total} total · drag cards to move them</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-xl border border-white/[0.08] bg-surface-2 p-0.5">
+          <div className="segment">
             {(["board", "list"] as View[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition ${
-                  view === v ? "bg-brand-600 text-white" : "text-muted hover:text-content"
-                }`}
+                className={`segment-item capitalize ${view === v ? "segment-item-active" : ""}`}
               >
                 {v}
               </button>

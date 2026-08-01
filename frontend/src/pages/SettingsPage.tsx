@@ -604,6 +604,7 @@ function DataSection() {
           value={confirmText}
           onChange={(e) => setConfirmText(e.target.value)}
           placeholder="DELETE"
+          aria-label="Type DELETE to confirm account deletion"
         />
       </Modal>
     </>

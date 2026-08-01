@@ -139,10 +139,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  // Wrap the control in the label so it's programmatically associated without
+  // threading ids through every call site (clicking the label focuses the input).
   return (
-    <div>
-      <label className="label">{label}</label>
+    <label className="block">
+      <span className="label">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }

@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, ApiError, type EvidenceItem, type EvidenceKind } from "../lib/api";
 import { useToast } from "../lib/toast";
+import { Spinner } from "./ui";
 import { IconPlus, IconTrash, IconPen } from "./icons";
 
 const KINDS: { value: EvidenceKind; label: string; badge: string }[] = [
@@ -93,7 +94,7 @@ export function BragBank() {
       )}
 
       {isLoading ? (
-        <p className="text-sm text-subtle">Loading…</p>
+        <div className="py-6 text-center"><Spinner className="mx-auto h-5 w-5" /></div>
       ) : items.length === 0 && !adding ? (
         <div className="rounded-xl border border-dashed border-white/[0.1] p-6 text-center text-sm text-subtle">
           No evidence yet. Add facts about your real work — the engine can only sell what it knows.

@@ -10,7 +10,7 @@ import {
   type CoverLetterResult,
   type OutreachResult,
 } from "../lib/api";
-import { PageLoader, EmptyState } from "../components/ui";
+import { PageLoader, EmptyState, Spinner } from "../components/ui";
 import { IconLetter, IconSparkles, IconResume } from "../components/icons";
 import { useToast } from "../lib/toast";
 
@@ -177,7 +177,7 @@ function CoverLetterStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
           )}
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
-          <input type="checkbox" checked={useVoice} onChange={(e) => setUseVoice(e.target.checked)} />
+          <input type="checkbox" checked={useVoice} onChange={(e) => setUseVoice(e.target.checked)} className="h-4 w-4 rounded border-white/[0.14] bg-surface-3 text-brand-600 focus:ring-brand-500" />
           Write in my saved <Link to="/writing" className="text-brand-300 hover:underline">writing voice</Link>
         </label>
         <button
@@ -247,13 +247,13 @@ function CoverLetterStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
                   label="Copy text"
                 />
                 <button onClick={() => void exportAs("pdf")} disabled={!!exporting} className="btn-secondary btn-sm">
-                  {exporting === "pdf" ? "…" : "PDF"}
+                  {exporting === "pdf" ? <Spinner className="h-4 w-4" /> : "PDF"}
                 </button>
                 <button onClick={() => void exportAs("docx")} disabled={!!exporting} className="btn-secondary btn-sm">
-                  {exporting === "docx" ? "…" : "DOCX"}
+                  {exporting === "docx" ? <Spinner className="h-4 w-4" /> : "DOCX"}
                 </button>
                 <button onClick={() => void exportAs("tex")} disabled={!!exporting} className="btn-secondary btn-sm">
-                  {exporting === "tex" ? "…" : "LaTeX"}
+                  {exporting === "tex" ? <Spinner className="h-4 w-4" /> : "LaTeX"}
                 </button>
               </div>
             )}
@@ -329,12 +329,12 @@ function OutreachStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
           />
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
-          <input type="checkbox" checked={useVoice} onChange={(e) => setUseVoice(e.target.checked)} />
+          <input type="checkbox" checked={useVoice} onChange={(e) => setUseVoice(e.target.checked)} className="h-4 w-4 rounded border-white/[0.14] bg-surface-3 text-brand-600 focus:ring-brand-500" />
           Write in my saved <Link to="/writing" className="text-brand-300 hover:underline">writing voice</Link>
         </label>
         <button
           onClick={() => generate.mutate()}
-          disabled={generate.isPending}
+          disabled={generate.isPending || !company.trim()}
           className="btn-primary w-full"
         >
           <IconSparkles className="h-4 w-4" />
@@ -426,15 +426,15 @@ function Field({
   placeholder?: string;
 }) {
   return (
-    <div>
-      <label className="label">{label}</label>
+    <label className="block">
+      <span className="label">{label}</span>
       <input
         className="input"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
-    </div>
+    </label>
   );
 }
 
