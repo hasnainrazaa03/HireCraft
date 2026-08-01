@@ -23,6 +23,7 @@ from app.schemas.interview import (
 from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.schemas.writing import VoiceProfile
+from app.services.evidence import evidence_lines
 from app.services.interview import draft_star_answer, generate_questions
 from app.services.llm.client import (
     LlmConfigurationError,
@@ -148,6 +149,7 @@ def interview_answer(
             resume,
             payload.question,
             voice=voice,
+            evidence=evidence_lines(db, user.id),
             client=_client_for(user),
             ledger=ledger,
         )

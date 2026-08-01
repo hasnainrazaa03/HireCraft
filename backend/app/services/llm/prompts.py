@@ -728,7 +728,11 @@ Return JSON with `situation`, `task`, `action`, and `result`."""
 
 
 def build_answer_prompt(
-    resume: MasterResume, question: str, *, voice: VoiceProfile | None = None
+    resume: MasterResume,
+    question: str,
+    *,
+    voice: VoiceProfile | None = None,
+    evidence: list[str] | None = None,
 ) -> str:
     experience = [
         f"- {e.title} at {e.company} ({e.start_date or '?'}–{e.end_date or 'present'}): "
@@ -737,9 +741,15 @@ def build_answer_prompt(
     ]
     projects = [f"- {p.name}: " + "; ".join(p.highlights[:2]) for p in resume.projects[:4]]
     skills = ", ".join(item for g in resume.skills for item in g.items)
+    ev_block = ""
+    if evidence:
+        ev_block = "\nAttested details the candidate can speak to (use for specifics):\n" + "\n".join(
+            f"- {line}" for line in evidence[:60]
+        )
     return f"""\
 Draft a STAR answer to this interview question, using only the candidate's real \
-experience.
+experience and attested details. Prefer concrete specifics — real numbers, tools, \
+and outcomes from the material below — over generic phrasing.
 
 Question: {question}
 {_voice_block(voice)}
@@ -748,7 +758,7 @@ Candidate experience:
 {chr(10).join(experience) or "(none)"}
 Candidate projects:
 {chr(10).join(projects) or "(none)"}
-Candidate skills: {skills or "(none listed)"}
+Candidate skills: {skills or "(none listed)"}{ev_block}
 
 Return JSON with `situation`, `task`, `action`, `result`."""
 

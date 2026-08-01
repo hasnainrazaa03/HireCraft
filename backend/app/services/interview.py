@@ -66,12 +66,13 @@ def draft_star_answer(
     question: str,
     *,
     voice: VoiceProfile | None = None,
+    evidence: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[StarAnswer, list[str]]:
     client = client or get_client()
     result: LlmResult[StarAnswer] = client.generate_structured(
-        prompt=build_answer_prompt(resume, question, voice=voice),
+        prompt=build_answer_prompt(resume, question, voice=voice, evidence=evidence),
         schema=StarAnswer,
         system_instruction=INTERVIEW_ANSWER_SYSTEM,
         temperature=0.4,
@@ -81,5 +82,6 @@ def draft_star_answer(
 
     star = result.data
     combined = " ".join([star.situation, star.task, star.action, star.result])
-    warnings = _advisory_number_check(resume, combined, None)
+    # The brag bank is attested context, so a number from it isn't unbacked.
+    warnings = _advisory_number_check(resume, combined, " ".join(evidence or []))
     return star, warnings

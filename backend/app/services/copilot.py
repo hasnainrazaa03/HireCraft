@@ -23,6 +23,7 @@ from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.services.analysis import analyze_resume
 from app.services.dashboard import build_overview
+from app.services.evidence import evidence_lines
 from app.services.llm.client import get_client
 from app.services.llm.prompts import COPILOT_SYSTEM, build_copilot_prompt
 from app.services.matching import match_resume_to_job, skill_gaps
@@ -72,6 +73,14 @@ def build_context(
             "Weak areas:\n" + ("\n".join(f"- {w}" for w in weak[:8]) or "- none flagged")
         )
         labels.append(f"Résumé score & findings ({profile.name})")
+
+    evidence = evidence_lines(db, user_id)
+    if evidence:
+        sections.append(
+            "[BRAG BANK — attested facts the candidate can speak to]\n"
+            + "\n".join(f"- {e}" for e in evidence[:40])
+        )
+        labels.append(f"Brag bank ({len(evidence)} facts)")
 
     if application_id is not None:
         application = db.scalar(
