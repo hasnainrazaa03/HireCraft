@@ -27,6 +27,40 @@ def _bullets(resume: MasterResume) -> str:
     return " ".join(h for e in resume.experience for h in e.highlights)
 
 
+class TestWordFormStemming:
+    """A word-form of something the résumé shows isn't a fabrication."""
+
+    def test_stem_bridges_inflections(self):
+        from app.services.llm.guardrails import _stem
+        for a, b in [
+            ("imaging", "image"), ("optimization", "optimize"),
+            ("engineered", "engineer"), ("pipelines", "pipeline"),
+            ("containerized", "container"), ("models", "model"),
+            ("deployment", "deploy"), ("architectures", "architecture"),
+        ]:
+            assert _stem(a) == _stem(b), f"{a} !~ {b}"
+
+    def test_stem_does_not_overcollapse(self):
+        from app.services.llm.guardrails import _stem
+        # engineer must not fold into engine; distinct roots stay distinct.
+        assert _stem("engineer") != _stem("engine")
+        assert _stem("medical") == "medical"  # no productive suffix
+        assert _stem("data") == "data"
+
+    def test_medical_imaging_claimed_via_word_form(self, master, experience_id):
+        # Master says "medical image"; the job wants "medical imaging".
+        m = master.model_copy(deep=True)
+        m.experience[0].highlights = ["Built medical image segmentation models"]
+        req = JobRequirements(ats_keywords=["medical imaging"])
+        resume, report = _apply(
+            m,
+            {"experience": [{"id": experience_id,
+                             "highlights": ["Shipped medical imaging models for diagnostics"]}]},
+            requirements=req,
+        )
+        assert not any(v.kind == "unverified_keyword_claim" for v in report.violations)
+
+
 class TestBragBankProvenance:
     """The brag bank is attested provenance: a number or proper noun the
     candidate vouched for there is real, so a bullet citing it must survive —

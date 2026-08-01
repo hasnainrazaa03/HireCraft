@@ -144,6 +144,33 @@ def _tokens(text: str) -> set[str]:
     return {m.group().lower() for m in TOKEN_RE.finditer(text)}
 
 
+# Productive suffixes stripped to compare word forms, longest first. Deliberately
+# conservative: agent-noun "-er"/"-or" is excluded (it would fold "engineer" into
+# "engine"), and a stem must keep >=3 chars — so this only ever adds matches
+# between genuine inflections ("imaging"/"image", "optimization"/"optimize",
+# "engineered"/"engineer", "pipelines"/"pipeline"), never launders a real claim.
+_STEM_SUFFIXES = (
+    "ization", "isation", "ational", "ations", "izing", "ising", "ation",
+    "ition", "ment", "ness", "ized", "ised", "izes", "ises", "ings", "ies",
+    "ize", "ise", "ing", "ied", "es", "ed", "s", "e",
+)
+
+
+def _stem(word: str) -> str:
+    """A light, conservative stem so different forms of a word compare equal."""
+    w = word.lower().strip("._-")
+    if len(w) <= 3:
+        return w
+    for suf in _STEM_SUFFIXES:
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            return w[: -len(suf)]
+    return w
+
+
+def _stems(tokens: set[str]) -> set[str]:
+    return {_stem(t) for t in tokens}
+
+
 def _mentions(haystack_lower: str, term_lower: str) -> bool:
     """Does ``haystack_lower`` contain ``term_lower`` as a whole term?
 
@@ -176,7 +203,9 @@ def _master_numbers(master: MasterResume) -> set[str]:
     return numbers
 
 
-def _suspicious_tokens(bullet: str, vocab: set[str]) -> list[str]:
+def _suspicious_tokens(
+    bullet: str, vocab: set[str], stem_vocab: set[str] | None = None
+) -> list[str]:
     """Proper-noun-ish tokens in ``bullet`` with no basis in the master resume."""
     flagged: list[str] = []
     matches = list(TOKEN_RE.finditer(bullet))
@@ -184,6 +213,9 @@ def _suspicious_tokens(bullet: str, vocab: set[str]) -> list[str]:
         token = match.group()
         lower = token.lower()
         if lower in vocab or lower in COMMON_CAPITALIZED:
+            continue
+        # A word-form of something in the résumé isn't a fabrication.
+        if stem_vocab is not None and _stem(lower) in stem_vocab:
             continue
         # Sentence-initial capitalization carries no proper-noun signal.
         if position == 0 and token[0].isupper() and token[1:].islower():
@@ -216,6 +248,10 @@ class GuardrailEngine:
         evidence_text = " ".join(evidence or [])
         self.master_text = f"{_master_corpus(master)} {evidence_text}".lower()
         self.vocab = _tokens(self.master_text)
+        # Stemmed vocabulary, so "medical imaging" is recognised as claimed when
+        # the résumé says "medical image segmentation" — a word-form difference,
+        # not a fabrication.
+        self.stem_vocab = _stems(self.vocab)
         self.evidence_numbers = _numbers_in(evidence_text)
         self.master_numbers = _master_numbers(master) | self.evidence_numbers
         # Terms the job asks for that the candidate has never claimed. Any of these
@@ -253,7 +289,13 @@ class GuardrailEngine:
             return True
         # Multi-word keyword counts as claimed only if every component is.
         parts = _tokens(needle)
-        return bool(parts) and parts.issubset(self.vocab)
+        if bool(parts) and parts.issubset(self.vocab):
+            return True
+        # Word-form fallback: every component matches some form in the résumé
+        # (imaging↔image). Conservative stemming, so this only bridges genuine
+        # inflections, never a truly absent skill.
+        stems = _stems(parts)
+        return bool(stems) and stems.issubset(self.stem_vocab)
 
     def _injected_job_terms(self, text: str) -> list[str]:
         """Job keywords present in ``text`` that the master resume never supports."""
@@ -362,7 +404,7 @@ class GuardrailEngine:
                 )
                 continue
 
-            unknown_terms = _suspicious_tokens(bullet, self.vocab)
+            unknown_terms = _suspicious_tokens(bullet, self.vocab, self.stem_vocab)
             if unknown_terms:
                 self._flag(
                     "fabricated_proper_noun",
@@ -589,7 +631,7 @@ class GuardrailEngine:
                 action="reverted_to_master",
             )
             return None
-        unknown = _suspicious_tokens(text, self.vocab)
+        unknown = _suspicious_tokens(text, self.vocab, self.stem_vocab)
         if unknown:
             self._flag(
                 "fabricated_proper_noun",
