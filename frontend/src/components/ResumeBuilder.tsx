@@ -137,6 +137,10 @@ export function ResumeBuilder({
               <Input label="Name" value={e.name} onChange={(v) => up({ name: v })} required />
               <Input label="URL" value={e.url} onChange={(v) => up({ url: v })} placeholder="https://…" />
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Start (YYYY or YYYY-MM)" value={e.start_date} onChange={(v) => up({ start_date: v })} />
+              <Input label="End (or 'Present')" value={e.end_date} onChange={(v) => up({ end_date: v })} />
+            </div>
             <Input label="Description" value={e.description} onChange={(v) => up({ description: v })} />
             <BulletEditor label="Highlights" items={e.highlights ?? []} onChange={(v) => up({ highlights: v })} />
             <Field label="Built with">

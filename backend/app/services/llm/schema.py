@@ -83,19 +83,37 @@ def _convert(node: Any, defs: dict[str, Any]) -> Any:
     if "properties" in out and "type" not in out:
         out["type"] = "object"
 
-    # Pin the field generation order: required (identifying) fields first, then
-    # optional ones. Gemini's structured output emits properties in schema order,
-    # and a nullable field generated *before* the fields that give it meaning
-    # tends to come back null — an entry's start_date, declared on a shared base
-    # class ahead of its company/title, was emitted before the model had "written"
-    # which entry it was on, so every résumé import lost its dates. Ordering the
-    # non-null context fields first fixes that, and steers every structured call
-    # to describe each object before its dependent fields.
+    # Two things happen here, both about how Gemini's structured output treats
+    # properties by their position and their presence in `required`.
+    #
+    # 1. Force every array property into `required`. Gemini treats any field
+    #    absent from `required` as optional and will silently omit it — which for
+    #    a résumé meant whole sections (the entire `experience` list) vanishing at
+    #    random while `education` happened to survive. Arrays are always safe to
+    #    require: the worst case the model can produce is an explicit empty list,
+    #    never invented content. (Length bounds like min_items are re-checked by
+    #    the real Pydantic model on the way back, so this can't smuggle in a bad
+    #    list either.)
+    #
+    # 2. Pin generation order: required fields first, then optional ones. Gemini
+    #    emits properties in schema order, and a nullable field generated *before*
+    #    the fields that give it meaning tends to come back null — an entry's
+    #    start_date, declared on a shared base class ahead of its company/title,
+    #    was emitted before the model had "written" which entry it was on, so
+    #    dates were lost. Ordering the identifying (required) fields first fixes
+    #    that and steers every structured call to describe each object before its
+    #    dependent fields.
     if "properties" in out:
+        props = out["properties"]
         required = set(out.get("required", []))
-        keys = list(out["properties"].keys())
+        for key, value in props.items():
+            if isinstance(value, dict) and value.get("type") == "array":
+                required.add(key)
+        keys = list(props.keys())
         ordered = [k for k in keys if k in required] + [k for k in keys if k not in required]
-        out["properties"] = {k: out["properties"][k] for k in ordered}
+        out["properties"] = {k: props[k] for k in ordered}
+        if required:
+            out["required"] = [k for k in keys if k in required]
         out["propertyOrdering"] = ordered
 
     return out

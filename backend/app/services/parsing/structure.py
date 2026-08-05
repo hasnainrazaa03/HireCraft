@@ -91,6 +91,17 @@ def _repair(payload: dict) -> dict:
     schema version constant."""
     payload["schema_version"] = "1.0"
 
+    # section_order and entry ids are server-owned, not résumé facts. Now that the
+    # Gemini schema requires every array (so no section is dropped), the model
+    # also emits these — discard them: import always uses the default section
+    # order, and every entry id is recomputed as a stable hash so the guardrail
+    # index can never be poisoned by a model-invented id.
+    payload.pop("section_order", None)
+    for section in ("experience", "education", "projects"):
+        for entry in payload.get(section) or []:
+            if isinstance(entry, dict):
+                entry.pop("id", None)
+
     basics = payload.get("basics")
     if isinstance(basics, dict):
         for key in ("website", "linkedin", "github"):

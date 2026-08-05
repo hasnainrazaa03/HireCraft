@@ -154,10 +154,10 @@ Confirms the app is up before deep testing.
 ## 4. Résumés  (`/resumes`)
 
 ### 4.1 Import / parse
-- ⬜ **T-RES-01** **New / Import** → upload `~/Downloads/MHR_ML.pdf`. Parsing runs (~a few seconds, one LLM call) → lands in the **builder** pre-filled.
-  - Notes:
-- ⬜ **T-RES-02 (P0 check)** In the builder, **Experience dates are present** (e.g. Deloitte 2022-08 → 2024-11) — the previously-broken case. Education + project dates too.
-  - Notes:
+- ✅ **T-RES-01** **New / Import** → upload `~/Downloads/MHR_ML.pdf`. Parsing runs (~a few seconds, one LLM call) → lands in the **builder** pre-filled.
+  - Notes: PASS. Upload → parse → auto-redirect to builder, pre-filled (basics, contact, links, headline/summary, sections).
+- 🔧 **T-RES-02 (P0 check)** In the builder, **Experience dates are present** (e.g. Deloitte 2022-08 → 2024-11) — the previously-broken case. Education + project dates too.
+  - Notes: **FAIL → FIXED (P0).** Experience came back **empty (0 entries)** while education parsed. Root cause: the Gemini schema marked only `basics` as `required`, so Gemini treated every section array (`experience`, `projects`, …) as optional and **intermittently omitted** them. Fix: `to_gemini_schema` now forces every array property into `required` (worst case = explicit `[]`, never invented content). Verified server-side **3/3 runs → experience=3** (Deloitte 2022-08→2024-11, DRDO, Prana.ai), projects=2 with dates, education=2. Also fixed: Gemini was inventing entry ids (`exp-1`) — import now strips them so stable hashes are recomputed (protects the guardrail index). **Re-import MHR_ML.pdf to confirm in the UI.**
 - ⬜ **T-RES-03** Parsed structure is complete: 3 experience, 2 education, 2 projects, skills groups; bullets not clipped.
   - Notes:
 - ⬜ **T-RES-04** Upload a **non-résumé / garbage file** or a corrupt PDF → friendly error, no crash.
@@ -483,6 +483,8 @@ Confirms the app is up before deep testing.
 | 5 | T-PROF-12 | P3 | Footer "Save changes" glow overlapped the Brag Bank card. | ✅ Fixed (bottom margin) — pending re-test |
 | 6 | T-PROF-12 | P3 | Work-arrangement dropdown options rendered lowercase. | ✅ Fixed (capitalize label text) — pending re-test |
 | 7 | T-PROF (Eligibility) | P3 | "Years of experience" accepted whole numbers only — 2.5 years couldn't be stored (backend `int` + browser default `step=1`). | ✅ Fixed (`Numeric(4,1)` column + migration `c2d3e4f5a6b7`, schema `float`, input `step=0.5`; round-trip verified 2.5→2.5, 2.333→2.3) — pending re-test |
+| 8 | T-RES-02 | **P0** | Résumé parser dropped **all** Experience entries (0) — Gemini omits array fields not in the schema's `required`, so whole sections vanished intermittently. | ✅ Fixed (`to_gemini_schema` forces every array `required`; import strips model-invented ids/section_order). Verified 3/3 runs → experience=3, projects=2, education=2 — pending UI re-import |
+| 9 | T-RES-02 | P2 | Project dates weren't shown in the builder (parsed correctly but no date inputs rendered). | ✅ Fixed (added Start/End inputs to the Projects section, matching Experience) — pending re-test |
 
 ---
 
