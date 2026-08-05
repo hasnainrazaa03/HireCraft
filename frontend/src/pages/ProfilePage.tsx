@@ -142,7 +142,7 @@ export default function ProfilePage() {
               {VISA_STATUS.map((o) => <option key={o} value={o} className="bg-surface">{o}</option>)}
             </select>
           </Field>
-          <Field label="Years of experience"><input type="number" min={0} className="input" value={form.years_experience ?? ""} onChange={(e) => set("years_experience", e.target.value ? Number(e.target.value) : null)} /></Field>
+          <Field label="Years of experience"><input type="number" min={0} step={0.5} inputMode="decimal" className="input" value={form.years_experience ?? ""} onChange={(e) => set("years_experience", e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 2.5" /></Field>
         </div>
       </Section>
 

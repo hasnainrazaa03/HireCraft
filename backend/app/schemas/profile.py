@@ -28,7 +28,7 @@ class CareerProfileUpdate(ProfileModel):
 
     work_authorization: str | None = Field(default=None, max_length=120)
     visa_status: str | None = Field(default=None, max_length=120)
-    years_experience: int | None = Field(default=None, ge=0, le=60)
+    years_experience: float | None = Field(default=None, ge=0, le=60)
 
     preferred_roles: list[str] | None = Field(default=None, max_length=20)
     preferred_industries: list[str] | None = Field(default=None, max_length=20)
@@ -63,7 +63,7 @@ class CareerProfileResponse(ProfileModel):
     website_url: str | None
     work_authorization: str | None
     visa_status: str | None
-    years_experience: int | None
+    years_experience: float | None
     preferred_roles: list[str]
     preferred_industries: list[str]
     preferred_locations: list[str]

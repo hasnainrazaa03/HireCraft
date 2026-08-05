@@ -144,10 +144,10 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Edited text reflected immediately, no refresh.
 - ✅ **T-BRAG-04** **Delete** a fact → it's removed.
   - Notes: PASS. Removed instantly; the emptied group disappeared and empty-state returned correctly.
-- ⬜ **T-BRAG-05** Add the **metrics / recent-USC / leadership** facts you flagged earlier — these should later lift tailoring/interview quality (verify in Sections 7 & 10).
-  - Notes:
-- ⬜ **T-BRAG-06** Very short text (< 3 chars) is rejected; long text is accepted.
-  - Notes:
+- ✅ **T-BRAG-05** Add the **metrics / recent-USC / leadership** facts you flagged earlier — these should later lift tailoring/interview quality (verify in Sections 7 & 10).
+  - Notes: PASS. Brag bank seeded with **27 grounded facts** (Deloitte 6, DRDO 4, Prana.ai 4, Vimaan 3, USC Ledger 3, + Team Antariksh, BraTS, Manzil, USC, undergrad, Career). Every metric traces to the résumés / interview Q&A / candidate-attested draft — nothing invented. Facts grouped under the right Role/Project with the correct Kind badges; appeared immediately. Sufficient evidence now in place for Sections 7 (Tailoring), 9 (Cover Letters), 10 (Interview STAR), 12 (Copilot).
+- ✅ **T-BRAG-06** Very short text (< 3 chars) is rejected; long text is accepted.
+  - Notes: PASS. < 3-char fact keeps the **Add** button disabled (submission blocked). Long-form fact accepted successfully.
 
 ---
 
@@ -482,6 +482,7 @@ Confirms the app is up before deep testing.
 | 4 | T-PROF-11 | P3 | Salary validation message exposed internal field names + "Body error" prefix. | ✅ Fixed (clean "Maximum salary cannot be less than minimum salary") — pending re-test |
 | 5 | T-PROF-12 | P3 | Footer "Save changes" glow overlapped the Brag Bank card. | ✅ Fixed (bottom margin) — pending re-test |
 | 6 | T-PROF-12 | P3 | Work-arrangement dropdown options rendered lowercase. | ✅ Fixed (capitalize label text) — pending re-test |
+| 7 | T-PROF (Eligibility) | P3 | "Years of experience" accepted whole numbers only — 2.5 years couldn't be stored (backend `int` + browser default `step=1`). | ✅ Fixed (`Numeric(4,1)` column + migration `c2d3e4f5a6b7`, schema `float`, input `step=0.5`; round-trip verified 2.5→2.5, 2.333→2.3) — pending re-test |
 
 ---
 

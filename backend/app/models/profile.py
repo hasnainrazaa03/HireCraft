@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,7 +47,9 @@ class CareerProfile(Base, TimestampMixin):
 
     work_authorization: Mapped[str | None] = mapped_column(String(120))
     visa_status: Mapped[str | None] = mapped_column(String(120))
-    years_experience: Mapped[int | None] = mapped_column(Integer)
+    # Fractional years are real (e.g. 2.5), so store one decimal place.
+    # asdecimal=False returns a plain float, keeping the API free of Decimal.
+    years_experience: Mapped[float | None] = mapped_column(Numeric(4, 1, asdecimal=False))
 
     # Free-form preference lists, stored as JSON arrays of strings.
     preferred_roles: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
