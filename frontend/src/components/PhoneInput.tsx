@@ -34,12 +34,21 @@ export function PhoneInput({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const p = parsePhone(value);
     setIso(p.iso);
     setNumber(p.number);
   }, [value]);
+
+  // Focus the search box explicitly when the dropdown opens (autoFocus on a
+  // conditionally-rendered element is unreliable; without focus, keystrokes
+  // went to the country button and the list never filtered).
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+    else setQ("");
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,7 +108,7 @@ export function PhoneInput({
             <div className="relative">
               <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
               <input
-                autoFocus
+                ref={searchRef}
                 className="input py-1.5 pl-8 text-sm"
                 placeholder="Search country…"
                 value={q}
