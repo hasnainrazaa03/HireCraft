@@ -70,8 +70,8 @@ Confirms the app is up before deep testing.
   - Notes: PASS. "If an account exists for … a reset link is on its way. It expires in 30 minutes." — no enumeration; "Back to sign in" provided. Verified server-side: a reset token was generated in the logs.
 - ✅ **T-AUTH-10** (Optional) Grab the reset link from the API logs and open it → set a new password → can log in with it.
   - Notes: PASS — verified E2E by Claude on a throwaway (to avoid resetting the active test account): register→forgot→token-from-logs→reset-password (200) → **old password now 401, new password 200**. Full reset flow works.
-- ⬜ **T-AUTH-11** (Optional) Open a `verify-email?token=…` link → badge flips to verified / banner disappears.
-  - Notes:
+- ✅ **T-AUTH-11** (Optional) Open a `verify-email?token=…` link → badge flips to verified / banner disappears.
+  - Notes: PASS — verified E2E by Claude on the active throwaway: resend (200) → verify-email (200, "Your email is verified.") → DB `is_verified=true`. **UI check for user:** reload Dashboard → the "Confirm your email" banner is gone.
 
 ### 1.4 Devices / sessions (Settings → Devices)
 - ⬜ **T-AUTH-12** Settings → **Devices** lists your active session(s) with device/time.
@@ -487,4 +487,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: 2026-08-05 — Progress: Section 1 auth 01–10 all ✅ (T-AUTH-11 email-verify optional; 12–13 devices next). 1 issue found & closed (P3). Section 0 smoke: T-SMOKE-01 ✅._
+_Last updated: 2026-08-05 — Progress: Section 1 auth 01–11 all ✅ (T-AUTH-12/13 Devices next — need the UI). 1 issue found & closed (P3). Section 0 smoke: T-SMOKE-01 ✅._
