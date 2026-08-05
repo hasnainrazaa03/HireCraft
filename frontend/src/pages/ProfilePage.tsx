@@ -107,7 +107,14 @@ export default function ProfilePage() {
           <input className="input" value={form.headline ?? ""} onChange={(e) => set("headline", e.target.value)} placeholder="Backend Engineer focused on distributed systems" />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Phone"><PhoneInput value={form.phone} onChange={(v) => set("phone", v)} /></Field>
+          {/* Not a <label>-wrapping Field: PhoneInput is a composite (button +
+              number field + a dropdown with its own search box). A wrapping
+              <label> focuses its first control (the country button), which stole
+              focus from the search input so typing did nothing. */}
+          <div>
+            <span className="label">Phone</span>
+            <PhoneInput value={form.phone} onChange={(v) => set("phone", v)} />
+          </div>
           <Field label="Location"><input className="input" value={form.location ?? ""} onChange={(e) => set("location", e.target.value)} placeholder="Los Angeles, CA" /></Field>
         </div>
       </Section>

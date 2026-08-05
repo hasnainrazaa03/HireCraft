@@ -82,6 +82,7 @@ export function PhoneInput({
       <input
         type="tel"
         inputMode="tel"
+        aria-label="Phone number"
         className="input rounded-l-none"
         placeholder="Phone number"
         value={number}

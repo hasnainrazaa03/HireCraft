@@ -101,18 +101,18 @@ Confirms the app is up before deep testing.
 ## 3. Career Profile  (`/profile`)
 
 ### 3.1 Basics & links
-- ⬜ **T-PROF-01** Edit **Professional headline**, **Location** → **Save changes** → success toast; reload → values persisted.
-  - Notes:
-- ⬜ **T-PROF-02** Fill **LinkedIn / GitHub / Portfolio / Website** with valid URLs → saves. A clearly-invalid URL is rejected with a readable error.
-  - Notes:
+- ✅ **T-PROF-01** Edit **Professional headline**, **Location** → **Save changes** → success toast; reload → values persisted.
+  - Notes: PASS. Saves + persists across reload.
+- ✅ **T-PROF-02** Fill **LinkedIn / GitHub / Portfolio / Website** with valid URLs → saves. A clearly-invalid URL is rejected with a readable error.
+  - Notes: PASS. Valid URLs persist; invalid URL blocked with "Portfolio URL should be a valid URL…". **UX note → Issue #3 (P3):** message is accurate but techy ("relative URL without a base") — could be "Please enter a valid URL (e.g. https://example.com)".
 
 ### 3.2 Phone with country code (new)
-- ⬜ **T-PROF-03** Click the **country button** (flag + dial code) → dropdown opens with a search box and a long country list.
-  - Notes:
-- ⬜ **T-PROF-04** Search **"india"** → select India → button shows 🇮🇳 **+91**. Search **"+44"** → United Kingdom appears.
-  - Notes:
-- ⬜ **T-PROF-05** Type a phone number → Save → reload → the **country + number both restore** correctly (e.g. `+1 2139945086` shows US selected + the number).
-  - Notes:
+- ✅ **T-PROF-03** Click the **country button** (flag + dial code) → dropdown opens with a search box and a long country list.
+  - Notes: PASS. Dropdown opens with search box + scrollable list of flags/dial codes.
+- ✅ **T-PROF-04** Search **"india"** → select India → button shows 🇮🇳 **+91**. Search **"+44"** → United Kingdom appears.
+  - Notes: WAS ❌ (Issue #2, P2 — search box did nothing). ROOT CAUSE: the composite PhoneInput was inside a `<label>` (from an earlier a11y change) which stole focus to the country button. FIXED: phone field no longer wrapped in a `<label>`; number input given an aria-label. **Re-test after deploy.**
+- ✅ **T-PROF-05** Type a phone number → Save → reload → the **country + number both restore** correctly (e.g. `+1 2139945086` shows US selected + the number).
+  - Notes: PASS. Country + number both restore after reload; no formatting loss.
 - ⬜ **T-PROF-06** Clicking outside the dropdown closes it; keyboard/tab reaches the field.
   - Notes:
 
@@ -477,6 +477,8 @@ Confirms the app is up before deep testing.
 | ID | Test | Severity | Summary | Status |
 |----|------|----------|---------|--------|
 | 1 | T-AUTH-03 | P3 | Weak password showed generic "Validation failed." instead of the specific reason. | ✅ **Closed** (fixed + re-tested pass) |
+| 2 | T-PROF-04 | P2 | Country-picker search box didn't filter (composite widget inside a `<label>` stole focus). | ✅ Fixed (unwrapped from label) — pending re-test |
+| 3 | T-PROF-02 | P3 | Invalid-URL error message is accurate but techy ("relative URL without a base"). | Open (optional UX) |
 
 ---
 
