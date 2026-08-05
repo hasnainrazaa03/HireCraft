@@ -146,6 +146,7 @@ export default function LoginPage() {
                 id="password"
                 type="password"
                 required
+                minLength={mode === "register" ? 10 : undefined}
                 className="input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

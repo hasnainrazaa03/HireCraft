@@ -99,6 +99,14 @@ async function tryRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
+/** "password" + "String should have at least 10 characters" → "Password should have at least 10 characters." */
+function humanizeFieldError(field: string, message: string): string {
+  const label = field.replace(/_/g, " ").replace(/\burl\b/i, "URL");
+  let msg = message.replace(/^(String|Value|Input)\b/, label);
+  if (!/^[A-Z]/.test(msg)) msg = msg.charAt(0).toUpperCase() + msg.slice(1);
+  return msg.replace(/[.!?]?$/, ".");
+}
+
 async function parseError(res: Response): Promise<ApiError> {
   let message = `Request failed (${res.status})`;
   let fieldErrors: { field: string; message: string }[] | undefined;
@@ -107,7 +115,6 @@ async function parseError(res: Response): Promise<ApiError> {
     if (typeof body.detail === "string") message = body.detail;
     if (Array.isArray(body.errors)) {
       fieldErrors = body.errors;
-      message = body.detail ?? "Validation failed.";
     }
     // FastAPI's default 422 shape.
     if (Array.isArray(body.detail)) {
@@ -115,7 +122,14 @@ async function parseError(res: Response): Promise<ApiError> {
         field: d.loc.slice(1).join("."),
         message: d.msg,
       }));
-      message = "Validation failed.";
+    }
+    // Prefer a specific field error over the generic "Validation failed." — the
+    // user needs to know *why* (e.g. "Password should have at least 10 characters.").
+    if (fieldErrors && fieldErrors.length > 0) {
+      message = fieldErrors
+        .slice(0, 3)
+        .map((e) => humanizeFieldError(e.field, e.message))
+        .join(" ");
     }
   } catch {
     /* non-JSON error body */

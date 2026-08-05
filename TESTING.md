@@ -27,8 +27,8 @@
 
 Confirms the app is up before deep testing.
 
-- ⬜ **T-SMOKE-01** Load http://localhost:5173 — you land on Login or Dashboard, no console errors (open DevTools console).
-  - Notes:
+- ✅ **T-SMOKE-01** Load http://localhost:5173 — you land on Login or Dashboard, no console errors (open DevTools console).
+  - Notes: PASS. Unauthenticated → auto-redirects to `/login`; page loads; no JS errors/warnings (only the default DevTools info message).
 - ⬜ **T-SMOKE-02** Sign in — Dashboard renders with your name and stat cards.
   - Notes:
 - ⬜ **T-SMOKE-03** Every left-nav item opens without a blank screen or error: Dashboard, Copilot, Applications, Resumes, Career Profile, Writing Voice, Cover Letters, Company Intel, Interview Prep, Job Search, Analytics, Templates.
@@ -45,21 +45,21 @@ Confirms the app is up before deep testing.
 > the app or can be skipped.
 
 ### 1.1 Sign up
-- ⬜ **T-AUTH-01** From Login, switch to **Sign up**. Register with a new email + password + name.
+- ✅ **T-AUTH-01** From Login, switch to **Sign up**. Register with a new email + password + name.
   - *Expected:* lands on the Dashboard (empty state); no forced email-verification wall.
-  - Notes:
-- ⬜ **T-AUTH-02** Try registering the **same email again** → clear "already exists" style error, no crash.
-  - Notes:
-- ⬜ **T-AUTH-03** Weak/short password and malformed email are rejected with a readable message.
-  - Notes:
-- ⬜ **T-AUTH-04** A yellow **"Confirm your email"** banner appears at the top. Click **Resend link** → success toast; **Dismiss (×)** hides it.
-  - Notes:
+  - Notes: PASS. Throwaway registered → straight to Dashboard empty state ("No applications yet"); no verification wall; "Confirm your email" banner shown (expected). Server-side verified: user row created, `is_active=true`, `is_verified=false`.
+- ✅ **T-AUTH-02** Try registering the **same email again** → clear "already exists" style error, no crash.
+  - Notes: PASS. Duplicate email → "An account with that email already exists." (matches code `auth.py:134`); registration blocked, form state preserved, no crash.
+- ⚠️ **T-AUTH-03** Weak/short password and malformed email are rejected with a readable message.
+  - Notes: PARTIAL. Invalid email → browser HTML5 validation blocks it with a clear message ✅. Weak password (<10 chars) → rejected but shows a **generic "Validation failed."** instead of "Password must be at least 10 characters." → **Issue #1 (P3)**. FIXED: `parseError` now surfaces the specific field error, and the sign-up password field shows a "At least 10 characters" hint. Re-test after deploy.
+- ✅ **T-AUTH-04** A yellow **"Confirm your email"** banner appears at the top. Click **Resend link** → success toast; **Dismiss (×)** hides it.
+  - Notes: PASS. Banner shown; Resend → "Verification sent / Check your inbox" toast; × dismisses cleanly without affecting the page.
 
 ### 1.2 Login / logout / session
-- ⬜ **T-AUTH-05** Log out (top-right avatar → Log out) → back to Login.
-  - Notes:
-- ⬜ **T-AUTH-06** Log back in with correct credentials → Dashboard.
-  - Notes:
+- ✅ **T-AUTH-05** Log out (top-right avatar → Log out) → back to Login.
+  - Notes: PASS. Avatar → Log out → redirected to Login; session terminated, no errors.
+- ✅ **T-AUTH-06** Log back in with correct credentials → Dashboard.
+  - Notes: PASS. Valid credentials → authenticated → Dashboard loads; session established, no errors.
 - ⬜ **T-AUTH-07** Wrong password → clear error, no crash; repeated wrong attempts don't lock you out permanently.
   - Notes:
 - ⬜ **T-AUTH-08** Refresh the page while logged in → stays logged in (no bounce to Login).
@@ -476,7 +476,7 @@ Confirms the app is up before deep testing.
 
 | ID | Test | Severity | Summary | Status |
 |----|------|----------|---------|--------|
-|    |      |          |         |        |
+| 1 | T-AUTH-03 | P3 | Weak password showed generic "Validation failed." instead of the specific reason. | ✅ Fixed (parseError surfaces field errors + password hint) — pending re-test |
 
 ---
 
@@ -487,4 +487,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: (fill in as we iterate)_
+_Last updated: 2026-08-05 — Progress: T-SMOKE-01 ✅ · T-AUTH-01 ✅ · T-AUTH-02 ✅ (0 issues so far). Next: T-AUTH-03._
