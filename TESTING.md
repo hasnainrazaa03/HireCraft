@@ -74,10 +74,10 @@ Confirms the app is up before deep testing.
   - Notes: PASS — verified E2E by Claude on the active throwaway: resend (200) → verify-email (200, "Your email is verified.") → DB `is_verified=true`. **UI check for user:** reload Dashboard → the "Confirm your email" banner is gone.
 
 ### 1.4 Devices / sessions (Settings → Devices)
-- ⬜ **T-AUTH-12** Settings → **Devices** lists your active session(s) with device/time.
-  - Notes:
-- ⬜ **T-AUTH-13** **Log out everywhere** → you're signed out; old session no longer valid.
-  - Notes:
+- ✅ **T-AUTH-12** Settings → **Devices** lists your active session(s) with device/time.
+  - Notes: PASS. Shows browser (Chrome) + OS (macOS), "current device" badge, IP (172.20.0.1 = Docker gateway), last-used timestamp, and a "Sign out of all devices" button.
+- ✅ **T-AUTH-13** **Log out everywhere** → you're signed out; old session no longer valid.
+  - Notes: PASS. "Sign out of all devices" → immediately signed out, session invalidated, redirected to Login; authed pages require re-login.
 
 ---
 
@@ -487,4 +487,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: 2026-08-05 — Progress: Section 1 auth 01–11 all ✅ (T-AUTH-12/13 Devices next — need the UI). 1 issue found & closed (P3). Section 0 smoke: T-SMOKE-01 ✅._
+_Last updated: 2026-08-05 — Progress: **Section 1 (Auth) COMPLETE — T-AUTH-01…13 all ✅.** 1 issue found & closed (P3). Section 0 smoke: T-SMOKE-01 ✅. Next: Section 2 (Dashboard)._
