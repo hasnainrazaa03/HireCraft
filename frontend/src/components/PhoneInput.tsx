@@ -68,10 +68,14 @@ export function PhoneInput({
   }
 
   const needle = q.trim().toLowerCase();
+  const digits = needle.replace(/\D/g, "");
   const filtered = needle
     ? COUNTRIES.filter(
         (c) =>
-          c.name.toLowerCase().includes(needle) || c.dial.includes(needle.replace(/\D/g, "")),
+          c.name.toLowerCase().includes(needle) ||
+          // Only match the dial code when the query actually has digits — else
+          // c.dial.includes("") is true for every country and defeats the filter.
+          (digits.length > 0 && c.dial.includes(digits)),
       )
     : COUNTRIES;
 
