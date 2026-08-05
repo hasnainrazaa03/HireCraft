@@ -50,8 +50,8 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Throwaway registered → straight to Dashboard empty state ("No applications yet"); no verification wall; "Confirm your email" banner shown (expected). Server-side verified: user row created, `is_active=true`, `is_verified=false`.
 - ✅ **T-AUTH-02** Try registering the **same email again** → clear "already exists" style error, no crash.
   - Notes: PASS. Duplicate email → "An account with that email already exists." (matches code `auth.py:134`); registration blocked, form state preserved, no crash.
-- ⚠️ **T-AUTH-03** Weak/short password and malformed email are rejected with a readable message.
-  - Notes: PARTIAL. Invalid email → browser HTML5 validation blocks it with a clear message ✅. Weak password (<10 chars) → rejected but shows a **generic "Validation failed."** instead of "Password must be at least 10 characters." → **Issue #1 (P3)**. FIXED: `parseError` now surfaces the specific field error, and the sign-up password field shows a "At least 10 characters" hint. Re-test after deploy.
+- ✅ **T-AUTH-03** Weak/short password and malformed email are rejected with a readable message.
+  - Notes: PASS (re-tested after fix). Invalid email → browser HTML5 message ✅. Weak password → now shows the specific reason (was generic "Validation failed." — Issue #1, fixed via `parseError` humanizing field errors + `minLength` on the register field). Resolved.
 - ✅ **T-AUTH-04** A yellow **"Confirm your email"** banner appears at the top. Click **Resend link** → success toast; **Dismiss (×)** hides it.
   - Notes: PASS. Banner shown; Resend → "Verification sent / Check your inbox" toast; × dismisses cleanly without affecting the page.
 
@@ -60,16 +60,16 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Avatar → Log out → redirected to Login; session terminated, no errors.
 - ✅ **T-AUTH-06** Log back in with correct credentials → Dashboard.
   - Notes: PASS. Valid credentials → authenticated → Dashboard loads; session established, no errors.
-- ⬜ **T-AUTH-07** Wrong password → clear error, no crash; repeated wrong attempts don't lock you out permanently.
-  - Notes:
-- ⬜ **T-AUTH-08** Refresh the page while logged in → stays logged in (no bounce to Login).
-  - Notes:
+- ✅ **T-AUTH-07** Wrong password → clear error, no crash; repeated wrong attempts don't lock you out permanently.
+  - Notes: PASS. Wrong password → "Incorrect email or password." (same message whether or not the email exists — no user enumeration, verified in code `auth.py:164/171`); UI stable, no crash.
+- ✅ **T-AUTH-08** Refresh the page while logged in → stays logged in (no bounce to Login).
+  - Notes: PASS. Both normal (Ctrl+R) and hard (Cmd+Shift+R) refresh keep the session; Dashboard reloads, no redirect to Login.
 
 ### 1.3 Password reset & email verify
-- ⬜ **T-AUTH-09** Login → **Forgot password** → submit your email → confirmation message (no leak of whether the email exists).
-  - Notes:
-- ⬜ **T-AUTH-10** (Optional) Grab the reset link from the API logs and open it → set a new password → can log in with it.
-  - Notes:
+- ✅ **T-AUTH-09** Login → **Forgot password** → submit your email → confirmation message (no leak of whether the email exists).
+  - Notes: PASS. "If an account exists for … a reset link is on its way. It expires in 30 minutes." — no enumeration; "Back to sign in" provided. Verified server-side: a reset token was generated in the logs.
+- ✅ **T-AUTH-10** (Optional) Grab the reset link from the API logs and open it → set a new password → can log in with it.
+  - Notes: PASS — verified E2E by Claude on a throwaway (to avoid resetting the active test account): register→forgot→token-from-logs→reset-password (200) → **old password now 401, new password 200**. Full reset flow works.
 - ⬜ **T-AUTH-11** (Optional) Open a `verify-email?token=…` link → badge flips to verified / banner disappears.
   - Notes:
 
@@ -476,7 +476,7 @@ Confirms the app is up before deep testing.
 
 | ID | Test | Severity | Summary | Status |
 |----|------|----------|---------|--------|
-| 1 | T-AUTH-03 | P3 | Weak password showed generic "Validation failed." instead of the specific reason. | ✅ Fixed (parseError surfaces field errors + password hint) — pending re-test |
+| 1 | T-AUTH-03 | P3 | Weak password showed generic "Validation failed." instead of the specific reason. | ✅ **Closed** (fixed + re-tested pass) |
 
 ---
 
@@ -487,4 +487,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: 2026-08-05 — Progress: T-SMOKE-01 ✅ · T-AUTH-01 ✅ · T-AUTH-02 ✅ (0 issues so far). Next: T-AUTH-03._
+_Last updated: 2026-08-05 — Progress: Section 1 auth 01–10 all ✅ (T-AUTH-11 email-verify optional; 12–13 devices next). 1 issue found & closed (P3). Section 0 smoke: T-SMOKE-01 ✅._
