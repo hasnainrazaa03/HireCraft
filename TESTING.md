@@ -136,14 +136,14 @@ Confirms the app is up before deep testing.
 > This is the substrate for "grounded persuasion" — everything the AI is *allowed*
 > to say. Your account is pre-seeded with **26 facts**.
 
-- ⬜ **T-BRAG-01** The Brag Bank section lists facts **grouped by role/project** (Deloitte · DRDO · Prana.ai · USC Ledger · Team Antariksh · …) each with a **kind badge** (Impact / Scope / Skill / Achievement / Context) and a count.
-  - Notes:
-- ⬜ **T-BRAG-02** **Add fact** → pick a kind, type a role label + text → Add → appears under the right group instantly.
-  - Notes:
-- ⬜ **T-BRAG-03** **Edit** a fact (hover on desktop, always-visible on touch) → change text → Save → updates.
-  - Notes:
-- ⬜ **T-BRAG-04** **Delete** a fact → it's removed.
-  - Notes:
+- ✅ **T-BRAG-01** The Brag Bank section lists facts **grouped by role/project** (Deloitte · DRDO · Prana.ai · USC Ledger · Team Antariksh · …) each with a **kind badge** (Impact / Scope / Skill / Achievement / Context) and a count.
+  - Notes: PASS (empty state). Clear "No evidence yet…" empty state with description + Add fact. Grouping/badges/counts confirmed in T-BRAG-02. DESIGN NOTE: added a clarifying line that facts auto-save (the profile "Save changes" is only for the form fields) — answers "should it be above/below the save button" (below is correct; save applies to the form above).
+- ✅ **T-BRAG-02** **Add fact** → pick a kind, type a role label + text → Add → appears under the right group instantly.
+  - Notes: PASS. Added Impact/Deloitte → appeared instantly, grouped under Deloitte, Impact badge, count → 1. No refresh needed.
+- ✅ **T-BRAG-03** **Edit** a fact (hover on desktop, always-visible on touch) → change text → Save → updates.
+  - Notes: PASS. Edited text reflected immediately, no refresh.
+- ✅ **T-BRAG-04** **Delete** a fact → it's removed.
+  - Notes: PASS. Removed instantly; the emptied group disappeared and empty-state returned correctly.
 - ⬜ **T-BRAG-05** Add the **metrics / recent-USC / leadership** facts you flagged earlier — these should later lift tailoring/interview quality (verify in Sections 7 & 10).
   - Notes:
 - ⬜ **T-BRAG-06** Very short text (< 3 chars) is rejected; long text is accepted.

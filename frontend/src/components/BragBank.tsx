@@ -79,6 +79,9 @@ export function BragBank() {
           compresses away. Tailoring draws on these to sell you honestly: anything here
           becomes fair game to surface, so the more you add, the stronger and more
           grounded every résumé and letter gets.
+          <span className="mt-1 block text-xs text-subtle">
+            Each fact saves on its own as you add, edit, or delete it — the "Save changes" button above is only for the profile fields.
+          </span>
         </p>
         <button onClick={() => { setAdding(true); setEditing(null); }} className="btn-secondary btn-sm shrink-0">
           <IconPlus className="h-4 w-4" /> Add fact
