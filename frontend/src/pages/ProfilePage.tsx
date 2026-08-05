@@ -165,7 +165,11 @@ export default function ProfilePage() {
           <Field label="Work arrangement">
             <select className="input" value={form.work_arrangement ?? ""} onChange={(e) => set("work_arrangement", (e.target.value || null) as CareerProfile["work_arrangement"])}>
               <option value="">No preference</option>
-              {ARRANGEMENTS.map((a) => <option key={a} value={a} className="bg-surface capitalize">{a}</option>)}
+              {ARRANGEMENTS.map((a) => (
+                <option key={a} value={a} className="bg-surface">
+                  {a.charAt(0).toUpperCase() + a.slice(1)}
+                </option>
+              ))}
             </select>
           </Field>
         </div>
@@ -175,7 +179,9 @@ export default function ProfilePage() {
         </label>
       </Section>
 
-      <div className="mt-6 flex justify-end">
+      {/* Footer save for the profile form. Extra bottom margin keeps its glow
+          from overlapping the Brag bank card, which is a separate concern. */}
+      <div className="mb-10 mt-6 flex justify-end">
         <button onClick={onSave} disabled={save.isPending} className="btn-primary">
           {save.isPending ? "Saving…" : "Save changes"}
         </button>

@@ -129,8 +129,8 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Range + pay period persist on reload; no formatting issues.
 - ✅ **T-PROF-11** Set salary **max < min** → clear validation error, save blocked.
   - Notes: PASS. Save blocked with a validation error. **UX (Issue #4, P3):** message exposed internal field names + "Body error" prefix → FIXED (backend message now "Maximum salary cannot be less than minimum salary"; frontend strips the "Value error," prefix and skips the field label for model-level errors). Re-test message wording after deploy.
-- ⬜ **T-PROF-12** **Work arrangement** (remote/hybrid/onsite/flexible) + **Open to relocation** checkbox persist.
-  - Notes:
+- ✅ **T-PROF-12** **Work arrangement** (remote/hybrid/onsite/flexible) + **Open to relocation** checkbox persist.
+  - Notes: PASS. Both persist on reload. Two UI issues spotted in the screenshot & FIXED: (Issue #5) the footer "Save changes" glow overlapped the Brag Bank card → added bottom margin; (Issue #6) work-arrangement options rendered lowercase (native `<option>` ignores CSS `capitalize`) → capitalize the label text. Bundle `index-JII0EG0-.js`.
 
 ### 3.5 Brag Bank (bottom of Career Profile)
 > This is the substrate for "grounded persuasion" — everything the AI is *allowed*
@@ -480,6 +480,8 @@ Confirms the app is up before deep testing.
 | 2 | T-PROF-04 | P2 | Country-picker search didn't filter — two bugs: unreliable autoFocus (no focus) + `dial.includes("")` matched all on text queries. | ✅ **Closed** (fixed + re-tested pass) |
 | 3 | T-PROF-02 | P3 | Invalid-URL error message accurate but techy ("relative URL without a base"). | ✅ Fixed (now "…must be a valid URL (e.g. https://example.com)") — pending re-test |
 | 4 | T-PROF-11 | P3 | Salary validation message exposed internal field names + "Body error" prefix. | ✅ Fixed (clean "Maximum salary cannot be less than minimum salary") — pending re-test |
+| 5 | T-PROF-12 | P3 | Footer "Save changes" glow overlapped the Brag Bank card. | ✅ Fixed (bottom margin) — pending re-test |
+| 6 | T-PROF-12 | P3 | Work-arrangement dropdown options rendered lowercase. | ✅ Fixed (capitalize label text) — pending re-test |
 
 ---
 
@@ -490,4 +492,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: 2026-08-05 — Progress: Section 1 (Auth) COMPLETE. Section 2 (Dashboard) 05/06 ✅ (01–04 ⏳ deferred). **Section 3 (Career Profile): T-PROF-01…11 all ✅** (T-PROF-12 + Brag Bank T-BRAG-01…06 next). Issues: 4 found — #1,#2 closed; #3,#4 fixed pending re-test. All fixes from testing so far: better validation messages + country-picker search._
+_Last updated: 2026-08-05 — Progress: Sections 1 (Auth) COMPLETE, 2 (Dashboard) 05/06 ✅. **Section 3 (Career Profile): T-PROF-01…12 ALL ✅** — Brag Bank T-BRAG-01…06 next. hasnainrazaa03@gmail.com now email-verified. Issues: 6 found — #1,#2 closed; #3–#6 fixed pending re-test._
