@@ -83,18 +83,18 @@ Confirms the app is up before deep testing.
 
 ## 2. Dashboard
 
-- ⬜ **T-DASH-01** Top stat cards read sensibly: **Total applications**, **In progress**, **Interviewing**, **Offers**.
-  - Notes:
-- ⬜ **T-DASH-02** **Application pipeline** widget shows columns **Preparing · Applied · Screening · Interviewing · Offer · Closed** and your app appears in the *correct* column for its stage (a fresh tailoring = **Preparing**, not Applied).
-  - Notes:
-- ⬜ **T-DASH-03** **Recent activity** lists real events (tailoring started/ready) with times.
-  - Notes:
-- ⬜ **T-DASH-04** **Quick actions** (Tailor résumé, My résumés, Applications, Analytics) each navigate correctly.
-  - Notes:
-- ⬜ **T-DASH-05** Empty account: Dashboard shows a friendly empty state, not zeros-everywhere confusion.
-  - Notes:
-- ⬜ **T-DASH-06** "Good morning/afternoon/evening" greeting matches the time of day.
-  - Notes:
+- ⏳ **T-DASH-01** Top stat cards read sensibly: **Total applications**, **In progress**, **Interviewing**, **Offers**.
+  - Notes: DEFERRED until data exists (revisit after Section 7 tailoring).
+- ⏳ **T-DASH-02** **Application pipeline** widget shows columns **Preparing · Applied · Screening · Interviewing · Offer · Closed** and your app appears in the *correct* column for its stage (a fresh tailoring = **Preparing**, not Applied).
+  - Notes: DEFERRED until an application exists (revisit after Section 7).
+- ⏳ **T-DASH-03** **Recent activity** lists real events (tailoring started/ready) with times.
+  - Notes: DEFERRED until data exists.
+- ⏳ **T-DASH-04** **Quick actions** (Tailor résumé, My résumés, Applications, Analytics) each navigate correctly.
+  - Notes: DEFERRED (populated-dashboard card; revisit with data).
+- ✅ **T-DASH-05** Empty account: Dashboard shows a friendly empty state, not zeros-everywhere confusion.
+  - Notes: PASS. Clear empty state — "No applications yet" + "Add your master résumé, then paste a job posting…" with **Add résumé** / **New application** CTAs. No confusing zero-stats or broken UI.
+- ✅ **T-DASH-06** "Good morning/afternoon/evening" greeting matches the time of day.
+  - Notes: PASS. "Good morning, Hasnain 👋" — matches the time and is personalized.
 
 ---
 
@@ -487,4 +487,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: 2026-08-05 — Progress: **Section 1 (Auth) COMPLETE — T-AUTH-01…13 all ✅.** 1 issue found & closed (P3). Section 0 smoke: T-SMOKE-01 ✅. Next: Section 2 (Dashboard)._
+_Last updated: 2026-08-05 — Progress: **Section 1 (Auth) COMPLETE (01–13 ✅).** Section 2 (Dashboard): T-DASH-05/06 ✅; 01–04 ⏳ deferred until data. 1 issue found & closed (P3). Next: Section 3 (Career Profile + Brag Bank)._
