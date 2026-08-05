@@ -99,12 +99,27 @@ async function tryRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
-/** "password" + "String should have at least 10 characters" → "Password should have at least 10 characters." */
+/**
+ * Turn a raw pydantic validation message into something a user should read:
+ *  - "String should have at least 10 characters" (field "password") → "Password should have at least 10 characters."
+ *  - "Value error, Maximum salary cannot be less than minimum salary" (field "body") → "Maximum salary cannot be less than minimum salary."
+ *  - HttpUrl errors → "Portfolio URL must be a valid URL (e.g. https://example.com)."
+ */
 function humanizeFieldError(field: string, message: string): string {
-  const label = field.replace(/_/g, " ").replace(/\burl\b/i, "URL");
-  let msg = message.replace(/^(String|Value|Input)\b/, label);
-  if (!/^[A-Z]/.test(msg)) msg = msg.charAt(0).toUpperCase() + msg.slice(1);
-  return msg.replace(/[.!?]?$/, ".");
+  // "body" is a model-level (whole-request) error — it has no field label.
+  const label =
+    field && field !== "body"
+      ? field.replace(/_/g, " ").replace(/\burl\b/gi, "URL")
+      : "";
+  // Pydantic prefixes model-validator errors with "Value error, " — drop it.
+  let msg = message.replace(/^Value error,?\s*/i, "").trim();
+  if (/valid URL/i.test(msg)) {
+    msg = `${label || "This"} must be a valid URL (e.g. https://example.com)`;
+  } else if (label && /^(String|Value|Input)\b/.test(msg)) {
+    msg = msg.replace(/^(String|Value|Input)\b/, label);
+  }
+  msg = msg.charAt(0).toUpperCase() + msg.slice(1);
+  return msg.replace(/[.!?]*$/, ".");
 }
 
 async function parseError(res: Response): Promise<ApiError> {

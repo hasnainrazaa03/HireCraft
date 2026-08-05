@@ -49,7 +49,7 @@ class CareerProfileUpdate(ProfileModel):
             and self.salary_max is not None
             and self.salary_max < self.salary_min
         ):
-            raise ValueError("salary_max cannot be less than salary_min")
+            raise ValueError("Maximum salary cannot be less than minimum salary")
         return self
 
 

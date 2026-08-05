@@ -109,26 +109,26 @@ Confirms the app is up before deep testing.
 ### 3.2 Phone with country code (new)
 - ✅ **T-PROF-03** Click the **country button** (flag + dial code) → dropdown opens with a search box and a long country list.
   - Notes: PASS. Dropdown opens with search box + scrollable list of flags/dial codes.
-- ⚠️ **T-PROF-04** Search **"india"** → select India → button shows 🇮🇳 **+91**. Search **"+44"** → United Kingdom appears.
-  - Notes: WAS ❌ (Issue #2, P2). TWO bugs: (a) `autoFocus` unreliable → search never focused (keystrokes hit the country button); (b) the filter also matched `c.dial.includes("")` which is `true` for every country, so a text query showed the *whole* list. Both fixed (explicit ref-focus + only match dial when the query has digits). Served bundle `index-DWRt0PjW.js`. **Re-test after a HARD refresh** — search "india" → India only; "+44" → United Kingdom.
+- ✅ **T-PROF-04** Search **"india"** → select India → button shows 🇮🇳 **+91**. Search **"+44"** → United Kingdom appears.
+  - Notes: PASS (re-tested). WAS ❌ (Issue #2) — two bugs fixed: unreliable `autoFocus` (search never focused) + `dial.includes("")` matching every country on text queries. Now filters by name and by +code, and selection updates flag/dial. Issue #2 closed.
 - ✅ **T-PROF-05** Type a phone number → Save → reload → the **country + number both restore** correctly (e.g. `+1 2139945086` shows US selected + the number).
   - Notes: PASS. Country + number both restore after reload; no formatting loss.
-- ⬜ **T-PROF-06** Clicking outside the dropdown closes it; keyboard/tab reaches the field.
-  - Notes:
+- ✅ **T-PROF-06** Clicking outside the dropdown closes it; keyboard/tab reaches the field.
+  - Notes: PASS. Click-outside closes; Tab reaches the phone field + dropdown controls.
 
 ### 3.3 Eligibility dropdowns (new)
-- ⬜ **T-PROF-07** **Work authorization** is now a dropdown (US Citizen / Green Card / sponsorship options / EU-UK / Other) — pick one, save, reload → persists.
-  - Notes:
-- ⬜ **T-PROF-08** **Visa status** dropdown is exhaustive (F-1, OPT, **STEM OPT**, CPT, H-1B, H-4 EAD, L-1/L-2, J-1, O-1, TN, E-3, Green Card, Asylum, DACA, Other) — select **F-1 STEM OPT**, save, reload.
-  - Notes:
+- ✅ **T-PROF-07** **Work authorization** is now a dropdown (US Citizen / Green Card / sponsorship options / EU-UK / Other) — pick one, save, reload → persists.
+  - Notes: PASS. Dropdown; selection saves + persists on reload.
+- ✅ **T-PROF-08** **Visa status** dropdown is exhaustive (F-1, OPT, **STEM OPT**, CPT, H-1B, H-4 EAD, L-1/L-2, J-1, O-1, TN, E-3, Green Card, Asylum, DACA, Other) — select **F-1 STEM OPT**, save, reload.
+  - Notes: PASS. Selected F-1 (Student); saved + persisted on reload.
 
 ### 3.4 Preferences, salary & pay period (new)
-- ⬜ **T-PROF-09** **Preferred roles / industries / locations** tag inputs: add with Enter, remove with ×, persist on save.
-  - Notes:
-- ⬜ **T-PROF-10** **Salary min/max** + new **Pay period** dropdown (Per year / month / week / hour). Set 120k–160k, **Per year**, save, reload → persists.
-  - Notes:
-- ⬜ **T-PROF-11** Set salary **max < min** → clear validation error, save blocked.
-  - Notes:
+- ✅ **T-PROF-09** **Preferred roles / industries / locations** tag inputs: add with Enter, remove with ×, persist on save.
+  - Notes: PASS. Add (Enter) / remove (×) / save / persist all work across the three tag fields.
+- ✅ **T-PROF-10** **Salary min/max** + new **Pay period** dropdown (Per year / month / week / hour). Set 120k–160k, **Per year**, save, reload → persists.
+  - Notes: PASS. Range + pay period persist on reload; no formatting issues.
+- ✅ **T-PROF-11** Set salary **max < min** → clear validation error, save blocked.
+  - Notes: PASS. Save blocked with a validation error. **UX (Issue #4, P3):** message exposed internal field names + "Body error" prefix → FIXED (backend message now "Maximum salary cannot be less than minimum salary"; frontend strips the "Value error," prefix and skips the field label for model-level errors). Re-test message wording after deploy.
 - ⬜ **T-PROF-12** **Work arrangement** (remote/hybrid/onsite/flexible) + **Open to relocation** checkbox persist.
   - Notes:
 
@@ -477,8 +477,9 @@ Confirms the app is up before deep testing.
 | ID | Test | Severity | Summary | Status |
 |----|------|----------|---------|--------|
 | 1 | T-AUTH-03 | P3 | Weak password showed generic "Validation failed." instead of the specific reason. | ✅ **Closed** (fixed + re-tested pass) |
-| 2 | T-PROF-04 | P2 | Country-picker search didn't filter — two bugs: unreliable autoFocus (no focus) + `dial.includes("")` matched all on text queries. | ✅ Fixed (ref-focus + digits-only dial match) — pending re-test after hard refresh |
-| 3 | T-PROF-02 | P3 | Invalid-URL error message is accurate but techy ("relative URL without a base"). | Open (optional UX) |
+| 2 | T-PROF-04 | P2 | Country-picker search didn't filter — two bugs: unreliable autoFocus (no focus) + `dial.includes("")` matched all on text queries. | ✅ **Closed** (fixed + re-tested pass) |
+| 3 | T-PROF-02 | P3 | Invalid-URL error message accurate but techy ("relative URL without a base"). | ✅ Fixed (now "…must be a valid URL (e.g. https://example.com)") — pending re-test |
+| 4 | T-PROF-11 | P3 | Salary validation message exposed internal field names + "Body error" prefix. | ✅ Fixed (clean "Maximum salary cannot be less than minimum salary") — pending re-test |
 
 ---
 
@@ -489,4 +490,4 @@ Confirms the app is up before deep testing.
 - [ ] Section 18 (cross-cutting) spot-checked
 - [ ] All `P0`/`P1` issues logged and triaged
 
-_Last updated: 2026-08-05 — Progress: **Section 1 (Auth) COMPLETE (01–13 ✅).** Section 2 (Dashboard): T-DASH-05/06 ✅; 01–04 ⏳ deferred until data. 1 issue found & closed (P3). Next: Section 3 (Career Profile + Brag Bank)._
+_Last updated: 2026-08-05 — Progress: Section 1 (Auth) COMPLETE. Section 2 (Dashboard) 05/06 ✅ (01–04 ⏳ deferred). **Section 3 (Career Profile): T-PROF-01…11 all ✅** (T-PROF-12 + Brag Bank T-BRAG-01…06 next). Issues: 4 found — #1,#2 closed; #3,#4 fixed pending re-test. All fixes from testing so far: better validation messages + country-picker search._
