@@ -17,6 +17,71 @@ export const CONFIDENCE_META: Record<
   blocked: { label: "Blocked", badge: "badge-danger", dot: "bg-danger" },
 };
 
+// How each verdict is determined — surfaced as badge tooltips and an inline legend.
+const CONFIDENCE_HELP: Record<BulletConfidence["confidence"], string> = {
+  verified: "Every number, tool, and claim in this line is present in your master résumé.",
+  likely: "Closely supported by your résumé — the phrasing generalizes slightly but invents nothing.",
+  needs_review: "Worth a quick check — the wording drifts a little from your source material.",
+  blocked: "Made a claim your résumé doesn't support, so it was removed automatically — never shown.",
+};
+
+const CONFIDENCE_TONE: Record<BulletConfidence["confidence"], string> = {
+  verified: "text-emerald",
+  likely: "text-electric",
+  needs_review: "text-coral",
+  blocked: "text-danger",
+};
+
+type Tok = { text: string; type: "eq" | "add" | "del" };
+
+/** Word-level LCS diff so inserted/removed words are highlighted, not just the
+ * whole bullet. Whitespace is kept as its own tokens (rendered un-highlighted)
+ * so spacing survives and highlight blocks don't bleed across gaps. */
+function wordDiff(before: string, after: string): { before: Tok[]; after: Tok[] } {
+  const a = before.split(/(\s+)/);
+  const b = after.split(/(\s+)/);
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const bt: Tok[] = [];
+  const at: Tok[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      bt.push({ text: a[i], type: "eq" });
+      at.push({ text: b[j], type: "eq" });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      bt.push({ text: a[i], type: "del" });
+      i++;
+    } else {
+      at.push({ text: b[j], type: "add" });
+      j++;
+    }
+  }
+  while (i < m) bt.push({ text: a[i++], type: "del" });
+  while (j < n) at.push({ text: b[j++], type: "add" });
+  return { before: bt, after: at };
+}
+
+function toItems(value: string | string[] | null): string[] {
+  return Array.isArray(value) ? value : value ? [value] : [];
+}
+
+function TokenSpan({ t }: { t: Tok }) {
+  if (t.type === "eq" || /^\s+$/.test(t.text)) return <span>{t.text}</span>;
+  if (t.type === "del")
+    return <span className="rounded bg-danger/10 text-danger/80 line-through decoration-danger/50">{t.text}</span>;
+  return <span className="rounded bg-emerald/20 text-emerald">{t.text}</span>;
+}
+
 export function DiffView({
   diff,
   afterLabel = "Tailored",
@@ -32,46 +97,57 @@ export function DiffView({
 
   return (
     <div className="space-y-4">
-      {diff.map((entry, index) => (
-        <div key={index} className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/[0.08] bg-surface-2 px-4 py-2">
-            <span className="text-sm font-medium">{entry.label}</span>
-            <span className="text-xs uppercase tracking-wide text-subtle">
-              {entry.section} · {entry.change}
-            </span>
+      {diff.map((entry, index) => {
+        const before = toItems(entry.before);
+        const after = toItems(entry.after);
+        const rows = Math.max(before.length, after.length);
+        const pairs = Array.from({ length: rows }, (_, r) =>
+          wordDiff(before[r] ?? "", after[r] ?? ""),
+        );
+        return (
+          <div key={index} className="card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-white/[0.08] bg-surface-2 px-4 py-2">
+              <span className="text-sm font-medium">{entry.label}</span>
+              <span className="text-xs uppercase tracking-wide text-subtle">
+                {entry.section} · {entry.change}
+              </span>
+            </div>
+            <div className="grid gap-px bg-white/[0.06] md:grid-cols-2">
+              <DiffSide title="Original" tone="before" empty={before.length === 0} rows={pairs.map((p) => p.before)} />
+              <DiffSide title={afterLabel} tone="after" empty={after.length === 0} rows={pairs.map((p) => p.after)} />
+            </div>
           </div>
-          <div className="grid gap-px bg-white/[0.06] md:grid-cols-2">
-            <DiffSide title="Original" value={entry.before} tone="before" />
-            <DiffSide title={afterLabel} value={entry.after} tone="after" />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 function DiffSide({
   title,
-  value,
   tone,
+  empty,
+  rows,
 }: {
   title: string;
-  value: string | string[] | null;
   tone: "before" | "after";
+  empty: boolean;
+  rows: Tok[][];
 }) {
-  const items = Array.isArray(value) ? value : value ? [value] : [];
   return (
     <div className={`p-4 ${tone === "after" ? "bg-emerald/[0.05]" : "bg-surface"}`}>
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-subtle">
         {title}
       </div>
-      {items.length === 0 ? (
-        <p className="text-sm italic text-subtle">— removed —</p>
+      {empty ? (
+        <p className="text-sm italic text-subtle">{tone === "after" ? "— removed —" : "— new —"}</p>
       ) : (
         <ul className="space-y-1.5">
-          {items.map((item, index) => (
+          {rows.map((toks, index) => (
             <li key={index} className="text-sm leading-relaxed text-content">
-              {item}
+              {toks.length === 0
+                ? <span className="italic text-subtle">—</span>
+                : toks.map((t, k) => <TokenSpan key={k} t={t} />)}
             </li>
           ))}
         </ul>
@@ -106,12 +182,26 @@ export function ConfidencePanel({
       <div className="mt-3 flex flex-wrap gap-2">
         {(["verified", "likely", "needs_review", "blocked"] as const).map((k) =>
           counts[k] ? (
-            <span key={k} className={CONFIDENCE_META[k].badge}>
+            <span key={k} className={CONFIDENCE_META[k].badge} title={CONFIDENCE_HELP[k]}>
               {counts[k]} {CONFIDENCE_META[k].label}
             </span>
           ) : null,
         )}
       </div>
+      <details className="group mt-2">
+        <summary className="inline-flex cursor-pointer list-none select-none items-center gap-1 text-xs text-brand-300/80 transition hover:text-brand-300">
+          <span className="transition group-open:rotate-90">›</span>
+          What do these mean?
+        </summary>
+        <dl className="mt-1.5 space-y-1 pl-3.5 text-xs leading-relaxed text-muted">
+          {(["verified", "likely", "needs_review", "blocked"] as const).map((k) => (
+            <div key={k} className="flex gap-2">
+              <dt className={`shrink-0 font-medium ${CONFIDENCE_TONE[k]}`}>{CONFIDENCE_META[k].label}</dt>
+              <dd>{CONFIDENCE_HELP[k]}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       <div className="mt-3 space-y-1.5">
         {survived.map((c, i) => (
           <div

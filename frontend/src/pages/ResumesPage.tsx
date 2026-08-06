@@ -369,7 +369,7 @@ function RewriteModal({
   const blocked = confidence.filter((c) => c.confidence === "blocked").length;
 
   return (
-    <Modal open onClose={onClose} title={`Improve with AI — ${profile.name}`} wide>
+    <Modal open onClose={onClose} title={`Improve with AI — ${profile.name}`} size="xl">
       {rewrite.isPending ? (
         <div className="py-16 text-center">
           <Spinner className="mx-auto h-6 w-6" />
@@ -391,17 +391,26 @@ function RewriteModal({
       ) : (
         <div className="space-y-6">
           {/* Score before/after */}
-          <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/[0.06] bg-surface-2 px-5 py-4">
-            <ScoreDelta label="Before" value={result.score_before} />
-            <span className="text-subtle">→</span>
-            <ScoreDelta label="After" value={result.score_after} highlight />
-            <span
-              className={`ml-auto text-sm font-medium ${
-                delta > 0 ? "text-emerald" : delta < 0 ? "text-coral" : "text-subtle"
-              }`}
-            >
-              {delta > 0 ? `+${delta}` : delta} points
-            </span>
+          <div className="rounded-2xl border border-white/[0.06] bg-surface-2 px-5 py-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <ScoreDelta label="Before" value={result.score_before} />
+              <span className="text-subtle">→</span>
+              <ScoreDelta label="After" value={result.score_after} highlight />
+              <span
+                className={`ml-auto text-sm font-medium ${
+                  delta > 0 ? "text-emerald" : delta < 0 ? "text-coral" : "text-subtle"
+                }`}
+              >
+                {delta > 0 ? `+${delta}` : delta} points
+              </span>
+            </div>
+            <p className="mt-3 border-t border-white/[0.06] pt-3 text-xs leading-relaxed text-muted">
+              {delta > 0
+                ? "The rewrite tightened wording and surfaced more concrete impact, which lifted the score."
+                : delta < 0
+                  ? "A small dip here is normal: the AI favored readability and concision, which can trade off against raw keyword or metric density. Skim the changes below and keep only what serves you — nothing is saved until you accept."
+                  : "Same score, cleaner phrasing — these are lateral gains in clarity. Keep what reads better."}
+            </p>
           </div>
 
           {result.diff.length === 0 ? (
@@ -481,7 +490,7 @@ function ScoreModal({ profile, onClose }: { profile: ResumeProfileSummary; onClo
     queryFn: () => api.get<ResumeAnalysis>(`/resumes/${profile.id}/analysis`),
   });
   return (
-    <Modal open onClose={onClose} title={`Score — ${profile.name}`} wide>
+    <Modal open onClose={onClose} title={`Score — ${profile.name}`} size="xl">
       {isLoading ? (
         <div className="py-10 text-center"><Spinner className="mx-auto h-6 w-6" /></div>
       ) : isError || !data ? (
@@ -530,7 +539,7 @@ function Editor(props: any) {
       </div>
 
       {analysis && (
-        <Modal open onClose={() => setAnalysis(null)} title="Résumé score" wide>
+        <Modal open onClose={() => setAnalysis(null)} title="Résumé score" size="xl">
           <ScorePanel analysis={analysis} />
         </Modal>
       )}
@@ -647,7 +656,7 @@ function PreviewModal({ profile, templates, onClose }: { profile: ResumeProfileS
   }, [url]);
 
   return (
-    <Modal open onClose={onClose} title={`Preview — ${profile.name}`} wide>
+    <Modal open onClose={onClose} title={`Preview — ${profile.name}`} size="xl">
       <div className="mb-3 flex items-center gap-2">
         <span className="text-sm text-muted">Template:</span>
         <select className="input max-w-[12rem]" value={template} onChange={(e) => setTemplate(e.target.value)}>
@@ -658,13 +667,13 @@ function PreviewModal({ profile, templates, onClose }: { profile: ResumeProfileS
           once its header, padding and the template row are accounted for —
           otherwise the panel's own scrollbar appears and you get two nested
           scroll areas fighting over the same gesture. */}
-      <div className="h-[70vh] max-h-[calc(100dvh-16rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
+      <div className="h-[76vh] max-h-[calc(100dvh-14rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
         {isFetching ? (
           <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>
         ) : isError ? (
           <div className="flex h-full items-center justify-center text-sm text-danger">Couldn't render this résumé.</div>
         ) : (
-          <iframe title="Résumé preview" src={url} className="h-full w-full" />
+          <iframe title="Résumé preview" src={`${url}#navpanes=0&zoom=page-width`} className="h-full w-full" />
         )}
       </div>
     </Modal>

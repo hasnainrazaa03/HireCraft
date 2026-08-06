@@ -145,7 +145,7 @@ function TemplatePreviewModal({
   }, [resume, template.id]);
 
   return (
-    <Modal open onClose={onClose} title={`${template.name} — ${resume?.name ?? "preview"}`} wide>
+    <Modal open onClose={onClose} title={`${template.name} — ${resume?.name ?? "preview"}`} size="xl">
       {!resume ? (
         <div className="py-12 text-center">
           <p className="text-sm text-muted">Add a résumé first to preview it in a template.</p>
@@ -159,7 +159,9 @@ function TemplatePreviewModal({
         <>
           {/* Clamped as in ResumesPage's preview: 70vh normally, but never more
               than the dialog can actually show without a second scrollbar. */}
-          <iframe title="preview" src={url} className="h-[70vh] max-h-[calc(100dvh-16rem)] w-full rounded-xl border border-white/[0.08] bg-white" />
+          {/* #navpanes=0 hides the thumbnail rail, zoom=page-width fits the page
+              to the (now wider) modal so the résumé is readable without zooming. */}
+          <iframe title="preview" src={`${url}#navpanes=0&zoom=page-width`} className="h-[76vh] max-h-[calc(100dvh-14rem)] w-full rounded-xl border border-white/[0.08] bg-white" />
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => api.download(`/resumes/${resume.id}/render.pdf?template=${template.id}`, `${resume.name}.pdf`).catch(() => toast.error("Download failed"))}

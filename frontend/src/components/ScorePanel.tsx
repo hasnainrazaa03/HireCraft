@@ -22,6 +22,25 @@ const SEVERITY_DOT: Record<Finding["severity"], string> = {
   good: "bg-emerald",
 };
 
+// Plain-language explainer per metric key (see backend analysis.py). Shown in a
+// collapsible under each bar so the score is interpretable, not just a number.
+const METRIC_EXPLAIN: Record<string, string> = {
+  quantification:
+    "How many bullets carry a concrete number — %, $, time saved, users, scale. Recruiters skim for outcomes, so add metrics you can back up (e.g. “cut latency 44%”, “across 35+ countries”).",
+  action_verbs:
+    "Whether bullets open with a strong verb (Built, Led, Shipped) rather than “Responsible for” or “Worked on”. Lead each bullet with the action you took.",
+  impact:
+    "Rewards bullets that state a result — the “so what”, not just the task. Pair what you did with the effect it had.",
+  brevity:
+    "Flags bullets that run long. Aim for one tight line each (roughly under ~30 words); split or trim rambling bullets.",
+  readability:
+    "Estimates how quickly a recruiter can skim — sentence length, jargon density, consistent structure. Shorter, parallel phrasing reads faster.",
+  completeness:
+    "Checks that the sections a recruiter expects are present (contact, experience, education, skills). Fill any gaps.",
+  recruiter_friendly:
+    "A 6-second-skim view blending the above: clear titles and dates, scannable bullets, no walls of text.",
+};
+
 function scoreColor(score: number): string {
   if (score >= 80) return "text-emerald";
   if (score >= 60) return "text-electric";
@@ -113,6 +132,16 @@ export function ScorePanel({ analysis }: { analysis: ResumeAnalysis }) {
                 <div className="h-full rounded-full" style={{ width: `${m.score}%`, background: ring(m.score), transition: "width 0.5s ease" }} />
               </div>
               <div className="mt-0.5 text-xs text-subtle">{m.detail}</div>
+              {METRIC_EXPLAIN[m.key] && (
+                <details className="group mt-1">
+                  <summary className="inline-flex cursor-pointer list-none select-none items-center gap-1 text-xs text-brand-300/80 transition hover:text-brand-300">
+                    <span className="transition group-open:rotate-90">›</span>
+                    <span className="group-open:hidden">How is this scored?</span>
+                    <span className="hidden group-open:inline">Hide</span>
+                  </summary>
+                  <p className="mt-1 pl-3.5 text-xs leading-relaxed text-muted">{METRIC_EXPLAIN[m.key]}</p>
+                </details>
+              )}
             </div>
           ))}
         </div>

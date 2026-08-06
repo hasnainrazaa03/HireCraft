@@ -161,6 +161,71 @@ export function ResumeBuilder({
           </>
         )}
       />
+
+      {/* Certifications */}
+      <EntryList
+        title="Certifications"
+        entries={value.certifications ?? []}
+        onChange={(list) => setList("certifications", list)}
+        blank={{ name: "", issuer: "", date: "", url: "" }}
+        addLabel="Add certification"
+        label={(e) => e.name}
+        render={(e, up) => (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Name" value={e.name} onChange={(v) => up({ name: v })} required />
+              <Input label="Issuer" value={e.issuer} onChange={(v) => up({ issuer: v })} placeholder="AWS, Google…" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Date (YYYY or YYYY-MM)" value={e.date} onChange={(v) => up({ date: v })} />
+              <Input label="URL" value={e.url} onChange={(v) => up({ url: v })} placeholder="https://…" />
+            </div>
+          </>
+        )}
+      />
+
+      {/* Awards */}
+      <EntryList
+        title="Awards"
+        entries={value.awards ?? []}
+        onChange={(list) => setList("awards", list)}
+        blank={{ title: "", issuer: "", date: "", description: "" }}
+        addLabel="Add award"
+        label={(e) => e.title}
+        render={(e, up) => (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Title" value={e.title} onChange={(v) => up({ title: v })} required />
+              <Input label="Issuer" value={e.issuer} onChange={(v) => up({ issuer: v })} placeholder="IEEE, RV College…" />
+            </div>
+            <Input label="Date (YYYY or YYYY-MM)" value={e.date} onChange={(v) => up({ date: v })} />
+            <Input label="Description" value={e.description} onChange={(v) => up({ description: v })} />
+          </>
+        )}
+      />
+
+      {/* Publications */}
+      <EntryList
+        title="Publications"
+        entries={value.publications ?? []}
+        onChange={(list) => setList("publications", list)}
+        blank={{ title: "", venue: "", date: "", url: "", authors: [] }}
+        addLabel="Add publication"
+        label={(e) => e.title}
+        render={(e, up) => (
+          <>
+            <Input label="Title" value={e.title} onChange={(v) => up({ title: v })} required />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Venue" value={e.venue} onChange={(v) => up({ venue: v })} placeholder="NeurIPS, arXiv…" />
+              <Input label="Date (YYYY or YYYY-MM)" value={e.date} onChange={(v) => up({ date: v })} />
+            </div>
+            <Input label="URL" value={e.url} onChange={(v) => up({ url: v })} placeholder="https://…" />
+            <Field label="Authors">
+              <TagInput value={e.authors ?? []} onChange={(v) => up({ authors: v })} placeholder="Add author and press Enter" />
+            </Field>
+          </>
+        )}
+      />
     </div>
   );
 }
@@ -414,13 +479,13 @@ export function pruneEmpty(content: ResumeContent): ResumeContent {
 
   const next: ResumeContent = { ...content };
 
-  for (const key of ["experience", "education", "projects"]) {
+  for (const key of ["experience", "education", "projects", "certifications", "awards", "publications"]) {
     const entries = next[key];
     if (!Array.isArray(entries)) continue;
     next[key] = entries
       .map((entry: Record<string, any>) => {
         const cleaned: Record<string, any> = { ...entry };
-        for (const listKey of ["highlights", "technologies", "coursework", "honors"]) {
+        for (const listKey of ["highlights", "technologies", "coursework", "honors", "authors"]) {
           if (listKey in cleaned) cleaned[listKey] = bullets(cleaned[listKey]);
         }
         return cleaned;

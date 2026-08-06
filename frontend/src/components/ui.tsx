@@ -62,6 +62,12 @@ export function EmptyState({
 
 // -- Modal --------------------------------------------------------------------
 
+const MODAL_WIDTHS = {
+  md: "max-w-md",
+  lg: "max-w-2xl",
+  xl: "max-w-5xl",
+} as const;
+
 export function Modal({
   open,
   onClose,
@@ -69,6 +75,7 @@ export function Modal({
   children,
   footer,
   wide = false,
+  size,
 }: {
   open: boolean;
   onClose: () => void;
@@ -76,6 +83,10 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  // Explicit width tier. Falls back to `wide` (lg) / default (md) for callers
+  // that haven't opted in. Use "xl" for content-heavy modals (PDF previews,
+  // before/after diffs, score breakdowns).
+  size?: keyof typeof MODAL_WIDTHS;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -93,7 +104,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/70 backdrop-blur-md animate-fade-in"
         onClick={onClose}
       />
       {/* Capped to the viewport and laid out as a column, so tall content
@@ -106,7 +117,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         className={`glass modal-panel relative z-10 flex w-full flex-col animate-fade-in ${
-          wide ? "max-w-2xl" : "max-w-md"
+          MODAL_WIDTHS[size ?? (wide ? "lg" : "md")]
         }`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4">
