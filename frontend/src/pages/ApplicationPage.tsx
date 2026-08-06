@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   useQuery,
@@ -16,6 +16,7 @@ import {
   type TrackerStatus,
   type JobMatch,
   type Scorecard,
+  type CopilotResponse,
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
@@ -903,23 +904,130 @@ function JobDetailsCard({ job }: { job: ApplicationDetail["job"] }) {
   );
 }
 
-/** Grounded AI assistant — visual card; full inline chat + apply-changes is Phase B. */
-function AIAssistantCard() {
-  const navigate = useNavigate();
+interface ChatMsg {
+  role: "user" | "assistant";
+  content: string;
+  grounded_in?: string[];
+}
+
+function ChatBubble({ msg }: { msg: ChatMsg }) {
+  const isUser = msg.role === "user";
   return (
-    <div className="card p-5">
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+      <div className="max-w-[85%] space-y-1.5">
+        <div
+          className={`whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+            isUser ? "bg-brand-600 text-white" : "border border-white/[0.06] bg-surface text-content"
+          }`}
+        >
+          {msg.content}
+        </div>
+        {msg.grounded_in && msg.grounded_in.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {msg.grounded_in.map((g) => (
+              <span key={g} className="badge-muted text-[10px]">{g}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ASSIST_SUGGESTIONS = [
+  "Make my résumé more impactful for this role.",
+  "What keywords am I missing?",
+  "Rewrite my summary to be stronger.",
+];
+
+/** Inline grounded assistant chat for this application (Phase B.1).
+ * Uses the grounded /copilot/chat endpoint scoped to this application, so every
+ * answer is tied to the tailored résumé + job. Inline "Apply changes" is next. */
+function AIAssistantCard({ applicationId }: { applicationId: string }) {
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const send = useMutation({
+    mutationFn: (message: string) =>
+      api.post<CopilotResponse>("/copilot/chat", {
+        message,
+        history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+        application_id: applicationId,
+      }),
+    onSuccess: (r) =>
+      setMessages((p) => [...p, { role: "assistant", content: r.reply, grounded_in: r.grounded_in }]),
+    onError: (e) =>
+      setMessages((p) => [
+        ...p,
+        { role: "assistant", content: e instanceof ApiError ? `⚠️ ${e.message}` : "⚠️ Something went wrong. Try again." },
+      ]),
+  });
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, send.isPending]);
+
+  function submit(text: string) {
+    const message = text.trim();
+    if (!message || send.isPending) return;
+    setMessages((p) => [...p, { role: "user", content: message }]);
+    setInput("");
+    send.mutate(message);
+  }
+
+  return (
+    <div className="card flex flex-col p-5">
       <div className="flex items-center gap-2">
         <IconSparkles className="h-5 w-5 text-brand-300" />
         <h2 className="text-base font-semibold">AI Assistant</h2>
         <span className="badge-emerald text-[10px]">Grounded</span>
       </div>
-      <p className="mt-1.5 text-sm text-muted">
-        Chat with an assistant that only uses your real résumé and this job — ask it to strengthen bullets,
-        surface keywords, or rewrite a section. Inline editing lands next; for now it opens in Copilot.
+      <p className="mt-0.5 text-xs text-subtle">Grounded in your résumé and this job — it never invents.</p>
+
+      <div className="mt-3 max-h-[26rem] min-h-[9rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
+        {messages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 py-4 text-center">
+            <p className="max-w-xs text-sm text-subtle">
+              Ask me to strengthen bullets, surface keywords, or rewrite a section for this role.
+            </p>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {ASSIST_SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => submit(s)}
+                  className="rounded-full border border-white/[0.1] bg-surface px-3 py-1 text-xs text-muted transition hover:text-content"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          messages.map((m, i) => <ChatBubble key={i} msg={m} />)
+        )}
+        {send.isPending && (
+          <div className="flex items-center gap-2 text-xs text-subtle">
+            <Spinner className="h-3.5 w-3.5" /> Thinking…
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      <form onSubmit={(e) => { e.preventDefault(); submit(input); }} className="mt-2 flex gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask me to improve your résumé…"
+          className="input flex-1"
+        />
+        <button type="submit" disabled={send.isPending || !input.trim()} className="btn-primary shrink-0 disabled:opacity-40">
+          <IconArrowRight className="h-4 w-4" />
+        </button>
+      </form>
+      <p className="mt-1.5 text-[11px] text-subtle">
+        Grounded in your résumé and this job. Inline “Apply changes” to rewrite bullets lands in the next iteration.
       </p>
-      <button onClick={() => navigate("/copilot")} className="btn-primary mt-3">
-        <IconSparkles className="h-4 w-4" /> Open grounded assistant
-      </button>
     </div>
   );
 }
@@ -993,7 +1101,7 @@ function OverviewTab({
             </div>
           )}
         </div>
-        <AIAssistantCard />
+        <AIAssistantCard applicationId={application.id} />
       </div>
 
       <div className="space-y-5">
