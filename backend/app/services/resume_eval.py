@@ -164,6 +164,124 @@ def score_from_report(
     return ResumeScorecard(overall=overall, metrics=metrics)
 
 
+@dataclass
+class ImprovementTip:
+    """A specific, data-backed way to raise the score for THIS résumé.
+
+    `instruction` is written so the grounded AI assistant can act on it directly —
+    the "Improve with AI" button hands it straight to the rewrite endpoint.
+    """
+
+    key: str
+    title: str
+    detail: str
+    metric_key: str
+    keywords: list[str]
+    instruction: str
+
+
+def suggestions_from_report(
+    tailored: MasterResume, report: GuardrailReport, *, limit: int = 3
+) -> list[ImprovementTip]:
+    """The weakest, most fixable areas — named with real data from this résumé.
+
+    Not generic advice: each tip cites the actual gap (the real missing keywords,
+    the real count of un-quantified bullets) and carries an instruction the
+    grounded assistant can run. Deterministic and free, like the scorecard itself.
+    """
+    bullets = _bullets(tailored)
+    total = len(bullets)
+    requested = list(report.keywords_requested)
+    verified = {k.lower() for k in report.keywords_verified}
+    missing = [k for k in requested if k.lower() not in verified]
+
+    without_metric = sum(1 for b in bullets if not _numbers_in(b))
+    weak = 0
+    for b in bullets:
+        m = _WORD.search(b)
+        if m and m.group().lower() in _WEAK_OPENERS:
+            weak += 1
+    off_length = sum(1 for b in bullets if not 6 <= len(b.split()) <= 34)
+    errors = sum(1 for v in report.violations if v.severity == "error")
+
+    card = score_from_report(tailored, report)
+    candidates: list[tuple[int, ImprovementTip]] = []
+
+    ats = card.get("ats")
+    if ats < 80 and missing:
+        candidates.append((ats, ImprovementTip(
+            key="keywords",
+            title="Add missing keywords",
+            detail="Weave in where you have real experience: " + ", ".join(missing[:6]) + ".",
+            metric_key="ats",
+            keywords=missing[:10],
+            instruction=(
+                "Weave these job keywords into my résumé wherever I have genuine "
+                "supporting experience — never fabricate: " + ", ".join(missing[:10]) + "."
+            ),
+        )))
+
+    impact = card.get("impact")
+    if impact < 80 and without_metric:
+        candidates.append((impact, ImprovementTip(
+            key="impact",
+            title="Quantify more impact",
+            detail=f"{without_metric} of {total} bullets carry no number — add outcomes (%, $, time saved).",
+            metric_key="impact",
+            keywords=[],
+            instruction=(
+                "Add quantified outcomes (numbers, %, $, time saved) to my strongest "
+                "bullets that currently lack a metric — only where it is truthful."
+            ),
+        )))
+
+    verbs = card.get("verbs")
+    if verbs < 90 and weak:
+        candidates.append((verbs, ImprovementTip(
+            key="verbs",
+            title="Strengthen action verbs",
+            detail=f"{weak} bullet(s) open with a duty verb like “Responsible for”.",
+            metric_key="verbs",
+            keywords=[],
+            instruction=(
+                "Rewrite any bullets that open with weak or duty verbs (e.g. "
+                "'Responsible for', 'Worked on') to lead with a strong action verb, "
+                "keeping every fact unchanged."
+            ),
+        )))
+
+    concise = card.get("conciseness")
+    if concise < 90 and off_length:
+        candidates.append((concise, ImprovementTip(
+            key="conciseness",
+            title="Tighten content",
+            detail=f"{off_length} bullet(s) fall outside the 6–34 word sweet spot.",
+            metric_key="conciseness",
+            keywords=[],
+            instruction=(
+                "Tighten overly long bullets to the 6–34 word range without dropping "
+                "key facts; expand any too short to stand on their own."
+            ),
+        )))
+
+    ground = card.get("grounding")
+    if ground < 100 and errors:
+        candidates.append((ground, ImprovementTip(
+            key="grounding",
+            title="Fix flagged claims",
+            detail=f"{errors} claim(s) couldn't be verified — review the Guardrails tab.",
+            metric_key="grounding",
+            keywords=[],
+            instruction=(
+                "Review the claims guardrails flagged as unsupported and rewrite them "
+                "so every statement is backed by my résumé or brag bank."
+            ),
+        )))
+
+    candidates.sort(key=lambda c: c[0])
+    return [tip for _, tip in candidates[:limit]]
+
+
 def compare(before: ResumeScorecard, after: ResumeScorecard) -> dict[str, int]:
     """Per-metric delta (after − before), plus 'overall'. For A/B on changes."""
     deltas = {m.key: m.score - before.get(m.key) for m in after.metrics}

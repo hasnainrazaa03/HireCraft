@@ -38,6 +38,7 @@ from app.schemas.api import (
     OutreachRequest,
     Scorecard,
     ScorecardMetric,
+    ScorecardSuggestion,
 )
 from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
@@ -61,7 +62,7 @@ from app.services.pipeline import (
     generate_outreach,
     revise_resume,
 )
-from app.services.resume_eval import score_from_report
+from app.services.resume_eval import score_from_report, suggestions_from_report
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
 from app.services.usage import accrue_usage
 from app.workers.tasks import enqueue_tailoring
@@ -201,11 +202,19 @@ def _scorecard_for(application: Application) -> Scorecard | None:
         tailored = MasterResume.model_validate(application.tailored_resume)
         report = GuardrailReport.model_validate(application.guardrail_report)
         card = score_from_report(tailored, report)
+        tips = suggestions_from_report(tailored, report)
         return Scorecard(
             overall=card.overall,
             metrics=[
                 ScorecardMetric(key=m.key, label=m.label, score=m.score, detail=m.detail)
                 for m in card.metrics
+            ],
+            suggestions=[
+                ScorecardSuggestion(
+                    key=t.key, title=t.title, detail=t.detail,
+                    metric_key=t.metric_key, keywords=t.keywords, instruction=t.instruction,
+                )
+                for t in tips
             ],
         )
     except Exception:  # noqa: BLE001 - a bad blob shouldn't break the page

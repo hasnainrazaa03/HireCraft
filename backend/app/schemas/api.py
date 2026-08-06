@@ -320,11 +320,23 @@ class ScorecardMetric(ApiModel):
     detail: str
 
 
+class ScorecardSuggestion(ApiModel):
+    """A specific, data-backed improvement the AI assistant can act on."""
+
+    key: str
+    title: str
+    detail: str
+    metric_key: str
+    keywords: list[str] = Field(default_factory=list)
+    instruction: str
+
+
 class Scorecard(ApiModel):
     """Deterministic résumé-quality readout for a finished tailoring."""
 
     overall: int
     metrics: list[ScorecardMetric]
+    suggestions: list[ScorecardSuggestion] = Field(default_factory=list)
 
 
 class ApplicationDetail(ApiModel):

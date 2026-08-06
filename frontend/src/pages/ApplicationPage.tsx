@@ -16,6 +16,7 @@ import {
   type TrackerStatus,
   type JobMatch,
   type Scorecard,
+  type ScorecardSuggestion,
   type CopilotResponse,
   type DiffEntry,
 } from "../lib/api";
@@ -778,57 +779,235 @@ function scoreHex(score: number): string {
   return "#FF5C7A";
 }
 
-/** Compact donut score ring — replaces the tall bar breakdown. */
-function Donut({ score, size = 66, stroke = 7 }: { score: number; size?: number; stroke?: number }) {
+/* ── Quality-card building blocks ─────────────────────────────────────── */
+
+function MetricGlyph({ k }: { k: string }) {
+  const c = "h-4 w-4";
+  if (k === "impact")
+    return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 20V11M12 20V4M19 20v-6M3 20h18" /></svg>);
+  if (k === "verbs")
+    return (<svg className={c} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>);
+  if (k === "conciseness")
+    return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></svg>);
+  if (k === "grounding")
+    return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>);
+  // ats / keywords — briefcase + lens
+  return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="12" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><circle cx="12" cy="12" r="1.6" /></svg>);
+}
+
+/** Fixed hue per metric (icon tile) — the score/bar carry the performance color. */
+const METRIC_TINT: Record<string, string> = {
+  ats: "bg-brand-500/15 text-brand-300",
+  impact: "bg-electric/15 text-electric",
+  verbs: "bg-emerald/15 text-emerald",
+  conciseness: "bg-emerald/15 text-emerald",
+  grounding: "bg-emerald/15 text-emerald",
+};
+
+/** Score → { verdict label, color } tier. Matches the donut and pills. */
+function tier(score: number): { label: string; color: string } {
+  if (score >= 85) return { label: "Excellent", color: "#34D399" };
+  if (score >= 65) return { label: "Good", color: "#38BDF8" };
+  if (score >= 45) return { label: "Fair", color: "#FBBF24" };
+  return { label: "Needs work", color: "#FF5C7A" };
+}
+
+const OVERALL_BLURB: Record<string, string> = {
+  Excellent: "Outstanding — this résumé is tuned tightly to the role.",
+  Good: "Solid foundation. A few tweaks can make it stand out even more.",
+  Fair: "A decent start — the suggestions below will lift it fast.",
+  "Needs work": "Let's strengthen this — start with the suggestions below.",
+};
+
+/** Large gradient score ring for the quality card. */
+function ScoreRing({ score, size = 150, stroke = 12 }: { score: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
-  const color = scoreHex(score);
   return (
     <div className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
+        <defs>
+          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#7c4dff" />
+            <stop offset="100%" stopColor="#4CC9F0" />
+          </linearGradient>
+        </defs>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
         <circle
-          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke="url(#ringGrad)" strokeWidth={stroke}
           strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - score / 100)}
-          style={{ transition: "stroke-dashoffset 0.6s ease" }}
+          style={{ transition: "stroke-dashoffset 0.7s ease" }}
         />
       </svg>
       <div className="absolute text-center leading-none">
-        <div className="text-base font-semibold tabular-nums" style={{ color }}>{score}</div>
-        <div className="text-[9px] text-subtle">/100</div>
+        <div className="text-4xl font-bold tabular-nums text-content">{score}</div>
+        <div className="mt-1 text-xs text-subtle">/100</div>
       </div>
     </div>
   );
 }
 
-/** Compact quality card: donut + a tight metric grid. */
-function QualityCard({ card }: { card: Scorecard }) {
-  const chips = card.metrics.slice(0, 4);
+/** One metric tile: icon · label · score · progress bar · detail · verdict pill. */
+function MetricTile({ m }: { m: Scorecard["metrics"][number] }) {
+  const t = tier(m.score);
+  const tint = METRIC_TINT[m.key] ?? "bg-brand-500/15 text-brand-300";
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-white/[0.07] bg-surface-2 p-4">
-      <Donut score={card.overall} />
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-content">AI Résumé Quality</div>
-        <div className="text-xs text-subtle">Tailored for this role</div>
-        <div className="mt-2 grid grid-cols-2 gap-1.5">
-          {chips.map((m) => (
-            <div
-              key={m.key}
-              title={`${m.label} — ${m.detail}`}
-              className="rounded-md border border-white/[0.06] bg-surface px-2 py-1.5 text-xs"
-            >
-              <div className="flex items-center justify-between gap-1">
-                <span className="truncate text-subtle">{m.label}</span>
-                <span className="shrink-0 font-semibold tabular-nums" style={{ color: scoreHex(m.score) }}>{m.score}</span>
-              </div>
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.07]">
-                <div className="h-full rounded-full" style={{ width: `${m.score}%`, background: scoreHex(m.score), transition: "width 0.5s ease" }} />
-              </div>
-            </div>
+    <div className="rounded-xl border border-white/[0.07] bg-surface-2/60 p-4">
+      <div className="flex items-center gap-2.5">
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
+          <MetricGlyph k={m.key} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-content">{m.label}</span>
+        <span className="shrink-0 text-sm tabular-nums">
+          <span className="font-bold" style={{ color: scoreHex(m.score) }}>{m.score}</span>
+          <span className="text-subtle"> /100</span>
+        </span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+        <div className="h-full rounded-full" style={{ width: `${m.score}%`, background: scoreHex(m.score), transition: "width 0.6s ease" }} />
+      </div>
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-xs text-subtle" title={m.detail}>{m.detail}</span>
+        <span
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+          style={{ color: t.color, background: `${t.color}1f` }}
+        >
+          {t.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Full AI Résumé Quality card — donut + metric grid + AI-wired improvements. */
+function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruction: string) => void }) {
+  const [howOpen, setHowOpen] = useState(false);
+  const t = tier(card.overall);
+  const grid = card.metrics.filter((m) => m.key !== "grounding").slice(0, 4);
+  const grounding = card.metrics.find((m) => m.key === "grounding");
+
+  return (
+    <div className="card p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-500/15 text-brand-300">
+            <IconChart className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+              AI Résumé Quality <IconSparkles className="h-4 w-4 text-brand-300" />
+            </h2>
+            <p className="text-sm text-subtle">Tailored for this role</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setHowOpen((v) => !v)}
+          className="flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-surface px-3 py-1.5 text-xs text-muted transition hover:text-content"
+        >
+          <IconSparkles className="h-3.5 w-3.5" /> How we score
+          <span className="grid h-4 w-4 place-items-center rounded-full border border-white/20 text-[10px]">i</span>
+        </button>
+      </div>
+
+      {howOpen && (
+        <p className="mt-3 rounded-lg border border-white/[0.07] bg-surface-2/60 p-3 text-xs leading-relaxed text-muted">
+          Every score is computed deterministically from your tailored résumé — no guesswork.
+          <span className="text-content"> Job-fit keywords</span> = share of the posting's ATS terms your background genuinely supports;
+          <span className="text-content"> Quantified impact</span> = bullets carrying a real number;
+          <span className="text-content"> Action-verb strength</span> = bullets led by a strong verb;
+          <span className="text-content"> Conciseness</span> = bullets in the 6–34 word range.
+          Nothing here can be inflated by keyword-stuffing — guardrails block any claim your résumé doesn't back.
+        </p>
+      )}
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,220px)_1fr]">
+        <div className="flex flex-col items-center justify-center gap-3 text-center">
+          <ScoreRing score={card.overall} />
+          <span
+            className="rounded-full px-3 py-1 text-sm font-semibold"
+            style={{ color: t.color, background: `${t.color}1f` }}
+          >
+            {t.label}
+          </span>
+          <p className="max-w-[15rem] text-sm text-subtle">{OVERALL_BLURB[t.label]}</p>
+          {grounding && grounding.score >= 100 && (
+            <span className="flex items-center gap-1 text-xs text-emerald">
+              <IconShieldCheck className="h-3.5 w-3.5" /> Every claim verified
+            </span>
+          )}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {grid.map((m) => (
+            <MetricTile key={m.key} m={m} />
           ))}
         </div>
       </div>
+
+      {card.suggestions.length > 0 ? (
+        <div className="mt-5 rounded-xl border border-brand-500/25 bg-brand-500/[0.06] p-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,240px)_1fr] lg:items-center">
+            <div className="flex items-start gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-500/20 text-brand-300">
+                <IconSparkles className="h-4 w-4" />
+              </span>
+              <div>
+                <h3 className="text-base font-semibold">Improve your score</h3>
+                <p className="mt-0.5 text-xs text-subtle">
+                  Real gaps from this résumé — hand any to the grounded AI to fix.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {card.suggestions.map((s) => (
+                <SuggestionCard key={s.key} s={s} onSuggest={onSuggest} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 flex items-center gap-2 rounded-xl border border-emerald/25 bg-emerald/[0.06] p-4 text-sm text-emerald">
+          <IconShieldCheck className="h-4 w-4" /> Your résumé is in great shape — nothing to fix right now.
+        </div>
+      )}
     </div>
+  );
+}
+
+function SuggestionCard({ s, onSuggest }: { s: ScorecardSuggestion; onSuggest: (instruction: string) => void }) {
+  const tint = METRIC_TINT[s.metric_key] ?? "bg-brand-500/15 text-brand-300";
+  return (
+    <div className="flex flex-col rounded-lg border border-white/[0.07] bg-surface p-3.5">
+      <span className={`grid h-8 w-8 place-items-center rounded-lg ${tint}`}>
+        <MetricGlyph k={s.metric_key} />
+      </span>
+      <h4 className="mt-2.5 text-sm font-semibold text-content">{s.title}</h4>
+      <p className="mt-1 flex-1 text-xs leading-relaxed text-subtle">{s.detail}</p>
+      <button
+        onClick={() => onSuggest(s.instruction)}
+        className="mt-3 flex items-center gap-1 self-start text-xs font-medium text-brand-300 transition hover:text-brand-200"
+      >
+        Improve with AI <IconArrowRight className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function IconChart({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18" />
+      <path d="m7 14 3-4 3 3 4-6" />
+    </svg>
+  );
+}
+
+function IconShieldCheck({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
   );
 }
 
@@ -1003,7 +1182,7 @@ function ProposalMessage({
 /** Inline grounded assistant (Phase B): grounded chat + propose/apply rewrites.
  * "Ask" hits the grounded /copilot/chat; "Rewrite" proposes a guardrailed
  * revision (preview diff) that "Apply" commits to the tailored résumé + PDF. */
-function AIAssistantCard({ applicationId }: { applicationId: string }) {
+function AIAssistantCard({ applicationId, prefill }: { applicationId: string; prefill?: { instruction: string; nonce: number } }) {
   const qc = useQueryClient();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -1050,6 +1229,16 @@ function AIAssistantCard({ applicationId }: { applicationId: string }) {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
+  // A "Improve with AI" click from the quality card lands a grounded rewrite here.
+  const prefillNonce = prefill?.nonce ?? 0;
+  useEffect(() => {
+    if (prefillNonce > 0 && prefill?.instruction) {
+      document.getElementById("ai-assistant")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      rewrite(prefill.instruction);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillNonce]);
+
   function ask(text: string) {
     const m = text.trim();
     if (!m || busy) return;
@@ -1066,7 +1255,7 @@ function AIAssistantCard({ applicationId }: { applicationId: string }) {
   }
 
   return (
-    <div className="card flex flex-col p-5">
+    <div id="ai-assistant" className="card flex scroll-mt-24 flex-col p-5">
       <div className="flex items-center gap-2">
         <IconSparkles className="h-5 w-5 text-brand-300" />
         <h2 className="text-base font-semibold">AI Assistant</h2>
@@ -1165,6 +1354,8 @@ function OverviewTab({
   const qc = useQueryClient();
   const toast = useToast();
   const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
+  const [assist, setAssist] = useState<{ instruction: string; nonce: number }>({ instruction: "", nonce: 0 });
+  const handleSuggest = (instruction: string) => setAssist((p) => ({ instruction, nonce: p.nonce + 1 }));
 
   const coverLetter = useMutation({
     mutationFn: () => api.post<ApplicationDetail>(`/applications/${application.id}/cover-letter`, {}),
@@ -1228,13 +1419,11 @@ function OverviewTab({
               action="View" onAction={onOpenDocs}
             />
           </div>
-          {application.scorecard && (
-            <div className="mt-4">
-              <QualityCard card={application.scorecard} />
-            </div>
-          )}
         </div>
-        <AIAssistantCard applicationId={application.id} />
+        {application.scorecard && (
+          <QualityCard card={application.scorecard} onSuggest={handleSuggest} />
+        )}
+        <AIAssistantCard applicationId={application.id} prefill={assist} />
       </div>
 
       <div className="space-y-5">

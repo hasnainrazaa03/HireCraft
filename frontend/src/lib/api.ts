@@ -642,9 +642,19 @@ export interface ScorecardMetric {
   detail: string;
 }
 
+export interface ScorecardSuggestion {
+  key: string;
+  title: string;
+  detail: string;
+  metric_key: string;
+  keywords: string[];
+  instruction: string;
+}
+
 export interface Scorecard {
   overall: number;
   metrics: ScorecardMetric[];
+  suggestions: ScorecardSuggestion[];
 }
 
 export interface ApplicationDetail {
