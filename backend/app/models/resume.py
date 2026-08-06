@@ -48,6 +48,12 @@ class ResumeProfile(Base, TimestampMixin):
     # Monotonic version counter; the latest saved content is this number, and
     # each prior content is preserved as a ResumeVersion snapshot.
     current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Label describing the *live* content ("Imported résumé", "AI rewrite",
+    # "Restored from v1"). It travels with the content: when the live content is
+    # snapshotted on the next edit, the snapshot inherits this label — so a
+    # version's label always describes its own content, never the change that
+    # replaced it.
+    label: Mapped[str | None] = mapped_column(Text)
 
     user: Mapped[User] = relationship(back_populates="resume_profiles")
     applications: Mapped[list[Application]] = relationship(back_populates="resume_profile")

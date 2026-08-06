@@ -374,6 +374,7 @@ export interface ResumeProfileSummary {
   tags: string[];
   template: string;
   current_version: number;
+  label: string | null;
   updated_at: string;
 }
 

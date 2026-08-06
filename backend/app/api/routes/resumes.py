@@ -115,6 +115,8 @@ def create_profile(
         is_default=is_default,
         tags=_clean_tags(payload.tags),
         template=payload.template if payload.template and is_valid(payload.template) else "modern",
+        # Label for the very first version; inherited by its snapshot on first edit.
+        label=payload.version_label or "Original",
     )
     db.add(profile)
     db.flush()

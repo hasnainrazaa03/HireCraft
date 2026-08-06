@@ -58,6 +58,8 @@ export default function ResumesPage() {
   const [mode, setMode] = useState<Mode>("builder");
   const [jsonDraft, setJsonDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Label for the first saved version, reflecting where this résumé came from.
+  const [originLabel, setOriginLabel] = useState("Original draft");
 
   const [historyFor, setHistoryFor] = useState<ResumeProfileSummary | null>(null);
   const [previewFor, setPreviewFor] = useState<ResumeProfileSummary | null>(null);
@@ -80,7 +82,7 @@ export default function ResumesPage() {
       const body = { name, content: currentContent(), tags, template };
       return editingId
         ? api.patch(`/resumes/${editingId}`, body)
-        : api.post("/resumes", body);
+        : api.post("/resumes", { ...body, version_label: originLabel });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["resumes"] });
@@ -123,6 +125,7 @@ export default function ResumesPage() {
     setMode("builder");
     setJsonDraft("");
     setError(null);
+    setOriginLabel("Original draft");
   }
 
   function startNew() {
@@ -173,6 +176,7 @@ export default function ResumesPage() {
         toast.success("Résumé imported", "Review and edit before saving.");
       }
       setName((n) => n || file.name.replace(/\.[^.]+$/, "").slice(0, 120));
+      setOriginLabel("Imported résumé");
       setMode("builder");
       setEditing(true);
     } catch (err) {
@@ -686,23 +690,28 @@ function VersionHistoryModal({ profile, onClose, onRestored }: { profile: Resume
       <p className="mb-4 text-sm text-muted">Each edit is snapshotted. Restoring is itself undoable — the current version is saved before rolling back.</p>
       {isLoading ? (
         <div className="py-6 text-center text-sm text-subtle">Loading…</div>
-      ) : versions.length === 0 ? (
-        <div className="py-6 text-center text-sm text-subtle">No earlier versions yet.</div>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center justify-between rounded-xl border border-brand-500/30 bg-brand-500/5 px-4 py-2.5">
-            <span className="text-sm font-medium">Current — v{profile.current_version}</span>
+            <div>
+              <div className="text-sm font-medium">Current — v{profile.current_version}</div>
+              {profile.label && <div className="text-xs text-subtle">{profile.label}</div>}
+            </div>
             <span className="badge-brand">Live</span>
           </div>
-          {versions.map((v) => (
-            <div key={v.id} className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-surface-2 px-4 py-2.5">
-              <div>
-                <div className="text-sm font-medium">Version {v.version}</div>
-                <div className="text-xs text-subtle">{v.label ? `${v.label} · ` : ""}{new Date(v.created_at).toLocaleString()}</div>
+          {versions.length === 0 ? (
+            <div className="py-4 text-center text-xs text-subtle">No earlier versions yet — edits and restores will appear here.</div>
+          ) : (
+            versions.map((v) => (
+              <div key={v.id} className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-surface-2 px-4 py-2.5">
+                <div>
+                  <div className="text-sm font-medium">Version {v.version}</div>
+                  <div className="text-xs text-subtle">{v.label ? `${v.label} · ` : ""}{new Date(v.created_at).toLocaleString()}</div>
+                </div>
+                <button onClick={() => restore.mutate(v.version)} disabled={restore.isPending} className="btn-secondary btn-sm">Restore</button>
               </div>
-              <button onClick={() => restore.mutate(v.version)} disabled={restore.isPending} className="btn-secondary btn-sm">Restore</button>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       )}
     </Modal>

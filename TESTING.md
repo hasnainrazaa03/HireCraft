@@ -182,12 +182,12 @@ Confirms the app is up before deep testing.
 ### 4.3 Analyze / score / versions / render
 - ✅ **T-RES-12** Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
   - Notes: PASS. Modal showed overall 88/100, grade Excellent, ATS 100, per-metric breakdown (quantified impact, action verbs, impact statements, concise bullets, readability, completeness, recruiter-friendly) + findings. **UX backlog (not failures):** modal feels narrow so suggestions don't fully breathe / some suggestion cards look cut off; add a collapsible explanation under each breakdown item. → Issue #12.
-- ⬜ **T-RES-13** **Rewrite** (job-agnostic AI improvement) → shows before/after + diff + guardrail report; **nothing saved** until you accept; save as a new **version**.
-  - Notes:
-- ⬜ **T-RES-14** **Versions** list; open a past version; **restore** it.
-  - Notes:
-- ⬜ **T-RES-15** **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
-  - Notes:
+- ✅ **T-RES-13** **Rewrite** (job-agnostic AI improvement) → shows before/after + diff + guardrail report; **nothing saved** until you accept; save as a new **version**.
+  - Notes: PASS. Before/after section-by-section, bullet-by-bullet confidence report (Verified / Likely), nothing auto-applied, Discard vs "Accept & save version" with a cost estimate. **UX backlog (P3, Issue #13):** widen the modal (75–85% vp); word-level diff highlighting (insert/remove/modify); tooltip explaining Verified vs Likely; explain the score change (e.g. 88→84 "prioritised readability/action verbs over quantified impact").
+- ✅ **T-RES-14** **Versions** list; open a past version; **restore** it.
+  - Notes: PASS (functional) + **fixed a real labeling bug**. Restore is correctly **append-only** — verified in DB: nothing deleted, version numbers immutable. BUT labels were attached to the wrong version: `snapshot_current` stamped the *outgoing* content with the *incoming* change's label, so the original import showed as "AI rewrite". **Fixed:** added `ResumeProfile.label` (live-content label, migration `d3e4f5a6b7c8`); snapshots now inherit the label of the content they freeze; create → "Imported résumé"/"Original draft", rewrite → "AI rewrite", restore → "Restored from vN"; history modal now shows the live version's label. Verified replay → v1 "Imported résumé", v2 "AI rewrite", live v3 "Restored from v1". (Your existing MHR_ML résumé keeps its old legacy labels — re-import + redo rewrite/restore to see the corrected history.)
+- ✅ **T-RES-15** **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
+  - Notes: PASS. PDF/DOCX/LaTeX all valid; PDF opens clean; content complete (p1 summary/education/experience, p2 projects/skills). **On the 2 pages:** expected — the résumé is now *longer because the P0 fix restored all 3 experience entries + 2 projects* (before, experience was dropped, so it fit on 1 page). Complete content > 1 page. Not a regression; noted as P3 layout-tuning backlog (Issue #14) if a 1-page density is desired.
 - ⬜ **T-RES-16** Long résumé name **truncates** in the list (doesn't break the row).
   - Notes:
 
@@ -488,6 +488,9 @@ Confirms the app is up before deep testing.
 | 10 | T-RES (Builder) | Enh | Certifications / Awards / Publications parse + export + round-trip fine, but have **no dedicated builder forms** (JSON-mode only). | 📋 Backlog — build structured editors (user: "note them, build later") |
 | 11 | T-RES-10 | P2 | Generate-intro on an almost-empty résumé leaked raw pydantic validation errors instead of a friendly message. | ✅ Fixed (lenient endpoint: placeholder basics + salvage + friendly guard; empty bullets pruned) — pending re-test |
 | 12 | T-RES-12 | Enh | Analysis modal feels narrow — suggestion cards don't fully breathe / look cut off; want a collapsible explainer under each score-breakdown item. | 📋 Backlog — widen modal + collapsible per-metric explanations |
+| 13 | T-RES-13 | Enh | Rewrite modal: too narrow; side-by-side text instead of word-level diff; Verified/Likely unexplained; score change unexplained. | 📋 Backlog — widen modal, word-diff, confidence tooltip, score-delta rationale |
+| 14 | T-RES-14 | P2 | Version history mislabeled: snapshot took the *incoming* change's label, so the original import displayed as "AI rewrite". (History itself was append-only + immutable — not data loss.) | ✅ Fixed (`ResumeProfile.label` + migration `d3e4f5a6b7c8`; snapshots inherit their own content's label; live label shown) — pending re-test |
+| 15 | T-RES-15 | Enh | Export is now 2 pages (content complete after the P0 fix). Not a bug. | 📋 Backlog — optional 1-page density pass (margins/spacing) |
 
 ---
 
