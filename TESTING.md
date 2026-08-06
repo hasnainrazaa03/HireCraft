@@ -188,8 +188,10 @@ Confirms the app is up before deep testing.
   - Notes: PASS (functional) + **fixed a real labeling bug**. Restore is correctly **append-only** — verified in DB: nothing deleted, version numbers immutable. BUT labels were attached to the wrong version: `snapshot_current` stamped the *outgoing* content with the *incoming* change's label, so the original import showed as "AI rewrite". **Fixed:** added `ResumeProfile.label` (live-content label, migration `d3e4f5a6b7c8`); snapshots now inherit the label of the content they freeze; create → "Imported résumé"/"Original draft", rewrite → "AI rewrite", restore → "Restored from vN"; history modal now shows the live version's label. Verified replay → v1 "Imported résumé", v2 "AI rewrite", live v3 "Restored from v1". (Your existing MHR_ML résumé keeps its old legacy labels — re-import + redo rewrite/restore to see the corrected history.)
 - ✅ **T-RES-15** **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
   - Notes: PASS. PDF/DOCX/LaTeX all valid; PDF opens clean; content complete (p1 summary/education/experience, p2 projects/skills). **On the 2 pages:** expected — the résumé is now *longer because the P0 fix restored all 3 experience entries + 2 projects* (before, experience was dropped, so it fit on 1 page). Complete content > 1 page. Not a regression; noted as P3 layout-tuning backlog (Issue #14) if a 1-page density is desired.
-- ⬜ **T-RES-16** Long résumé name **truncates** in the list (doesn't break the row).
-  - Notes:
+- ✅ **T-RES-16** Long résumé name **truncates** in the list (doesn't break the row).
+  - Notes: PASS. Runtime row layout intact (buttons aligned, no wrap/overflow). Confirmed at code level too: name span is `max-w-[16rem] truncate` inside a `min-w-0` parent (so truncate actually engages in the flex row), card is `flex-wrap` (buttons wrap rather than overflow), and names are capped at 120 chars server-side — so even a max-length name truncates with an ellipsis and can't break the row.
+
+**✅ Section 4 (Résumés) complete** — T-RES-01…16 (T-RES-05 optional/skipped). Fixes shipped this section: #8 P0 parser section-drop, #9 project dates, #11 P2 intro-empty, #14 P2 version labels; backlog: #10/#12/#13/#15 (builder forms, analysis modal, rewrite modal, 1-page density).
 
 ---
 
