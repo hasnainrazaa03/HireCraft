@@ -27,6 +27,7 @@ import {
   IconBell, IconRefresh, IconArrowRight, IconUpload,
 } from "../components/icons";
 import { ALL_STAGES, trackerLabel } from "../lib/tracker";
+import { useToast } from "../lib/toast";
 
 const ACTIVE = new Set([
   "pending",
@@ -1157,10 +1158,31 @@ function OverviewTab({
   onTailorAgain: () => void;
   onRegenerate: () => void;
 }) {
+  const qc = useQueryClient();
+  const toast = useToast();
   const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
+
+  const coverLetter = useMutation({
+    mutationFn: () => api.post<ApplicationDetail>(`/applications/${application.id}/cover-letter`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["application", application.id] });
+      toast.success(hasCover ? "Cover letter regenerated" : "Cover letter generated");
+    },
+    onError: (e) => toast.error("Couldn't draft the cover letter", e instanceof ApiError ? e.message : undefined),
+  });
+
   const quick = [
     { label: "Tailor résumé again", icon: <IconRefresh className="h-4 w-4" />, onClick: onTailorAgain },
     { label: "Regenerate this tailoring", icon: <IconSparkles className="h-4 w-4" />, onClick: onRegenerate },
+    {
+      label: coverLetter.isPending
+        ? "Drafting cover letter…"
+        : hasCover
+          ? "Regenerate cover letter"
+          : "Generate cover letter",
+      icon: <IconLetter className="h-4 w-4" />,
+      onClick: () => coverLetter.mutate(),
+    },
     { label: "Review changes & guardrails", icon: <IconPen className="h-4 w-4" />, onClick: onOpenDocs },
     { label: "Download package (.zip)", icon: <IconUpload className="h-4 w-4" />, onClick: () => download("package", "application_package.zip") },
     { label: "Download résumé PDF", icon: <IconResume className="h-4 w-4" />, onClick: () => download("resume_pdf", "resume.pdf") },
@@ -1186,9 +1208,11 @@ function OverviewTab({
             />
             <DocCard
               icon={<IconLetter className="h-4 w-4" />} tint="bg-electric/15 text-electric"
-              title="Cover Letter" subtitle={hasCover ? `Updated ${fmtDate(application.updated_at)}` : "Not generated"}
-              action={hasCover ? "Download" : "—"} disabled={!hasCover}
-              onAction={() => download("cover_letter_pdf", "cover_letter.pdf")}
+              title="Cover Letter"
+              subtitle={coverLetter.isPending ? "Drafting…" : hasCover ? `Updated ${fmtDate(application.updated_at)}` : "Not generated yet"}
+              action={coverLetter.isPending ? "…" : hasCover ? "Download" : "Generate"}
+              disabled={coverLetter.isPending}
+              onAction={() => (hasCover ? download("cover_letter_pdf", "cover_letter.pdf") : coverLetter.mutate())}
             />
             <DocCard
               icon={<IconUpload className="h-4 w-4" />} tint="bg-emerald/15 text-emerald"

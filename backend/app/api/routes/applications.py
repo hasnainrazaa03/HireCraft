@@ -47,12 +47,13 @@ from app.schemas.tailoring import (
 )
 from app.services import storage
 from app.services.evidence import evidence_lines
-from app.services.latex.renderer import render_and_fit
+from app.services.latex.compiler import LatexCompilationError, compile_latex
+from app.services.latex.renderer import render_and_fit, render_cover_letter
 from app.services.latex.templates import resolve_filename
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.llm.factory import client_for_user
 from app.services.llm.guardrails import GuardrailEngine, build_diff
-from app.services.pipeline import UsageLedger, revise_resume
+from app.services.pipeline import UsageLedger, draft_cover_letter, revise_resume
 from app.services.resume_eval import score_from_report
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
 from app.workers.tasks import enqueue_tailoring
@@ -670,6 +671,64 @@ def assistant_apply(
     db.commit()
     db.refresh(application)
     logger.info("application.assistant_applied", application_id=str(application_id), pages=compiled.page_count)
+    return _to_detail(application)
+
+
+@router.post("/{application_id}/cover-letter", response_model=ApplicationDetail)
+def generate_cover_letter(
+    application_id: uuid.UUID, user: GenerationUser, db: DbSession
+) -> ApplicationDetail:
+    """Draft (or redraft) a grounded cover letter for this application and store it."""
+    application = _get_owned(db, user.id, application_id)
+    if not application.tailored_resume:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Tailor the résumé first — the cover letter is written from it.",
+        )
+    resume = MasterResume.model_validate(application.tailored_resume)
+    _, evidence, requirements, _ = _resume_context(db, user.id, application)
+    if requirements is None:
+        title = (application.job.title if application.job else None) or "the role"
+        company = application.job.company if application.job else None
+        requirements = JobRequirements(title=title, company=company)
+    job_text = (application.job.raw_text if application.job else "") or ""
+
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    ledger = UsageLedger()
+    try:
+        paragraphs = draft_cover_letter(
+            resume, requirements, job_text, evidence=evidence, client=client, ledger=ledger
+        )
+    except LlmError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The AI service is unavailable right now: {exc}") from exc
+    if not paragraphs:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Couldn't draft a cover letter grounded in your résumé. Please try again.",
+        )
+
+    tex = render_cover_letter(
+        resume, paragraphs, settings.templates_dir,
+        company=requirements.company, role=requirements.title,
+    )
+    try:
+        compiled = compile_latex(tex, job_name="cover_letter")
+    except LatexCompilationError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Couldn't typeset the cover letter: {exc.summary()}"
+        ) from exc
+
+    _write_artifact(db, application, user.id, ArtifactKind.COVER_LETTER_PDF, "cover_letter.pdf", compiled.pdf_bytes, "application/pdf")
+    _write_artifact(db, application, user.id, ArtifactKind.COVER_LETTER_TEX, "cover_letter.tex", tex.encode("utf-8"), "application/x-tex")
+    application.include_cover_letter = True
+    _charge(db, user.id, application, ledger)
+    db.commit()
+    db.refresh(application)
+    logger.info("application.cover_letter_generated", application_id=str(application_id))
     return _to_detail(application)
 
 
