@@ -316,7 +316,9 @@ function IntroGenerator({
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post<ProfileIntroResponse>("/resumes/generate-intro", content);
+      // Prune empty bullets/blank rows first so a stray "Add bullet" placeholder
+      // can't make the server discard an otherwise-real entry.
+      const res = await api.post<ProfileIntroResponse>("/resumes/generate-intro", pruneEmpty(content));
       onResult(res.headline, res.summary);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't generate — try again.");

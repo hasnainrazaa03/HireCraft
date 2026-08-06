@@ -174,14 +174,14 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Added/removed/reordered (↑↓) experience entries; added/removed bullets; added a skill group. No UI or persistence issues.
 - ✅ **T-RES-09** **Basics → ✨ Generate with AI** fills **Headline + Summary** from your experience. Read them: are they truthful (no invented metrics/tools)? Editable after.
   - Notes: PASS. ✨ Generate filled Headline + Summary, both editable after. Truthfulness review by tester: all claims grounded (Deloitte Technology Analyst, LLM-assisted workflows, REST orchestration, data-prep pipelines, Pega/Informatica MDM, Prana.ai). "Real-time ML deployment" judged a fair generalization of <0.8s medical & <500ms X-Plane inference — grounded, not fabricated. No invented employers/tools/metrics/achievements.
-- ⬜ **T-RES-10** Generate-intro with an almost-empty résumé → graceful "add experience first" message (no crash).
-  - Notes:
-- ⬜ **T-RES-11** **Save** → success; new résumé appears in the list; set as **Default** works.
-  - Notes:
+- 🔧 **T-RES-10** Generate-intro with an almost-empty résumé → graceful "add experience first" message (no crash).
+  - Notes: **FAIL → FIXED (P2).** With an almost-empty résumé the button leaked raw pydantic errors ("Basics.name should have at least 1 character", email/company errors). Cause: the endpoint took `payload: MasterResume`, so FastAPI's strict body validation failed *before* the friendly guard could run. Fix: endpoint now accepts raw content, substitutes placeholder basics (name/email aren't used in the intro and are never echoed), salvages blank/partial entries like import, and returns the friendly message only when there's no real experience/projects/education. Also fixed: empty bullets no longer make the salvage discard a real entry (pruned client- and server-side). Verified — empty/blank → friendly 400; valid content (even with empty basics + stray bullet) → grounded headline+summary, no placeholder leak. **Re-test.**
+- ✅ **T-RES-11** **Save** → success; new résumé appears in the list; set as **Default** works.
+  - Notes: PASS. Save → success; appears in list; first résumé auto-marked Default with the badge shown correctly.
 
 ### 4.3 Analyze / score / versions / render
-- ⬜ **T-RES-12** Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
-  - Notes:
+- ✅ **T-RES-12** Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
+  - Notes: PASS. Modal showed overall 88/100, grade Excellent, ATS 100, per-metric breakdown (quantified impact, action verbs, impact statements, concise bullets, readability, completeness, recruiter-friendly) + findings. **UX backlog (not failures):** modal feels narrow so suggestions don't fully breathe / some suggestion cards look cut off; add a collapsible explanation under each breakdown item. → Issue #12.
 - ⬜ **T-RES-13** **Rewrite** (job-agnostic AI improvement) → shows before/after + diff + guardrail report; **nothing saved** until you accept; save as a new **version**.
   - Notes:
 - ⬜ **T-RES-14** **Versions** list; open a past version; **restore** it.
@@ -486,6 +486,8 @@ Confirms the app is up before deep testing.
 | 8 | T-RES-02 | **P0** | Résumé parser dropped **all** Experience entries (0) — Gemini omits array fields not in the schema's `required`, so whole sections vanished intermittently. | ✅ Fixed (`to_gemini_schema` forces every array `required`; import strips model-invented ids/section_order). Verified 3/3 runs → experience=3, projects=2, education=2 — pending UI re-import |
 | 9 | T-RES-02 | P2 | Project dates weren't shown in the builder (parsed correctly but no date inputs rendered). | ✅ Fixed (added Start/End inputs to the Projects section, matching Experience) — pending re-test |
 | 10 | T-RES (Builder) | Enh | Certifications / Awards / Publications parse + export + round-trip fine, but have **no dedicated builder forms** (JSON-mode only). | 📋 Backlog — build structured editors (user: "note them, build later") |
+| 11 | T-RES-10 | P2 | Generate-intro on an almost-empty résumé leaked raw pydantic validation errors instead of a friendly message. | ✅ Fixed (lenient endpoint: placeholder basics + salvage + friendly guard; empty bullets pruned) — pending re-test |
+| 12 | T-RES-12 | Enh | Analysis modal feels narrow — suggestion cards don't fully breathe / look cut off; want a collapsible explainer under each score-breakdown item. | 📋 Backlog — widen modal + collapsible per-metric explanations |
 
 ---
 

@@ -37,7 +37,12 @@ from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
 from app.services.llm.client import LlmConfigurationError, LlmError, LlmResponseError
 from app.services.llm.factory import client_for_user
 from app.services.parsing.extract import ExtractionError, extract
-from app.services.parsing.structure import ParsingError, structure_resume
+from app.services.parsing.structure import (
+    ParsingError,
+    _coerce_valid,
+    _repair,
+    structure_resume,
+)
 from app.services.pipeline import (
     UsageLedger,
     generate_profile_intro,
@@ -363,21 +368,62 @@ def rewrite_profile(
 
 @router.post("/generate-intro", response_model=ProfileIntroResponse)
 def generate_intro(
-    payload: MasterResume, user: GenerationUser, db: DbSession
+    payload: dict, user: GenerationUser, db: DbSession
 ) -> ProfileIntroResponse:
     """Draft a headline + summary from the rest of the résumé (builder button).
 
     Works on whatever content the builder currently holds — no need to save
-    first — so it accepts the résumé in the body like ``/analyze``. Truthful by
-    construction: it can't cite a number or skill the résumé doesn't contain.
-    Costs one LLM call; the tighter generation rate limit applies.
+    first, and no need for a complete contact block: this button is meant to be
+    used early. Truthful by construction: it can't cite a number or skill the
+    résumé doesn't contain. Costs one LLM call; the tighter generation rate
+    limit applies.
     """
-    if not (payload.experience or payload.projects or payload.education):
+    # The intro is written from experience/projects/skills only — name and email
+    # never appear in it — but MasterResume requires them, so a half-filled
+    # résumé would fail strict body validation and leak raw pydantic errors to
+    # the user. Substitute placeholder basics (never echoed), drop the
+    # headline/summary we're regenerating, then salvage: blank or invalid entries
+    # are dropped exactly as on import. What's left decides whether there's
+    # anything real to write from.
+    content = dict(payload or {})
+    raw_basics = content.get("basics")
+    basics = {
+        k: v
+        for k, v in (raw_basics if isinstance(raw_basics, dict) else {}).items()
+        if k not in ("headline", "summary")
+    }
+    if not str(basics.get("name") or "").strip():
+        basics["name"] = "Candidate"
+    if not str(basics.get("email") or "").strip():
+        basics["email"] = "candidate@example.com"
+    content["basics"] = basics
+
+    # Drop blank list items (trailing "Add bullet" placeholders) so a single
+    # empty bullet can't make the salvage condemn an otherwise-real entry.
+    for section in ("experience", "education", "projects"):
+        for entry in content.get(section) or []:
+            if not isinstance(entry, dict):
+                continue
+            for list_key in ("highlights", "technologies", "coursework", "honors"):
+                if isinstance(entry.get(list_key), list):
+                    entry[list_key] = [
+                        s for s in entry[list_key] if isinstance(s, str) and s.strip()
+                    ]
+
+    try:
+        master = _coerce_valid(_repair(content))
+    except (ParsingError, ValidationError):
+        master = None
+
+    if master is None or not (
+        master.experience or master.projects or master.education
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Add some experience, projects, or education first — the AI "
             "writes your intro from what's already on your résumé.",
         )
+
     try:
         client = client_for_user(user)
     except LlmConfigurationError as exc:
@@ -387,7 +433,7 @@ def generate_intro(
 
     ledger = UsageLedger()
     try:
-        intro = generate_profile_intro(payload, client=client, ledger=ledger)
+        intro = generate_profile_intro(master, client=client, ledger=ledger)
     except LlmResponseError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
