@@ -17,6 +17,7 @@ import {
   type JobMatch,
   type Scorecard,
   type CopilotResponse,
+  type DiffEntry,
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
@@ -904,10 +905,19 @@ function JobDetailsCard({ job }: { job: ApplicationDetail["job"] }) {
   );
 }
 
+type ProposalStatus = "pending" | "applied" | "discarded";
+interface Proposal {
+  note: string;
+  diff: DiffEntry[];
+  proposed: unknown;
+  blocked: string[];
+  status: ProposalStatus;
+}
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
   grounded_in?: string[];
+  proposal?: Proposal;
 }
 
 function ChatBubble({ msg }: { msg: ChatMsg }) {
@@ -940,13 +950,63 @@ const ASSIST_SUGGESTIONS = [
   "Rewrite my summary to be stronger.",
 ];
 
-/** Inline grounded assistant chat for this application (Phase B.1).
- * Uses the grounded /copilot/chat endpoint scoped to this application, so every
- * answer is tied to the tailored résumé + job. Inline "Apply changes" is next. */
+/** A proposed revision rendered inline: note + diff + Apply/Discard. */
+function ProposalMessage({
+  msg,
+  onApply,
+  onDiscard,
+  applying,
+}: {
+  msg: ChatMsg;
+  onApply: () => void;
+  onDiscard: () => void;
+  applying: boolean;
+}) {
+  const p = msg.proposal!;
+  return (
+    <div className="rounded-2xl border border-brand-500/30 bg-brand-500/[0.05] p-3">
+      <div className="flex items-center gap-1.5 text-sm font-medium text-content">
+        <IconSparkles className="h-4 w-4 text-brand-300" /> Proposed revision
+      </div>
+      <p className="mt-1 text-sm text-muted">{msg.content}</p>
+      {p.blocked.length > 0 && (
+        <p className="mt-2 text-xs text-coral">
+          {p.blocked.length} unsupported edit{p.blocked.length === 1 ? "" : "s"} were blocked and left out.
+        </p>
+      )}
+      {p.diff.length > 0 && (
+        <div className="mt-3 max-h-72 overflow-y-auto">
+          <DiffView diff={p.diff} afterLabel="Proposed" emptyMessage="No changes." />
+        </div>
+      )}
+      {p.status === "pending" ? (
+        <div className="mt-3 flex gap-2">
+          <button onClick={onApply} disabled={applying || p.diff.length === 0} className="btn-primary btn-sm disabled:opacity-40">
+            {applying ? "Applying…" : "Apply changes"}
+          </button>
+          <button onClick={onDiscard} disabled={applying} className="btn-ghost btn-sm">Discard</button>
+        </div>
+      ) : (
+        <div className={`mt-2 text-xs ${p.status === "applied" ? "text-emerald" : "text-subtle"}`}>
+          {p.status === "applied" ? "✓ Applied to your tailored résumé" : "Discarded"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Inline grounded assistant (Phase B): grounded chat + propose/apply rewrites.
+ * "Ask" hits the grounded /copilot/chat; "Rewrite" proposes a guardrailed
+ * revision (preview diff) that "Apply" commits to the tailored résumé + PDF. */
 function AIAssistantCard({ applicationId }: { applicationId: string }) {
+  const qc = useQueryClient();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+
+  const push = (m: ChatMsg) => setMessages((p) => [...p, m]);
+  const setProposalStatus = (index: number, status: ProposalStatus) =>
+    setMessages((p) => p.map((m, i) => (i === index && m.proposal ? { ...m, proposal: { ...m.proposal, status } } : m)));
 
   const send = useMutation({
     mutationFn: (message: string) =>
@@ -955,25 +1015,49 @@ function AIAssistantCard({ applicationId }: { applicationId: string }) {
         history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
         application_id: applicationId,
       }),
-    onSuccess: (r) =>
-      setMessages((p) => [...p, { role: "assistant", content: r.reply, grounded_in: r.grounded_in }]),
-    onError: (e) =>
-      setMessages((p) => [
-        ...p,
-        { role: "assistant", content: e instanceof ApiError ? `⚠️ ${e.message}` : "⚠️ Something went wrong. Try again." },
-      ]),
+    onSuccess: (r) => push({ role: "assistant", content: r.reply, grounded_in: r.grounded_in }),
+    onError: (e) => push({ role: "assistant", content: e instanceof ApiError ? `⚠️ ${e.message}` : "⚠️ Something went wrong. Try again." }),
   });
 
+  const revise = useMutation({
+    mutationFn: (instruction: string) =>
+      api.post<{ note: string; diff: DiffEntry[]; proposed: unknown; blocked: string[] }>(
+        `/applications/${applicationId}/assistant/revise`,
+        { instruction },
+      ),
+    onSuccess: (r) => push({ role: "assistant", content: r.note, proposal: { ...r, status: "pending" } }),
+    onError: (e) => push({ role: "assistant", content: e instanceof ApiError ? `⚠️ ${e.message}` : "⚠️ Couldn't propose a rewrite." }),
+  });
+
+  const apply = useMutation({
+    mutationFn: (vars: { proposed: unknown; index: number }) =>
+      api.post(`/applications/${applicationId}/assistant/apply`, { proposed: vars.proposed }),
+    onSuccess: (_d, vars) => {
+      setProposalStatus(vars.index, "applied");
+      qc.invalidateQueries({ queryKey: ["application", applicationId] });
+      push({ role: "assistant", content: "✓ Applied — your tailored résumé and PDF are updated." });
+    },
+    onError: (e) => push({ role: "assistant", content: e instanceof ApiError ? `⚠️ ${e.message}` : "⚠️ Couldn't apply the change." }),
+  });
+
+  const busy = send.isPending || revise.isPending || apply.isPending;
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, send.isPending]);
+  }, [messages, busy]);
 
-  function submit(text: string) {
-    const message = text.trim();
-    if (!message || send.isPending) return;
-    setMessages((p) => [...p, { role: "user", content: message }]);
+  function ask(text: string) {
+    const m = text.trim();
+    if (!m || busy) return;
+    push({ role: "user", content: m });
     setInput("");
-    send.mutate(message);
+    send.mutate(m);
+  }
+  function rewrite(text: string) {
+    const m = text.trim();
+    if (!m || busy) return;
+    push({ role: "user", content: m });
+    setInput("");
+    revise.mutate(m);
   }
 
   return (
@@ -985,17 +1069,17 @@ function AIAssistantCard({ applicationId }: { applicationId: string }) {
       </div>
       <p className="mt-0.5 text-xs text-subtle">Grounded in your résumé and this job — it never invents.</p>
 
-      <div className="mt-3 max-h-[26rem] min-h-[9rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
+      <div className="mt-3 max-h-[30rem] min-h-[9rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 py-4 text-center">
             <p className="max-w-xs text-sm text-subtle">
-              Ask me to strengthen bullets, surface keywords, or rewrite a section for this role.
+              Ask a question, or hit <span className="text-content">Rewrite</span> to propose a grounded change you can review and apply.
             </p>
             <div className="flex flex-wrap justify-center gap-1.5">
               {ASSIST_SUGGESTIONS.map((s) => (
                 <button
                   key={s}
-                  onClick={() => submit(s)}
+                  onClick={() => rewrite(s)}
                   className="rounded-full border border-white/[0.1] bg-surface px-3 py-1 text-xs text-muted transition hover:text-content"
                 >
                   {s}
@@ -1004,29 +1088,50 @@ function AIAssistantCard({ applicationId }: { applicationId: string }) {
             </div>
           </div>
         ) : (
-          messages.map((m, i) => <ChatBubble key={i} msg={m} />)
+          messages.map((m, i) =>
+            m.proposal ? (
+              <ProposalMessage
+                key={i}
+                msg={m}
+                applying={apply.isPending}
+                onApply={() => apply.mutate({ proposed: m.proposal!.proposed, index: i })}
+                onDiscard={() => setProposalStatus(i, "discarded")}
+              />
+            ) : (
+              <ChatBubble key={i} msg={m} />
+            ),
+          )
         )}
-        {send.isPending && (
+        {busy && (
           <div className="flex items-center gap-2 text-xs text-subtle">
-            <Spinner className="h-3.5 w-3.5" /> Thinking…
+            <Spinner className="h-3.5 w-3.5" /> {revise.isPending ? "Drafting a grounded revision…" : apply.isPending ? "Applying…" : "Thinking…"}
           </div>
         )}
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); submit(input); }} className="mt-2 flex gap-2">
+      <form onSubmit={(e) => { e.preventDefault(); ask(input); }} className="mt-2 flex gap-2">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask me to improve your résumé…"
+          placeholder="Ask, or describe a change to make…"
           className="input flex-1"
         />
-        <button type="submit" disabled={send.isPending || !input.trim()} className="btn-primary shrink-0 disabled:opacity-40">
+        <button
+          type="button"
+          onClick={() => rewrite(input)}
+          disabled={busy || !input.trim()}
+          title="Propose a grounded rewrite you can review and apply"
+          className="btn-secondary shrink-0 disabled:opacity-40"
+        >
+          <IconSparkles className="h-4 w-4" /> Rewrite
+        </button>
+        <button type="submit" disabled={busy || !input.trim()} className="btn-primary shrink-0 disabled:opacity-40" title="Ask a question">
           <IconArrowRight className="h-4 w-4" />
         </button>
       </form>
       <p className="mt-1.5 text-[11px] text-subtle">
-        Grounded in your résumé and this job. Inline “Apply changes” to rewrite bullets lands in the next iteration.
+        Grounded in your résumé and this job. “Rewrite” proposes a guardrailed change; “Apply” updates the résumé + PDF.
       </p>
     </div>
   );

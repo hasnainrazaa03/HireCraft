@@ -272,6 +272,44 @@ def rewrite_resume(
     return improved, report, diff
 
 
+def revise_resume(
+    current: MasterResume,
+    master: MasterResume,
+    instruction: str,
+    *,
+    evidence: list[str] | None = None,
+    requirements: JobRequirements | None = None,
+    client: LlmClient | None = None,
+    ledger: UsageLedger | None = None,
+) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
+    """Apply a user's plain-language edit request to an already-tailored résumé.
+
+    The model rewrites ``current`` per ``instruction``; the guardrail engine then
+    vets the result against the ORIGINAL ``master`` (+ brag-bank ``evidence`` and,
+    if present, the job ``requirements``) so a revision can only reword facts the
+    candidate has actually attested to — never invent. Returns the vetted résumé,
+    its guardrail report, and the diff *from the current tailored version*.
+    """
+    client = client or get_client()
+    result: LlmResult[TailoringResult] = client.generate_structured(
+        prompt=build_rewrite_prompt(current, instruction=instruction),
+        schema=TailoringResult,
+        system_instruction=REWRITE_SYSTEM,
+        temperature=settings.llm_temperature,
+    )
+    if ledger is not None:
+        ledger.record("revise_resume", result.usage)
+
+    revised, report = GuardrailEngine(master, requirements, evidence=evidence).apply(result.data)
+    diff = build_diff(current, revised)
+    logger.info(
+        "pipeline.revised",
+        changed_fields=len(diff),
+        errors=len([v for v in report.violations if v.severity == "error"]),
+    )
+    return revised, report, diff
+
+
 class ProfileIntro(BaseModel):
     headline: str = Field(default="", max_length=200)
     summary: str = Field(default="", max_length=1200)

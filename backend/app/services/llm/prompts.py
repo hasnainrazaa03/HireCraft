@@ -326,13 +326,25 @@ Return every entry's `highlights` rewritten (one per existing bullet)."""
 
 
 def build_rewrite_prompt(
-    resume: MasterResume, findings: list[str] | None = None
+    resume: MasterResume,
+    findings: list[str] | None = None,
+    instruction: str | None = None,
 ) -> str:
     resume_json = json.dumps(_entry_payload(resume), indent=2, ensure_ascii=False)
     weaknesses = ""
     if findings:
         weaknesses = "\n=== WEAKNESSES DETECTED (address these) ===\n" + "\n".join(
             f"- {f}" for f in findings[:25]
+        )
+    request = ""
+    if instruction:
+        request = (
+            "\n=== USER REQUEST — do exactly this, and only this ===\n"
+            f"{instruction.strip()[:600]}\n"
+            "Make the smallest set of edits that fulfils the request. Leave every "
+            "other bullet, section, and word unchanged (return it verbatim). Still "
+            "invent nothing — only reword, reorder, or emphasise facts already in "
+            "the resume below.\n"
         )
     allowed_tech = sorted(
         {item for group in resume.skills for item in group.items}
@@ -341,7 +353,7 @@ def build_rewrite_prompt(
     )
     return f"""\
 Improve this resume's wording, impact, and ordering. Do not tailor it to any job.
-{weaknesses}
+{request}{weaknesses}
 
 === TECHNOLOGIES THE CANDIDATE MAY BE DESCRIBED AS KNOWING (complete allowed list) ===
 {", ".join(allowed_tech) if allowed_tech else "(none listed)"}

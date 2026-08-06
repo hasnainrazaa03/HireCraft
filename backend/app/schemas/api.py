@@ -350,6 +350,27 @@ class ApplicationDetail(ApiModel):
     artifacts: list[ArtifactResponse] = Field(default_factory=list)
 
 
+class AssistantReviseRequest(ApiModel):
+    """Ask the grounded assistant to revise the tailored résumé."""
+
+    instruction: Annotated[str, Field(min_length=3, max_length=600)]
+
+
+class AssistantApplyRequest(ApiModel):
+    """Apply a previously-proposed revision (already vetted, re-checked on apply)."""
+
+    proposed: MasterResume
+
+
+class AssistantProposal(ApiModel):
+    """A previewed revision: the diff and the proposed résumé, not yet applied."""
+
+    note: str
+    diff: list[dict[str, Any]]
+    proposed: dict[str, Any]
+    blocked: list[str]
+
+
 class ApplicationStatusResponse(ApiModel):
     """Lightweight payload for polling a running job."""
 

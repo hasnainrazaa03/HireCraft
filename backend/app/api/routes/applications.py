@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import uuid
 import zipfile
@@ -12,13 +13,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.application import (
     Application,
+    ApplicationArtifact,
+    ArtifactKind,
     PipelineStatus,
     TrackerStatus,
 )
 from app.models.job import Job
+from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile
 from app.schemas.api import (
     ApplicationCreate,
@@ -26,12 +31,28 @@ from app.schemas.api import (
     ApplicationStatusResponse,
     ApplicationSummary,
     ApplicationUpdate,
+    AssistantApplyRequest,
+    AssistantProposal,
+    AssistantReviseRequest,
     Scorecard,
     ScorecardMetric,
 )
+from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
-from app.schemas.tailoring import GuardrailReport
+from app.schemas.tailoring import (
+    GuardrailReport,
+    TailoredEntry,
+    TailoredSkillGroup,
+    TailoringResult,
+)
 from app.services import storage
+from app.services.evidence import evidence_lines
+from app.services.latex.renderer import render_and_fit
+from app.services.latex.templates import resolve_filename
+from app.services.llm.client import LlmConfigurationError, LlmError
+from app.services.llm.factory import client_for_user
+from app.services.llm.guardrails import GuardrailEngine, build_diff
+from app.services.pipeline import UsageLedger, revise_resume
 from app.services.resume_eval import score_from_report
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
 from app.workers.tasks import enqueue_tailoring
@@ -499,6 +520,157 @@ def download_artifact(
         )
 
     return FileResponse(path=path, media_type=media_type, filename=filename)
+
+
+# --- Grounded assistant: revise + apply -------------------------------------
+
+
+def _tailoring_result_from(resume: MasterResume) -> TailoringResult:
+    """Rebuild a TailoringResult from a résumé so the guardrail engine can re-vet
+    an applied revision against the master before it is saved."""
+    return TailoringResult(
+        headline=resume.basics.headline,
+        summary=resume.basics.summary,
+        experience=[TailoredEntry(id=e.id, highlights=list(e.highlights)) for e in resume.experience],
+        projects=[TailoredEntry(id=p.id, highlights=list(p.highlights)) for p in resume.projects],
+        education=[TailoredEntry(id=ed.id, highlights=list(ed.highlights)) for ed in resume.education],
+        skills=[TailoredSkillGroup(category=g.category, items=list(g.items)) for g in resume.skills],
+    )
+
+
+def _summarize_diff(diff: list) -> str:
+    if not diff:
+        return "No changes were needed — your résumé already reads well for that request."
+    where = sorted({d.section for d in diff})
+    n = len(diff)
+    return (
+        f"Proposed {n} change{'s' if n != 1 else ''} in {', '.join(where)}. "
+        "Review the diff below, then apply if it looks right."
+    )
+
+
+def _resume_context(
+    db: DbSession, user_id: uuid.UUID, application: Application
+) -> tuple[MasterResume | None, list[str], JobRequirements | None, ResumeProfile | None]:
+    """Master résumé (guardrail source of truth), brag-bank evidence, job requirements."""
+    profile = db.get(ResumeProfile, application.resume_profile_id)
+    master = MasterResume.model_validate(profile.content) if profile else None
+    evidence = evidence_lines(db, user_id)
+    requirements = None
+    if application.job and application.job.requirements:
+        with contextlib.suppress(Exception):
+            requirements = JobRequirements.model_validate(application.job.requirements)
+    return master, evidence, requirements, profile
+
+
+def _charge(db: DbSession, user_id: uuid.UUID, application: Application, ledger: UsageLedger) -> None:
+    for purpose, usage in ledger.entries:
+        db.add(
+            LlmUsage(
+                user_id=user_id, purpose=purpose, model=usage.model,
+                input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                cost_usd=usage.cost_usd, latency_ms=usage.latency_ms,
+            )
+        )
+        application.total_input_tokens += usage.input_tokens
+        application.total_output_tokens += usage.output_tokens
+        application.total_cost_usd += usage.cost_usd
+
+
+def _write_artifact(
+    db: DbSession, application: Application, user_id: uuid.UUID,
+    kind: ArtifactKind, filename: str, data: bytes, content_type: str,
+) -> None:
+    """Overwrite (or create) a stored artifact file for this application."""
+    relative = storage.build_relative_path(user_id, application.id, filename)
+    size = storage.save_bytes(relative, data)
+    existing = next((a for a in application.artifacts if a.kind == kind), None)
+    if existing is not None:
+        existing.storage_path = relative
+        existing.size_bytes = size
+        existing.content_type = content_type
+    else:
+        application.artifacts.append(
+            ApplicationArtifact(kind=kind, storage_path=relative, size_bytes=size, content_type=content_type)
+        )
+
+
+@router.post("/{application_id}/assistant/revise", response_model=AssistantProposal)
+def assistant_revise(
+    application_id: uuid.UUID, payload: AssistantReviseRequest, user: GenerationUser, db: DbSession
+) -> AssistantProposal:
+    """Propose a grounded, guardrailed revision of the tailored résumé. Saves nothing."""
+    application = _get_owned(db, user.id, application_id)
+    if application.pipeline_status != PipelineStatus.COMPLETED or not application.tailored_resume:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This application isn't ready to revise yet.")
+    current = MasterResume.model_validate(application.tailored_resume)
+    master, evidence, requirements, _ = _resume_context(db, user.id, application)
+    if master is None:
+        master = current
+
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    ledger = UsageLedger()
+    try:
+        revised, report, diff = revise_resume(
+            current, master, payload.instruction,
+            evidence=evidence, requirements=requirements, client=client, ledger=ledger,
+        )
+    except LlmError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The AI service is unavailable right now: {exc}") from exc
+
+    _charge(db, user.id, application, ledger)
+    db.commit()
+
+    return AssistantProposal(
+        note=_summarize_diff(diff),
+        diff=[d.model_dump(mode="json") for d in diff],
+        proposed=revised.model_dump(mode="json"),
+        blocked=[v.detail for v in report.violations if v.severity == "error"],
+    )
+
+
+@router.post("/{application_id}/assistant/apply", response_model=ApplicationDetail)
+def assistant_apply(
+    application_id: uuid.UUID, payload: AssistantApplyRequest, user: CurrentUser, db: DbSession
+) -> ApplicationDetail:
+    """Apply a proposed revision: re-vet against the master, update the tailored
+    résumé + diff + guardrails, and re-render the stored PDF/TeX."""
+    application = _get_owned(db, user.id, application_id)
+    proposed = payload.proposed
+    master, evidence, requirements, profile = _resume_context(db, user.id, application)
+    if master is None:
+        master = proposed
+
+    # Re-vet on apply (defense in depth) by merging the proposal onto the master.
+    merged, report = GuardrailEngine(master, requirements, evidence=evidence).apply(
+        _tailoring_result_from(proposed)
+    )
+
+    template = resolve_filename(profile.template if profile else None)
+    one_page = profile.one_page if profile else False
+    try:
+        compiled, resume_tex = render_and_fit(
+            merged, settings.templates_dir, template_name=template, one_page=one_page, job_name="resume"
+        )
+    except Exception as exc:  # noqa: BLE001 - typesetting failure -> friendly 422
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Couldn't typeset the revised résumé: {exc}"
+        ) from exc
+
+    _write_artifact(db, application, user.id, ArtifactKind.RESUME_PDF, "resume.pdf", compiled.pdf_bytes, "application/pdf")
+    _write_artifact(db, application, user.id, ArtifactKind.RESUME_TEX, "resume.tex", resume_tex.encode("utf-8"), "application/x-tex")
+
+    application.tailored_resume = merged.model_dump(mode="json")
+    application.diff = [d.model_dump(mode="json") for d in build_diff(master, merged)]
+    application.guardrail_report = report.model_dump(mode="json")
+    db.commit()
+    db.refresh(application)
+    logger.info("application.assistant_applied", application_id=str(application_id), pages=compiled.page_count)
+    return _to_detail(application)
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
