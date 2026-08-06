@@ -371,6 +371,20 @@ class AssistantProposal(ApiModel):
     blocked: list[str]
 
 
+class OutreachRequest(ApiModel):
+    """Draft a short outreach message for this application."""
+
+    kind: str = "recruiter_email"
+    recipient: str | None = Field(default=None, max_length=120)
+    context: str | None = Field(default=None, max_length=1000)
+
+
+class OutreachDraftResponse(ApiModel):
+    subject: str
+    body: str
+    warnings: list[str]
+
+
 class ApplicationStatusResponse(ApiModel):
     """Lightweight payload for polling a running job."""
 

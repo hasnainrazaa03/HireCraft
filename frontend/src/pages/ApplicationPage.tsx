@@ -37,7 +37,7 @@ const ACTIVE = new Set([
   "rendering",
 ]);
 
-type Tab = "overview" | "documents" | "activity" | "notes" | "analytics";
+type Tab = "overview" | "documents" | "activity" | "notes" | "emails" | "analytics";
 type DocTab = "diff" | "match" | "guardrails" | "requirements" | "preview";
 
 export default function ApplicationPage() {
@@ -290,6 +290,7 @@ export default function ApplicationPage() {
                 ["documents", "Résumé & Documents"],
                 ["activity", "Activity"],
                 ["notes", "Notes"],
+                ["emails", "Emails"],
                 ["analytics", "Analytics"],
               ] as const
             ).map(([value, label]) => (
@@ -387,6 +388,8 @@ export default function ApplicationPage() {
           )}
 
           {tab === "activity" && <ActivityView application={application} />}
+
+          {tab === "emails" && <EmailsTab applicationId={id!} />}
 
           {tab === "notes" && (
             <div className="mt-6 grid max-w-2xl gap-5">
@@ -1306,6 +1309,107 @@ function ActivityView({ application }: { application: ApplicationDetail }) {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+const OUTREACH_KINDS = [
+  { key: "recruiter_email", label: "Recruiter email" },
+  { key: "follow_up", label: "Follow-up" },
+  { key: "referral_request", label: "Referral request" },
+];
+
+/** Draft short, grounded outreach for this application (Emails tab). */
+function EmailsTab({ applicationId }: { applicationId: string }) {
+  const toast = useToast();
+  const [kind, setKind] = useState("recruiter_email");
+  const [recipient, setRecipient] = useState("");
+  const [context, setContext] = useState("");
+  const [draft, setDraft] = useState<{ subject: string; body: string; warnings: string[] } | null>(null);
+
+  const gen = useMutation({
+    mutationFn: () =>
+      api.post<{ subject: string; body: string; warnings: string[] }>(
+        `/applications/${applicationId}/outreach`,
+        { kind, recipient: recipient || null, context: context || null },
+      ),
+    onSuccess: (d) => setDraft(d),
+    onError: (e) => toast.error("Couldn't draft the message", e instanceof ApiError ? e.message : undefined),
+  });
+
+  return (
+    <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="card p-5">
+        <h2 className="text-base font-semibold">Draft outreach</h2>
+        <p className="mt-0.5 text-xs text-subtle">
+          Grounded in your résumé — you review and send it yourself. Never scrapes anyone's contact details.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {OUTREACH_KINDS.map((k) => (
+            <button
+              key={k.key}
+              onClick={() => setKind(k.key)}
+              className={`rounded-full border px-3 py-1 text-xs transition ${
+                kind === k.key
+                  ? "border-brand-500/60 bg-brand-500/15 text-brand-200"
+                  : "border-white/[0.1] bg-surface-2 text-muted hover:text-content"
+              }`}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+        <label className="mt-3 block">
+          <span className="label">Recipient (optional)</span>
+          <input className="input" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="A recruiter or contact's name" />
+        </label>
+        <label className="mt-3 block">
+          <span className="label">Context (optional)</span>
+          <textarea
+            className="input min-h-[70px]"
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            placeholder="Anything to weave in — a mutual contact, why this team, a deadline…"
+          />
+        </label>
+        <button onClick={() => gen.mutate()} disabled={gen.isPending} className="btn-primary mt-3 disabled:opacity-40">
+          {gen.isPending ? "Drafting…" : draft ? "Redraft" : "Draft message"}
+        </button>
+      </div>
+
+      <div className="card p-5">
+        {!draft ? (
+          <div className="flex h-full min-h-[12rem] items-center justify-center text-center text-sm text-subtle">
+            Pick a type and hit <span className="mx-1 text-content">Draft message</span> — your outreach appears here.
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Draft</h2>
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(`Subject: ${draft.subject}\n\n${draft.body}`);
+                  toast.success("Copied to clipboard");
+                }}
+                className="btn-secondary btn-sm"
+              >
+                Copy
+              </button>
+            </div>
+            <div className="mt-3 text-xs text-subtle">Subject</div>
+            <div className="rounded-lg border border-white/[0.07] bg-surface-2 px-3 py-2 text-sm text-content">{draft.subject}</div>
+            <div className="mt-3 text-xs text-subtle">Body</div>
+            <div className="whitespace-pre-wrap rounded-lg border border-white/[0.07] bg-surface-2 px-3 py-2 text-sm leading-relaxed text-content">
+              {draft.body}
+            </div>
+            {draft.warnings.length > 0 && (
+              <div className="mt-3 rounded-lg border border-coral/30 bg-coral/10 px-3 py-2 text-xs text-coral">
+                Double-check before sending — {draft.warnings.join("; ")}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

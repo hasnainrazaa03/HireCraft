@@ -34,6 +34,8 @@ from app.schemas.api import (
     AssistantApplyRequest,
     AssistantProposal,
     AssistantReviseRequest,
+    OutreachDraftResponse,
+    OutreachRequest,
     Scorecard,
     ScorecardMetric,
 )
@@ -53,7 +55,12 @@ from app.services.latex.templates import resolve_filename
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.llm.factory import client_for_user
 from app.services.llm.guardrails import GuardrailEngine, build_diff
-from app.services.pipeline import UsageLedger, draft_cover_letter, revise_resume
+from app.services.pipeline import (
+    UsageLedger,
+    draft_cover_letter,
+    generate_outreach,
+    revise_resume,
+)
 from app.services.resume_eval import score_from_report
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
 from app.workers.tasks import enqueue_tailoring
@@ -730,6 +737,37 @@ def generate_cover_letter(
     db.refresh(application)
     logger.info("application.cover_letter_generated", application_id=str(application_id))
     return _to_detail(application)
+
+
+@router.post("/{application_id}/outreach", response_model=OutreachDraftResponse)
+def application_outreach(
+    application_id: uuid.UUID, payload: OutreachRequest, user: GenerationUser, db: DbSession
+) -> OutreachDraftResponse:
+    """Draft a short, grounded outreach message (recruiter email, follow-up, referral)."""
+    application = _get_owned(db, user.id, application_id)
+    if not application.tailored_resume:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tailor the résumé first.")
+    resume = MasterResume.model_validate(application.tailored_resume)
+    company = application.job.company if application.job else None
+    role = application.job.title if application.job else None
+
+    try:
+        client = client_for_user(user)
+    except LlmConfigurationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    ledger = UsageLedger()
+    try:
+        draft, warnings = generate_outreach(
+            resume, payload.kind, company=company, role=role,
+            recipient=payload.recipient, context=payload.context, client=client, ledger=ledger,
+        )
+    except LlmError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The AI service is unavailable right now: {exc}") from exc
+
+    _charge(db, user.id, application, ledger)
+    db.commit()
+    return OutreachDraftResponse(subject=draft.subject, body=draft.body, warnings=warnings)
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
