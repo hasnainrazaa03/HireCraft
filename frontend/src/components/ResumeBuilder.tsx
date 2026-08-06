@@ -51,21 +51,15 @@ export function ResumeBuilder({
           <Input label="GitHub" value={basics.github} onChange={(v) => setBasics({ github: v })} placeholder="https://…" />
         </div>
 
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.07] bg-surface-2 px-3.5 py-2.5">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Headline &amp; summary</p>
-            <p className="text-xs text-subtle">Let AI draft these from your experience — you can edit after.</p>
-          </div>
-          <IntroGenerator
-            content={value}
-            onResult={(headline, summary) =>
-              setBasics({
-                ...(headline ? { headline } : {}),
-                ...(summary ? { summary } : {}),
-              })
-            }
-          />
-        </div>
+        <IntroGenerator
+          content={value}
+          onResult={(headline, summary) =>
+            setBasics({
+              ...(headline ? { headline } : {}),
+              ...(summary ? { summary } : {}),
+            })
+          }
+        />
 
         <Input label="Headline" value={basics.headline} onChange={(v) => setBasics({ headline: v })} placeholder="Backend Engineer focused on distributed systems" />
         <Field label="Summary">
@@ -328,11 +322,21 @@ function IntroGenerator({
   }
 
   return (
-    <div className="flex items-center gap-2.5">
-      {error && <span className="max-w-[16rem] text-xs text-danger">{error}</span>}
-      <button type="button" onClick={run} disabled={loading} className="btn-secondary btn-sm shrink-0">
-        <IconSparkles className="h-4 w-4" /> {loading ? "Writing…" : "Generate with AI"}
-      </button>
+    <div className="mt-1 rounded-xl border border-white/[0.07] bg-surface-2 px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Headline &amp; summary</p>
+          <p className="text-xs text-subtle">Let AI draft these from your experience — you can edit after.</p>
+        </div>
+        <button type="button" onClick={run} disabled={loading} className="btn-secondary btn-sm shrink-0">
+          <IconSparkles className="h-4 w-4" /> {loading ? "Writing…" : "Generate with AI"}
+        </button>
+      </div>
+      {error && (
+        <p className="mt-2.5 border-t border-white/[0.06] pt-2.5 text-xs leading-relaxed text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
