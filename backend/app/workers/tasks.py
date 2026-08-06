@@ -29,6 +29,7 @@ from app.services.latex.compiler import LatexCompilationError
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.llm.factory import LlmClient, client_for_user
 from app.services.pipeline import TailoringOutcome, run_pipeline
+from app.services.usage import accrue_usage
 from app.workers.celery_app import celery_app
 
 logger = get_logger(__name__)
@@ -99,9 +100,8 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
         application.tailored_resume = outcome.tailored_resume.model_dump(mode="json")
         application.diff = [d.model_dump(mode="json") for d in outcome.diff]
         application.guardrail_report = outcome.guardrail_report.model_dump(mode="json")
-        application.total_input_tokens = outcome.usage.input_tokens
-        application.total_output_tokens = outcome.usage.output_tokens
-        application.total_cost_usd = outcome.usage.cost_usd
+        # Reset the cost rollup: a fresh (or retried) tailoring replaces everything.
+        accrue_usage(application, outcome.usage.entries, reset=True)
         application.pipeline_status = PipelineStatus.COMPLETED
         application.error_message = None
 

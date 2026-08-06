@@ -663,6 +663,7 @@ export interface ApplicationDetail {
   total_input_tokens: number;
   total_output_tokens: number;
   total_cost_usd: number;
+  cost_breakdown: Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>;
   created_at: string;
   updated_at: string;
   job: {

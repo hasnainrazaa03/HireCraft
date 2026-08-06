@@ -344,6 +344,7 @@ class ApplicationDetail(ApiModel):
     total_input_tokens: int
     total_output_tokens: int
     total_cost_usd: float
+    cost_breakdown: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     job: JobResponse | None = None

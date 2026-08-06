@@ -63,6 +63,7 @@ from app.services.pipeline import (
 )
 from app.services.resume_eval import score_from_report
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
+from app.services.usage import accrue_usage
 from app.workers.tasks import enqueue_tailoring
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -580,9 +581,8 @@ def _charge(db: DbSession, user_id: uuid.UUID, application: Application, ledger:
                 cost_usd=usage.cost_usd, latency_ms=usage.latency_ms,
             )
         )
-        application.total_input_tokens += usage.input_tokens
-        application.total_output_tokens += usage.output_tokens
-        application.total_cost_usd += usage.cost_usd
+    # Fold this run's spend into the application's totals + per-workflow breakdown.
+    accrue_usage(application, ledger.entries)
 
 
 def _write_artifact(

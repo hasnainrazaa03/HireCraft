@@ -129,6 +129,9 @@ class Application(Base, TimestampMixin):
     total_input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_cost_usd: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    # Per-category rollup so the app's Analytics can break spend down by workflow:
+    # {"resume": {input_tokens, output_tokens, cost_usd}, "cover_letter": {...}, ...}.
+    cost_breakdown: Mapped[dict[str, Any]] = mapped_column(JsonB, default=dict, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="applications")
     job: Mapped[Job] = relationship(back_populates="applications")

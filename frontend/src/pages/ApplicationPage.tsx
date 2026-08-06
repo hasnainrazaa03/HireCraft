@@ -398,11 +398,7 @@ export default function ApplicationPage() {
             </div>
           )}
 
-          {tab === "analytics" && (
-            <div className="card mt-6 p-8 text-center text-sm text-subtle">
-              Per-application analytics are coming soon.
-            </div>
-          )}
+          {tab === "analytics" && <AnalyticsTab application={application} />}
         </>
       )}
 
@@ -816,14 +812,19 @@ function QualityCard({ card }: { card: Scorecard }) {
         <div className="text-xs text-subtle">Tailored for this role</div>
         <div className="mt-2 grid grid-cols-2 gap-1.5">
           {chips.map((m) => (
-            <span
+            <div
               key={m.key}
               title={`${m.label} — ${m.detail}`}
-              className="inline-flex items-center justify-between gap-1 rounded-md border border-white/[0.06] bg-surface px-2 py-1 text-xs text-subtle"
+              className="rounded-md border border-white/[0.06] bg-surface px-2 py-1.5 text-xs"
             >
-              <span className="truncate">{m.label}</span>
-              <span className="shrink-0 font-semibold tabular-nums" style={{ color: scoreHex(m.score) }}>{m.score}</span>
-            </span>
+              <div className="flex items-center justify-between gap-1">
+                <span className="truncate text-subtle">{m.label}</span>
+                <span className="shrink-0 font-semibold tabular-nums" style={{ color: scoreHex(m.score) }}>{m.score}</span>
+              </div>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.07]">
+                <div className="h-full rounded-full" style={{ width: `${m.score}%`, background: scoreHex(m.score), transition: "width 0.5s ease" }} />
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -1309,6 +1310,69 @@ function ActivityView({ application }: { application: ApplicationDetail }) {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+const COST_CATEGORY_META: Record<string, { label: string; color: string }> = {
+  resume: { label: "Résumé tailoring & edits", color: "#7c4dff" },
+  cover_letter: { label: "Cover letter", color: "#4CC9F0" },
+  outreach: { label: "Outreach", color: "#2DD4BF" },
+};
+
+/** Per-application spend: totals + a category breakdown that grows with every AI action. */
+function AnalyticsTab({ application }: { application: ApplicationDetail }) {
+  const bd = application.cost_breakdown || {};
+  const cats = Object.entries(bd)
+    .filter(([, v]) => v.cost_usd > 0 || v.input_tokens + v.output_tokens > 0)
+    .sort((a, b) => b[1].cost_usd - a[1].cost_usd);
+  const totalCost = application.total_cost_usd;
+  const totalTokens = application.total_input_tokens + application.total_output_tokens;
+
+  return (
+    <div className="mt-6 space-y-6">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Total cost" value={`$${totalCost.toFixed(4)}`} />
+        <Stat label="Total tokens" value={totalTokens.toLocaleString()} />
+        <Stat
+          label="Input / Output tokens"
+          value={`${application.total_input_tokens.toLocaleString()} / ${application.total_output_tokens.toLocaleString()}`}
+        />
+      </div>
+
+      <div className="card p-5">
+        <h2 className="text-base font-semibold">Cost breakdown</h2>
+        <p className="mt-0.5 text-xs text-subtle">
+          Additive across every AI action on this application — tailoring, revisions, cover letter, and outreach.
+        </p>
+        {cats.length === 0 ? (
+          <p className="mt-4 text-sm text-subtle">No AI spend recorded yet.</p>
+        ) : (
+          <div className="mt-4 space-y-3.5">
+            {cats.map(([key, v]) => {
+              const meta = COST_CATEGORY_META[key] ?? { label: key, color: "#8a8a8a" };
+              const pct = totalCost > 0 ? (v.cost_usd / totalCost) * 100 : 0;
+              return (
+                <div key={key}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2 text-content">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: meta.color }} />
+                      {meta.label}
+                    </span>
+                    <span className="tabular-nums text-content">
+                      ${v.cost_usd.toFixed(4)}
+                      <span className="ml-1 text-subtle">· {(v.input_tokens + v.output_tokens).toLocaleString()} tok</span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: meta.color, transition: "width 0.5s ease" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
