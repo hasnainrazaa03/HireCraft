@@ -276,6 +276,30 @@ Confirms the app is up before deep testing.
 - ⬜ **T-TLR-14** **Retry** on a failed/blocked run re-runs; **Delete** an application removes it (and it disappears from the board + dashboard funnel).
   - Notes:
 
+### 7.4 Application workspace  (Application detail → tabs: Overview · Documents · Activity · Notes · Emails · Analytics)  ⭐ new engine
+- ⬜ **T-WS-01** **Overview → Workflow** card: vertical status stepper (funnel) shows the current stage; **mark a new status** (e.g. Applied → Interviewing) and it **persists on reload** and updates the tracker board + dashboard funnel.
+  - Notes:
+- ⬜ **T-WS-02** **AI Résumé Quality** card: donut overall /100 + metric pills (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness). **Each pill now has a colored progress bar** under it — green (high) → amber (mid) → red (low), width matching the score. Colors track the number.
+  - Notes:
+- ⬜ **T-WS-03** **AI Assistant** (chat at bottom): ask a question about the résumé → reply is **grounded** (a "grounded in" line cites your résumé / brag bank / this application), not generic web advice. Off-topic asks stay grounded to your material.
+  - Notes:
+- ⬜ **T-WS-04** **Rewrite** (assistant): give an instruction (e.g. "make the summary more ML-focused") → returns a **proposal** with a before→after **diff**; any claims it wanted to add but couldn't support are listed as **blocked** (guardrails still apply).
+  - Notes:
+- ⬜ **T-WS-05** **Apply** a proposal → the résumé is updated **and the PDF re-renders** (re-vetted through guardrails); **Discard** leaves the résumé untouched. Re-open the app → the applied change persisted.
+  - Notes:
+- ⬜ **T-WS-06 (P0 check)** Apply only ever writes **truthful** content: the applied résumé contains nothing the guardrails would block — every surviving claim traces to your résumé or brag bank.
+  - Notes:
+- ⬜ **T-WS-07** **Cover letter** (Overview/Documents): **Generate** inline → a letter artifact is produced and **Download** works; regenerating replaces it. Reads as a real letter (greeting → body → sign-off).
+  - Notes:
+- ⬜ **T-WS-08** **Emails** tab: pick an outreach **kind** (recruiter email / LinkedIn note / follow-up / thank-you / interview check-in / referral / negotiation) → **Generate** → short, specific, truthful message; **copy** works.
+  - Notes:
+- ⬜ **T-WS-09** **Analytics** tab: **Total cost**, **Total tokens**, and **Input / Output** stat cards. Below, a **Cost breakdown** by category (Résumé tailoring & edits · Cover letter · Outreach), each with `$cost · tokens` and a **proportional colored bar** (share of total spend). Pre-existing apps show their prior spend under **Résumé**.
+  - Notes:
+- ⬜ **T-WS-10** **Analytics is additive & categorized:** note the total, then run an action — generate outreach (T-WS-08) or a cover letter (T-WS-07). Re-open Analytics → the **total grew** *and* the **matching category** (Outreach / Cover letter) increased by that action's cost; other categories unchanged. Re-tailoring the résumé **resets** the Résumé category (fresh run), not the others.
+  - Notes:
+- ⬜ **T-WS-11** **Activity** and **Notes** tabs: activity log reflects the actions above; notes save (on blur) and persist on reload.
+  - Notes:
+
 ---
 
 ## 8. Applications Tracker  (`/applications`)
