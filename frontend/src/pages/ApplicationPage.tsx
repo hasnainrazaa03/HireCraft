@@ -192,23 +192,15 @@ export default function ApplicationPage() {
         </div>
         <div className="flex items-center gap-2">
           <PipelineBadge status={pipeline} />
-          <select
-            value={application.tracker_status}
-            onChange={(e) =>
-              update.mutate({ tracker_status: e.target.value as TrackerStatus })
-            }
-            className={`badge cursor-pointer appearance-none border-0 pr-6 ${
-              TRACKER_STYLES[application.tracker_status]
-            }`}
-          >
-            {ALL_STAGES.map((s) => (
-              <option key={s} value={s} className="bg-surface text-content">
-                {trackerLabel(s)}
-              </option>
-            ))}
-          </select>
+          <span className={`badge ${TRACKER_STYLES[application.tracker_status]}`}>
+            {trackerLabel(application.tracker_status)}
+          </span>
         </div>
       </div>
+
+      {!busy && pipeline !== "failed" && (
+        <WorkflowStepper application={application} onUpdate={update.mutate} />
+      )}
 
       {busy && (
         <div className="card mt-6 flex items-center gap-3 p-4">
@@ -637,6 +629,118 @@ function ResumePreview({ id }: { id: string }) {
         </div>
       ) : (
         <iframe title="Final résumé" src={`${url}#navpanes=0&zoom=page-width`} className="h-full w-full" />
+      )}
+    </div>
+  );
+}
+
+// The interview funnel, in order. Secondary statuses fold onto the nearest step
+// so the stepper always shows a coherent position.
+const FUNNEL: { key: TrackerStatus; label: string }[] = [
+  { key: "applied", label: "Applied" },
+  { key: "screening", label: "Screening" },
+  { key: "interviewing", label: "Interviewing" },
+  { key: "final", label: "Final" },
+  { key: "offer", label: "Offer" },
+  { key: "accepted", label: "Accepted" },
+];
+const FUNNEL_POS: Partial<Record<TrackerStatus, number>> = {
+  applied: 0,
+  screening: 1,
+  assessment: 1,
+  interviewing: 2,
+  technical: 2,
+  behavioral: 2,
+  final: 3,
+  offer: 4,
+  accepted: 5,
+};
+const TERMINAL_NEG = new Set<TrackerStatus>(["rejected", "withdrawn", "ghosted", "archived"]);
+
+function WorkflowStepper({
+  application,
+  onUpdate,
+}: {
+  application: ApplicationDetail;
+  onUpdate: (body: { tracker_status: TrackerStatus }) => void;
+}) {
+  const status = application.tracker_status;
+  const closed = TERMINAL_NEG.has(status);
+  const reached = FUNNEL_POS[status] ?? -1; // -1 = not applied yet
+
+  return (
+    <div className="card mt-6 p-5">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Application workflow</h2>
+          <p className="text-xs text-subtle">Track your progress through each stage.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-subtle">Update status</span>
+          <select
+            value={status}
+            onChange={(e) => onUpdate({ tracker_status: e.target.value as TrackerStatus })}
+            className={`badge cursor-pointer appearance-none border-0 pr-6 ${TRACKER_STYLES[status]}`}
+          >
+            {ALL_STAGES.map((s) => (
+              <option key={s} value={s} className="bg-surface text-content">
+                {trackerLabel(s)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <ol className="flex items-center">
+        {FUNNEL.map((stage, i) => {
+          const done = !closed && reached > i;
+          const current = !closed && reached === i;
+          return (
+            <li key={stage.key} className="flex flex-1 items-center last:flex-none">
+              <button
+                type="button"
+                onClick={() => onUpdate({ tracker_status: stage.key })}
+                title={`Mark as ${stage.label}`}
+                className="flex flex-col items-center gap-1.5"
+              >
+                <span
+                  className={`grid h-7 w-7 place-items-center rounded-full border text-xs font-medium transition ${
+                    done
+                      ? "border-emerald/50 bg-emerald/20 text-emerald"
+                      : current
+                        ? "border-brand-500 bg-brand-500/25 text-brand-100"
+                        : "border-white/[0.12] text-subtle hover:border-white/30"
+                  }`}
+                >
+                  {done ? "✓" : i + 1}
+                </span>
+                <span className={`text-[11px] ${current ? "font-medium text-content" : "text-subtle"}`}>
+                  {stage.label}
+                </span>
+              </button>
+              {i < FUNNEL.length - 1 && (
+                <div className={`mx-1 mb-5 h-px flex-1 ${done ? "bg-emerald/40" : "bg-white/[0.1]"}`} />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {closed && (
+        <div
+          className={`mt-5 rounded-lg border px-3 py-2 text-sm ${
+            status === "rejected"
+              ? "border-danger/30 bg-danger/10 text-danger"
+              : "border-white/[0.1] bg-surface-2 text-muted"
+          }`}
+        >
+          This application is marked <span className="font-medium">{trackerLabel(status)}</span>.
+        </div>
+      )}
+      {reached === -1 && !closed && (
+        <p className="mt-4 text-xs text-subtle">
+          Not submitted yet — set the status to <span className="text-content">Applied</span> once you apply.
+        </p>
       )}
     </div>
   );
