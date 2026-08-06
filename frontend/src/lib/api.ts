@@ -373,6 +373,7 @@ export interface ResumeProfileSummary {
   is_default: boolean;
   tags: string[];
   template: string;
+  one_page: boolean;
   current_version: number;
   label: string | null;
   updated_at: string;

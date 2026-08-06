@@ -20,7 +20,7 @@ from app.schemas.resume import MasterResume
 from app.schemas.tailoring import DiffEntry, GuardrailReport, TailoringResult
 from app.schemas.writing import VoiceProfile
 from app.services.latex.compiler import CompileResult, compile_latex
-from app.services.latex.renderer import render_cover_letter, render_resume
+from app.services.latex.renderer import render_and_fit, render_cover_letter
 from app.services.latex.templates import resolve_filename
 from app.services.llm.client import LlmResult, Usage, get_client
 from app.services.llm.guardrails import GuardrailEngine, build_diff
@@ -476,6 +476,7 @@ def run_pipeline(
     evidence: list[str] | None = None,
     templates_dir: str | None = None,
     template: str | None = None,
+    one_page: bool = False,
     client: LlmClient | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> TailoringOutcome:
@@ -516,10 +517,13 @@ def run_pipeline(
             )
 
     progress("rendering", "Typesetting your PDF")
-    resume_tex = render_resume(
-        tailored, templates_dir, template_name=resolve_filename(template)
+    compiled, resume_tex = render_and_fit(
+        tailored,
+        templates_dir,
+        template_name=resolve_filename(template),
+        one_page=one_page,
+        job_name="resume",
     )
-    compiled: CompileResult = compile_latex(resume_tex, job_name="resume")
 
     if cover_tex:
         cover_compiled = compile_latex(cover_tex, job_name="cover_letter")

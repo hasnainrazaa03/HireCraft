@@ -169,6 +169,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
         include_cover_letter = application.include_cover_letter
         master = MasterResume.model_validate(application.resume_profile.content)
         template = application.resume_profile.template
+        one_page = application.resume_profile.one_page
         # The brag bank: attested facts the engine may surface and the guardrails
         # treat as valid provenance. Loaded here while the session is open.
         evidence = evidence_lines(db, user_id)
@@ -220,6 +221,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
             include_cover_letter=include_cover_letter,
             evidence=evidence,
             template=template,
+            one_page=one_page,
             on_progress=on_progress,
             client=client,
         )

@@ -99,8 +99,15 @@ def render_resume(
     resume: MasterResume,
     templates_dir: str,
     template_name: str = "base_resume.tex",
+    *,
+    density: int = 0,
 ) -> str:
-    """Render a validated resume into a complete LaTeX document."""
+    """Render a validated resume into a complete LaTeX document.
+
+    ``density`` (0-3) drives the compact overrides in ``partials/_compact.tex``:
+    0 is the template's native look, higher values tighten margins/spacing to
+    fit more on a page. Callers use ``render_and_fit`` to escalate it.
+    """
     env = get_environment(templates_dir)
     template = env.get_template(template_name)
 
@@ -114,7 +121,40 @@ def render_resume(
             else (resume.basics.summary or resume.basics.headline)
         )
     ]
-    return template.render(r=resume, basics=resume.basics, sections=sections)
+    return template.render(
+        r=resume, basics=resume.basics, sections=sections, density=density
+    )
+
+
+# Readable floor: never compact past this level, even if the résumé still spills.
+_MAX_DENSITY = 3
+
+
+def render_and_fit(
+    resume: MasterResume,
+    templates_dir: str,
+    template_name: str = "base_resume.tex",
+    *,
+    one_page: bool = False,
+    job_name: str = "resume",
+):
+    """Render and compile a résumé PDF. When ``one_page`` is set, escalate the
+    compact density until the PDF fits a single page or the readable floor is
+    reached. Returns ``(CompileResult, tex)`` for the density that was used.
+    """
+    # Imported lazily so the renderer module has no import-time dependency on the
+    # LaTeX toolchain wrapper.
+    from app.services.latex.compiler import compile_latex
+
+    max_density = _MAX_DENSITY if one_page else 0
+    result = None
+    tex = ""
+    for density in range(max_density + 1):
+        tex = render_resume(resume, templates_dir, template_name, density=density)
+        result = compile_latex(tex, job_name=job_name)
+        if not one_page or result.page_count <= 1:
+            break
+    return result, tex
 
 
 def render_cover_letter(

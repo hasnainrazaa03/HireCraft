@@ -43,6 +43,9 @@ class ResumeProfile(Base, TimestampMixin):
 
     # Chosen LaTeX template id (see services.latex.templates). Presentation only.
     template: Mapped[str] = mapped_column(String(20), default="modern", nullable=False)
+    # Preference: auto-compact the render until it fits a single page. Applies to
+    # this résumé's preview, exports, and its tailored applications.
+    one_page: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Free-form tags for the résumé library ("SWE", "ML", "New Grad", …).
     tags: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
     # Monotonic version counter; the latest saved content is this number, and

@@ -32,7 +32,7 @@ from app.services import resume_versions, storage
 from app.services.analysis import analyze_resume
 from app.services.export.docx import resume_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
-from app.services.latex.renderer import render_resume
+from app.services.latex.renderer import render_and_fit, render_resume
 from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
 from app.services.llm.client import LlmConfigurationError, LlmError, LlmResponseError
 from app.services.llm.factory import client_for_user
@@ -115,6 +115,7 @@ def create_profile(
         is_default=is_default,
         tags=_clean_tags(payload.tags),
         template=payload.template if payload.template and is_valid(payload.template) else "modern",
+        one_page=payload.one_page,
         # Label for the very first version; inherited by its snapshot on first edit.
         label=payload.version_label or "Original",
     )
@@ -475,6 +476,7 @@ def render_resume_file(
     user: CurrentUser,
     db: DbSession,
     template: str | None = None,
+    one_page: bool | None = None,
 ) -> Response:
     """Render a résumé to PDF, LaTeX, or DOCX in a chosen (or its own) template.
 
@@ -512,11 +514,17 @@ def render_resume_file(
         )
 
     if fmt == "pdf":
-        tex = render_resume(
-            resume, settings.templates_dir, template_name=resolve_filename(template_id)
-        )
+        # A per-request override wins; otherwise honor the résumé's saved
+        # preference. When on, render_and_fit escalates compaction until it fits.
+        fit_one_page = one_page if one_page is not None else profile.one_page
         try:
-            result = compile_latex(tex, job_name=safe)
+            result, _ = render_and_fit(
+                resume,
+                settings.templates_dir,
+                template_name=resolve_filename(template_id),
+                one_page=fit_one_page,
+                job_name=safe,
+            )
         except LatexCompilationError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -555,6 +563,8 @@ def update_profile(
         profile.tags = _clean_tags(payload.tags)
     if payload.template is not None and is_valid(payload.template):
         profile.template = payload.template
+    if payload.one_page is not None:
+        profile.one_page = payload.one_page
     if payload.content is not None:
         # Snapshot the old content before overwriting, so the edit is undoable.
         resume_versions.update_content(

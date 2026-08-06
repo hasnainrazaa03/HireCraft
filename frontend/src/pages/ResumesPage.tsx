@@ -54,6 +54,7 @@ export default function ResumesPage() {
   const [name, setName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [template, setTemplate] = useState("modern");
+  const [onePage, setOnePage] = useState(false);
   const [content, setContent] = useState<ResumeContent>(STARTER);
   const [mode, setMode] = useState<Mode>("builder");
   const [jsonDraft, setJsonDraft] = useState("");
@@ -79,7 +80,7 @@ export default function ResumesPage() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const body = { name, content: currentContent(), tags, template };
+      const body = { name, content: currentContent(), tags, template, one_page: onePage };
       return editingId
         ? api.patch(`/resumes/${editingId}`, body)
         : api.post("/resumes", { ...body, version_label: originLabel });
@@ -121,6 +122,7 @@ export default function ResumesPage() {
     setName("");
     setTags([]);
     setTemplate("modern");
+    setOnePage(false);
     setContent(STARTER);
     setMode("builder");
     setJsonDraft("");
@@ -141,6 +143,7 @@ export default function ResumesPage() {
     setName(full.name);
     setTags(full.tags ?? []);
     setTemplate(full.template ?? "modern");
+    setOnePage(full.one_page ?? false);
     setContent(full.content as unknown as ResumeContent);
     setMode("builder");
     setError(null);
@@ -192,6 +195,7 @@ export default function ResumesPage() {
         name={name} setName={setName}
         tags={tags} setTags={setTags}
         template={template} setTemplate={setTemplate}
+        onePage={onePage} setOnePage={setOnePage}
         templates={templates}
         mode={mode} switchMode={switchMode}
         content={content} setContent={setContent}
@@ -507,6 +511,7 @@ function ScoreModal({ profile, onClose }: { profile: ResumeProfileSummary; onClo
 function Editor(props: any) {
   const {
     name, setName, tags, setTags, template, setTemplate, templates,
+    onePage, setOnePage,
     mode, switchMode, content, setContent, jsonDraft, setJsonDraft,
     error, saving, onSave, onCancel, editingId,
   } = props;
@@ -561,6 +566,20 @@ function Editor(props: any) {
             <TagInput value={tags} onChange={setTags} placeholder="SWE, ML…" />
           </div>
         </div>
+        <label className="mt-3 flex items-start gap-2.5 text-sm">
+          <input
+            type="checkbox"
+            checked={!!onePage}
+            onChange={(e) => setOnePage(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-white/[0.14] bg-surface-3 text-brand-600 focus:ring-brand-500"
+          />
+          <span>
+            <span className="font-medium">Fit to one page</span>
+            <span className="mt-0.5 block text-xs text-subtle">
+              Auto-tightens spacing until the résumé fits a single page (stops at a readable limit). Applies to preview, exports, and tailored versions.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div className="mb-4 flex items-center justify-between">

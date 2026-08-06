@@ -7,6 +7,7 @@ timeout so a pathological document cannot pin a worker forever.
 
 from __future__ import annotations
 
+import io
 import re
 import shutil
 import subprocess
@@ -52,8 +53,27 @@ class CompileResult:
 
 
 def _count_pages(pdf: bytes) -> int:
-    """Cheap page count without pulling in a PDF library."""
-    return max(pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages"), pdf.count(b"/Type/Page") - pdf.count(b"/Type/Pages"), 0) or 1
+    """Number of pages in the compiled PDF.
+
+    Tectonic writes page objects inside compressed object streams, so scanning
+    the raw bytes for "/Type /Page" under-counts — it reported 1 for every
+    multi-page résumé, which silently broke anything relying on the count (the
+    one-page auto-fit loop). pypdf is already a dependency (résumé import uses
+    it); fall back to the byte heuristic only if it can't parse.
+    """
+    try:
+        from pypdf import PdfReader
+
+        return max(len(PdfReader(io.BytesIO(pdf)).pages), 1)
+    except Exception:  # noqa: BLE001 - page counting must never fail a compile
+        return (
+            max(
+                pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages"),
+                pdf.count(b"/Type/Page") - pdf.count(b"/Type/Pages"),
+                0,
+            )
+            or 1
+        )
 
 
 def tectonic_available() -> bool:

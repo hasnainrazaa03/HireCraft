@@ -141,6 +141,7 @@ class ResumeProfileCreate(ApiModel):
     is_default: bool = False
     tags: list[str] = Field(default_factory=list, max_length=20)
     template: str | None = Field(default=None, max_length=20)
+    one_page: bool = False
     # Label for the first version ("Imported résumé", "Original draft", …).
     version_label: str | None = Field(default=None, max_length=200)
 
@@ -151,6 +152,7 @@ class ResumeProfileUpdate(ApiModel):
     is_default: bool | None = None
     tags: list[str] | None = Field(default=None, max_length=20)
     template: str | None = Field(default=None, max_length=20)
+    one_page: bool | None = None
     # Optional note attached to the snapshot this edit creates.
     version_label: str | None = Field(default=None, max_length=200)
 
@@ -162,6 +164,7 @@ class ResumeProfileResponse(ApiModel):
     is_default: bool
     tags: list[str]
     template: str
+    one_page: bool
     current_version: int
     label: str | None
     created_at: datetime
@@ -174,6 +177,7 @@ class ResumeProfileSummary(ApiModel):
     is_default: bool
     tags: list[str]
     template: str
+    one_page: bool
     current_version: int
     label: str | None
     updated_at: datetime
