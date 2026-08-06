@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   api,
   ApiError,
+  fetchAll,
   type ResumeProfileSummary,
   type ApplicationSummary,
   type CopilotResponse,
@@ -37,10 +38,15 @@ export default function CopilotPage() {
     queryKey: ["resumes"],
     queryFn: () => api.get<ResumeProfileSummary[]>("/resumes"),
   });
-  const { data: applications = [] } = useQuery({
+  // Must match the shape the Dashboard/Applications pages cache under this same
+  // key — fetchAll returns { items, total, … }. Reading it as a bare array here
+  // (the previous code) crashed with "P.map is not a function" whenever one of
+  // those pages had populated the cache first.
+  const { data: appsData } = useQuery({
     queryKey: ["applications"],
-    queryFn: () => api.get<ApplicationSummary[]>("/applications?limit=100"),
+    queryFn: () => fetchAll<ApplicationSummary>("/applications"),
   });
+  const applications = appsData?.items ?? [];
   const { data: llm } = useQuery({
     queryKey: ["llm-settings"],
     queryFn: () => api.get<LlmSettings>("/account/llm"),
