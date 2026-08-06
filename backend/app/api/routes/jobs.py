@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import uuid
 
 import redis
 from fastapi import APIRouter, HTTPException, Query, status
@@ -13,6 +14,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.core.rate_limit import get_redis
 from app.models.llm_usage import LlmUsage
+from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile
 from app.schemas.jobsearch import JobSearchResult
 from app.schemas.resume import MasterResume
@@ -78,12 +80,19 @@ def job_search(
         with contextlib.suppress(Exception):
             resume = MasterResume.model_validate(profile.content)
 
-    # No query typed → recommend from the résumé instead of a generic list.
+    # No query typed → recommend from the candidate's own targets, not a generic list.
     effective_q = q
-    if not (q or "").strip() and resume is not None:
-        effective_q = default_search_query(resume) or None
+    recommending = not (q or "").strip()
+    if recommending:
+        effective_q = _recommend_query(db, user.id, resume, remote_only)
 
     results = search_jobs(effective_q, remote_only=remote_only, limit=limit)
+    # A seed can still be too specific for the boards to match; never strand the
+    # recommended feed on an empty state — broaden to the recent pool and let the
+    # fit-ranking below surface the relevant roles.
+    if recommending and len(results) < 5:
+        effective_q = None
+        results = search_jobs(None, remote_only=remote_only, limit=limit)
 
     if resume is not None and results:
         precise = _score(resume, results)
@@ -91,6 +100,30 @@ def job_search(
         _maybe_rerank(db, user, profile, resume, results, precise, effective_q, remote_only)
 
     return results
+
+
+def _recommend_query(
+    db: DbSession, user_id: uuid.UUID, resume: MasterResume | None, remote_only: bool
+) -> str | None:
+    """Seed the no-query feed with the roles the candidate is actually targeting.
+
+    Career-profile ``preferred_roles`` come first (what they *want* next), then
+    the résumé's positioning. Pick the first that the boards actually return
+    postings for, so the feed opens on relevant, populated results rather than a
+    role the sources happen not to carry."""
+    candidates: list[str] = []
+    cp = db.scalar(select(CareerProfile).where(CareerProfile.user_id == user_id))
+    if cp and cp.preferred_roles:
+        candidates.extend(r for r in cp.preferred_roles if r and r.strip())
+    if resume is not None:
+        dq = default_search_query(resume)
+        if dq:
+            candidates.append(dq)
+    for cand in candidates:
+        # Sources are cached, so these probes are cheap re-filters, not refetches.
+        if search_jobs(cand, remote_only=remote_only, limit=1):
+            return cand
+    return candidates[0] if candidates else None
 
 
 def _score(resume: MasterResume, results: list[JobSearchResult]) -> dict[str, float]:

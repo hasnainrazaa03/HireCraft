@@ -352,6 +352,18 @@ _SOURCES = {
 # --- Aggregate --------------------------------------------------------------
 
 
+_QUERY_STOP = {
+    "and", "or", "the", "a", "an", "of", "in", "for", "to", "with", "at", "on",
+    "new", "grad", "graduate", "senior", "junior", "sr", "jr", "entry", "level",
+}
+
+
+def _query_tokens(q: str) -> list[str]:
+    """Significant search terms — punctuation-split, stopwords and 1-char noise
+    dropped — so multi-word queries match on their concepts, not a verbatim phrase."""
+    return [t for t in re.findall(r"[a-z0-9+#.]+", q.lower()) if len(t) > 1 and t not in _QUERY_STOP]
+
+
 def search_jobs(
     query: str | None = None,
     *,
@@ -373,6 +385,7 @@ def search_jobs(
                 logger.info("jobsearch.source_failed", error=str(exc)[:200])
 
     q = (query or "").strip().lower()
+    q_tokens = _query_tokens(q)
     seen: set[str] = set()
     results: list[JobSearchResult] = []
     for j in raw:
@@ -380,7 +393,9 @@ def search_jobs(
             continue
         if q:
             hay = f"{j.get('title', '')} {j.get('company', '')} {' '.join(j.get('tags', []))}".lower()
-            if q not in hay:
+            # Match the whole phrase (precise) or every significant token, so a
+            # multi-word query still finds postings that don't repeat it verbatim.
+            if q not in hay and not (q_tokens and all(t in hay for t in q_tokens)):
                 continue
         key = (j.get("url") or f"{j.get('title')}|{j.get('company')}").strip().lower()
         if not key or key in seen:

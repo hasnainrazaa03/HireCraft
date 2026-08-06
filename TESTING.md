@@ -211,8 +211,8 @@ Confirms the app is up before deep testing.
 ## 6. Job Search  (`/jobs`)
 
 ### 6.1 Recommended feed & search
-- ⬜ **T-JOB-01** Land on Job Search with an **empty search box** → a **"Recommended for your profile"** banner + roles matched to your résumé (e.g. Machine Learning Engineer), not random jobs.
-  - Notes:
+- 🔧 **T-JOB-01** Land on Job Search with an **empty search box** → a **"Recommended for your profile"** banner + roles matched to your résumé (e.g. Machine Learning Engineer), not random jobs.
+  - Notes: **FAIL → FIXED (P1).** Feed was empty ("No matching roles right now"). Two causes: (a) `search_jobs` filtered by a **verbatim substring** of the whole query, so the résumé-derived seed "technology analyst machine learning" matched 0 postings; (b) a narrow seed could strand the feed empty. Fixes: (1) token-aware filter — a posting matches the full phrase **or** all significant query tokens; (2) recommended feed now **seeds from career-profile `preferred_roles`** (what you're targeting) → résumé positioning → broad recent pool, picking the first that the boards actually carry, never empty. Verified live: feed now opens on **Machine Learning Engineer @ Qualcomm (79%)** + ML Grad roles @ TikTok (68/67%), fit-ranked, granular scores. **Re-test.**
 - ⬜ **T-JOB-02** Search **"machine learning engineer"** → relevant results; the grid **does not blank to a spinner** — old results stay with a subtle fade while loading.
   - Notes:
 - ⬜ **T-JOB-03** Footer shows **"Aggregated from GitHub · Arbeitnow · …"** (multiple real sources).
@@ -495,6 +495,7 @@ Confirms the app is up before deep testing.
 | 15 | T-RES-15 | Enh | Export is now 2 pages (content complete after the P0 fix). Not a bug. | ⏸️ Deferred by design — 2 pages is *correct* for complete content; forcing 1 page means shrinking/clipping. Left as an on-request density pass. |
 | 16 | T-TMPL-02 | Enh | Template preview modal too narrow; PDF-viewer chrome dominates; backdrop blur inconsistent up top. | ✅ Fixed — `size="xl"` modal + taller iframe; PDF opened with `#navpanes=0&zoom=page-width` (hides thumbnail rail, fits width); more opaque backdrop (`bg-black/70 backdrop-blur-md`) — pending re-test |
 | 17 | T-TMPL-04 | P2 | "Use in builder" was a dead link — it navigated away and never applied the selected template. | ✅ Fixed ("Use this template" button PATCHes `template`, toast + list refresh; renders default to `profile.template`) — pending re-test |
+| 18 | T-JOB-01 | P1 | Recommended feed was empty — `search_jobs` matched the whole query as a verbatim substring, so the multi-word résumé seed found 0 postings. | ✅ Fixed — token-aware filter + feed seeds from career-profile `preferred_roles` (→ résumé → broad), never empty. Live: opens on ML Engineer roles, fit-ranked — pending re-test |
 
 ---
 
