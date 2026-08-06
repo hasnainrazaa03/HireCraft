@@ -160,20 +160,20 @@ Confirms the app is up before deep testing.
   - Notes: **FAIL → FIXED (P0).** Experience came back **empty (0 entries)** while education parsed. Root cause: the Gemini schema marked only `basics` as `required`, so Gemini treated every section array (`experience`, `projects`, …) as optional and **intermittently omitted** them. Fix: `to_gemini_schema` now forces every array property into `required` (worst case = explicit `[]`, never invented content). Verified server-side **3/3 runs → experience=3** (Deloitte 2022-08→2024-11, DRDO, Prana.ai), projects=2 with dates, education=2. Also fixed: Gemini was inventing entry ids (`exp-1`) — import now strips them so stable hashes are recomputed (protects the guardrail index). **Re-import MHR_ML.pdf to confirm in the UI.**
 - ⬜ **T-RES-03** Parsed structure is complete: 3 experience, 2 education, 2 projects, skills groups; bullets not clipped.
   - Notes:
-- ⬜ **T-RES-04** Upload a **non-résumé / garbage file** or a corrupt PDF → friendly error, no crash.
-  - Notes:
-- ⬜ **T-RES-05** (Optional) Upload a **.docx** and a **.json** résumé — both import.
-  - Notes:
+- ✅ **T-RES-04** Upload a **non-résumé / garbage file** or a corrupt PDF → friendly error, no crash.
+  - Notes: PASS. Friendly toast — "Import failed: We read your file but couldn't structure all of it automatically. Try the builder to finish it, or paste the text instead." App stayed responsive; no crash; actionable next steps, no technical leakage.
+- ⏭️ **T-RES-05** (Optional) Upload a **.docx** and a **.json** résumé — both import.
+  - Notes: SKIPPED (optional; no .docx/.json résumé on hand this session).
 
 ### 4.2 Builder (structured editing)
-- ⬜ **T-RES-06** Sections are **collapsible cards** with entry counts; expand/collapse works.
-  - Notes:
-- ⬜ **T-RES-07** Long **bullets auto-grow** to show full text (no mid-sentence clipping).
-  - Notes:
-- ⬜ **T-RES-08** Add / remove / reorder (↑↓) an experience entry and a bullet; add a skill group.
-  - Notes:
-- ⬜ **T-RES-09** **Basics → ✨ Generate with AI** fills **Headline + Summary** from your experience. Read them: are they truthful (no invented metrics/tools)? Editable after.
-  - Notes:
+- ✅ **T-RES-06** Sections are **collapsible cards** with entry counts; expand/collapse works.
+  - Notes: PASS. All sections render as collapsible cards with entry counts; expand/collapse smooth; no rendering/layout/animation issues.
+- ✅ **T-RES-07** Long **bullets auto-grow** to show full text (no mid-sentence clipping).
+  - Notes: PASS. Long bullets fully visible; textareas auto-grow to fit; no clipping/truncation/scroll issues while editing.
+- ✅ **T-RES-08** Add / remove / reorder (↑↓) an experience entry and a bullet; add a skill group.
+  - Notes: PASS. Added/removed/reordered (↑↓) experience entries; added/removed bullets; added a skill group. No UI or persistence issues.
+- ✅ **T-RES-09** **Basics → ✨ Generate with AI** fills **Headline + Summary** from your experience. Read them: are they truthful (no invented metrics/tools)? Editable after.
+  - Notes: PASS. ✨ Generate filled Headline + Summary, both editable after. Truthfulness review by tester: all claims grounded (Deloitte Technology Analyst, LLM-assisted workflows, REST orchestration, data-prep pipelines, Pega/Informatica MDM, Prana.ai). "Real-time ML deployment" judged a fair generalization of <0.8s medical & <500ms X-Plane inference — grounded, not fabricated. No invented employers/tools/metrics/achievements.
 - ⬜ **T-RES-10** Generate-intro with an almost-empty résumé → graceful "add experience first" message (no crash).
   - Notes:
 - ⬜ **T-RES-11** **Save** → success; new résumé appears in the list; set as **Default** works.
@@ -485,6 +485,7 @@ Confirms the app is up before deep testing.
 | 7 | T-PROF (Eligibility) | P3 | "Years of experience" accepted whole numbers only — 2.5 years couldn't be stored (backend `int` + browser default `step=1`). | ✅ Fixed (`Numeric(4,1)` column + migration `c2d3e4f5a6b7`, schema `float`, input `step=0.5`; round-trip verified 2.5→2.5, 2.333→2.3) — pending re-test |
 | 8 | T-RES-02 | **P0** | Résumé parser dropped **all** Experience entries (0) — Gemini omits array fields not in the schema's `required`, so whole sections vanished intermittently. | ✅ Fixed (`to_gemini_schema` forces every array `required`; import strips model-invented ids/section_order). Verified 3/3 runs → experience=3, projects=2, education=2 — pending UI re-import |
 | 9 | T-RES-02 | P2 | Project dates weren't shown in the builder (parsed correctly but no date inputs rendered). | ✅ Fixed (added Start/End inputs to the Projects section, matching Experience) — pending re-test |
+| 10 | T-RES (Builder) | Enh | Certifications / Awards / Publications parse + export + round-trip fine, but have **no dedicated builder forms** (JSON-mode only). | 📋 Backlog — build structured editors (user: "note them, build later") |
 
 ---
 
