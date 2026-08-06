@@ -18,9 +18,16 @@ from app.services.latex.compiler import (
 from app.services.latex.escaping import TexSafe, display_url, escape_tex, escape_url
 from app.services.latex.renderer import render_cover_letter, render_resume
 
-# Resolved from this file rather than the working directory, so the suite does
-# not depend on a symlink or on being invoked from backend/.
-TEMPLATES_DIR = str(Path(__file__).resolve().parents[2] / "templates")
+# Resolved by walking up from this file to the first ancestor that has a
+# `templates/` dir — works both in the repo layout (repo/templates) and in the
+# container, where the backend is flattened to /app and templates live at
+# /app/templates.
+TEMPLATES_DIR = str(
+    next(
+        (p / "templates" for p in Path(__file__).resolve().parents if (p / "templates").is_dir()),
+        Path(__file__).resolve().parents[2] / "templates",
+    )
+)
 
 
 class TestEscaping:

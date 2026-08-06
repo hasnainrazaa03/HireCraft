@@ -38,7 +38,12 @@ pytestmark = pytest.mark.slow  # renders LaTeX via Tectonic
 
 # Resolved from this file, like test_latex.py does, so the suite doesn't depend
 # on TEMPLATES_DIR being exported (it defaults to the in-container /app path).
-TEMPLATES_DIR = str(Path(__file__).resolve().parents[2] / "templates")
+TEMPLATES_DIR = str(
+    next(
+        (p / "templates" for p in Path(__file__).resolve().parents if (p / "templates").is_dir()),
+        Path(__file__).resolve().parents[2] / "templates",
+    )
+)
 
 
 @pytest.fixture
