@@ -245,8 +245,8 @@ Confirms the app is up before deep testing.
 ### 7.1 Create
 - ⬜ **T-TLR-01** `/new`: **Master résumé** dropdown shows your default; **From URL / Paste text** toggle; **Also draft a cover letter** checkbox.
   - Notes:
-- ⬜ **T-TLR-02** Paste an **Ashby/Greenhouse/Lever** job URL (e.g. `jobs.ashbyhq.com/…`) → **Tailor my résumé** → it fetches via the ATS API (no "couldn't read" error) and starts the run.
-  - Notes:
+- ✅ **T-TLR-02** Paste an **Ashby/Greenhouse/Lever** job URL (e.g. `jobs.ashbyhq.com/…`) → **Tailor my résumé** → it fetches via the ATS API (no "couldn't read" error) and starts the run.
+  - Notes: PASS. Ashby/Quora job URL fetched via the ATS API (no "couldn't read" error); tailoring run started.
 - ⬜ **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
   - Notes:
 - ⬜ **T-TLR-04** **Paste text** mode with a real JD → run.
@@ -255,20 +255,20 @@ Confirms the app is up before deep testing.
   - Notes:
 
 ### 7.2 Run & progress
-- ⬜ **T-TLR-06** After submit → redirect to the Application page showing **live progress** (Reading job → Tailoring → Typesetting). Completes in ~30–60s.
-  - Notes:
+- ✅ **T-TLR-06** After submit → redirect to the Application page showing **live progress** (Reading job → Tailoring → Typesetting). Completes in ~30–60s.
+  - Notes: PASS. Submit → redirect to Application page; tailoring completed; result shows tailored résumé, match score, guardrails, keyword analysis, quality breakdown, change diff, and downloads (PDF/LaTeX/package) + regenerate.
 - ⬜ **T-TLR-07** During the run the page doesn't flash blank "Loading…" repeatedly.
   - Notes:
 
 ### 7.3 Result & review
-- ⬜ **T-TLR-08** **Résumé quality scorecard** appears: overall /100 + bars (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness · Truthfulness). Numbers make sense for the role's fit.
-  - Notes:
-- ⬜ **T-TLR-09** **Changes** tab: before→after diff is accurate; a harmless skill *regroup* is not reported as "deleted everything".
-  - Notes:
+- ✅ **T-TLR-08** **Résumé quality scorecard** appears: overall /100 + bars (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness · Truthfulness). Numbers make sense for the role's fit.
+  - Notes: PASS. Scorecard shown (overall 58, keyword match 53%, per-metric bars). **Keyword match is honest, not a bug**: guardrails block any keyword the résumé doesn't support, so 53% = ~half the job's ATS keywords genuinely in your background; the rest are real gaps (listed in Match/Requirements). It can't be inflated by stuffing.
+- ✅ **T-TLR-09** **Changes** tab: before→after diff is accurate; a harmless skill *regroup* is not reported as "deleted everything".
+  - Notes: PASS. Changes tab is strong — original vs tailored, **word-level highlighting**, experience reordering, skills added/removed, guardrail transparency. **New:** added a **"Final résumé"** 5th tab so you can review the finished PDF inline without downloading (user request).
 - ⬜ **T-TLR-10 (P0 check)** **Guardrails** tab: locks shown; any flagged/removed claims are genuinely unsupported. **Read the tailored bullets** — every claim traces to your résumé or brag bank. If a brag-bank fact (e.g. **$50K pre-seed**, leadership, containerized deployment) is surfaced, confirm it's *yours* and not invented.
   - Notes:
-- ⬜ **T-TLR-11** **Match / Requirements** tabs render coverage sensibly.
-  - Notes:
+- ✅ **T-TLR-11** **Match / Requirements** tabs render coverage sensibly.
+  - Notes: PASS. Match/Requirements render coverage sensibly; keyword 53% is honest coverage (see T-TLR-08).
 - ⬜ **T-TLR-12** **Download** the tailored **PDF** and the **package** (zip) — open the PDF, it's clean and reflects the changes.
   - Notes:
 - ⬜ **T-TLR-13** **Two-stage lift:** tailor to a role slightly outside your core (e.g. a backend/distributed-systems JD). The engine should surface your genuinely-relevant backend evidence (REST, distributed, Postgres) — relevance/keywords higher than a naive pass, still truthful.
@@ -497,6 +497,9 @@ Confirms the app is up before deep testing.
 | 17 | T-TMPL-04 | P2 | "Use in builder" was a dead link — it navigated away and never applied the selected template. | ✅ Fixed ("Use this template" button PATCHes `template`, toast + list refresh; renders default to `profile.template`) — pending re-test |
 | 18 | T-JOB-01 | P1 | Recommended feed was empty — `search_jobs` matched the whole query as a verbatim substring, so the multi-word résumé seed found 0 postings. | ✅ Fixed — token-aware filter + feed seeds from career-profile `preferred_roles` (→ résumé → broad), never empty. Live: opens on ML Engineer roles, fit-ranked — pending re-test |
 | 19 | T-JOB-08 | P3 | Job-details is a centered modal — interrupts browsing; hard to compare/scan roles; wants a right-side drawer (list + details side-by-side, LinkedIn/Ashby-style). | 📋 Backlog — convert to a right-side drawer. (Backdrop already aligned to the app standard: `bg-black/70 backdrop-blur-md`, z-90.) |
+| 20 | T-TLR-10 | P2 | Tailoring padded Education with redundant bullets ("Maintained a 4.00 GPA…") — the bullet-count cap used `max(count, 1)`, so a 0-bullet entry kept 1. | ✅ Fixed — `allowance = original_count` (no floor); 0-bullet entries stay bulletless, flagged `bullet_count_inflated`. Verified: education 0→0, experience capped to its count. Also trims page length. |
+| 21 | T-TLR-09 | Enh | No way to see the finished tailored résumé without downloading the PDF. | ✅ Fixed — added a **"Final résumé"** tab to the Application page (inline PDF, fit-to-width). |
+| 22 | T-TLR (output) | Enh | Tailored résumé still 2 pages for an early-career ML role; some wording (chain-of-thought/RLHF) reads aggressive. | 📋 Backlog/by-design — the aggressive phrasing traces to attested **brag-bank** facts (grounded, tunable by trimming them); the education-padding fix reclaims space, and a 1-page density pass is available on request (#15). |
 
 ---
 

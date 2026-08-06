@@ -510,8 +510,11 @@ class GuardrailEngine:
                     master_entry.id, str(label), item.highlights, master_entry
                 )
 
-                # Rewriting must not manufacture additional claims.
-                allowance = max(original_count, 1)
+                # Rewriting must not manufacture additional claims — cap to the
+                # master's count. No floor of 1: an entry the master left
+                # bulletless (education, typically) must stay bulletless rather
+                # than gain a true-but-padding line like "Maintained a 4.00 GPA".
+                allowance = original_count
                 if len(vetted) > allowance:
                     self._flag(
                         "bullet_count_inflated",

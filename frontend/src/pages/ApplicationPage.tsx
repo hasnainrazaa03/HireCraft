@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   useQuery,
@@ -19,6 +19,7 @@ import {
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
+import { Spinner } from "../components/ui";
 import { ALL_STAGES, trackerLabel } from "../lib/tracker";
 
 const ACTIVE = new Set([
@@ -29,7 +30,7 @@ const ACTIVE = new Set([
   "rendering",
 ]);
 
-type Tab = "diff" | "match" | "guardrails" | "requirements";
+type Tab = "diff" | "match" | "guardrails" | "requirements" | "preview";
 
 export default function ApplicationPage() {
   const { id = "" } = useParams();
@@ -326,6 +327,7 @@ export default function ApplicationPage() {
                     `Guardrails (${report?.violations.length ?? 0})`,
                   ],
                   ["requirements", "Job requirements"],
+                  ["preview", "Final résumé"],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -363,6 +365,7 @@ export default function ApplicationPage() {
               {tab === "requirements" && (
                 <RequirementsView requirements={application.job?.requirements ?? null} />
               )}
+              {tab === "preview" && <ResumePreview id={id!} />}
             </div>
           </div>
         </>
@@ -591,6 +594,49 @@ function GuardrailView({
         <p className="rounded-xl border border-emerald/30 bg-emerald/10 px-3 py-2.5 text-sm text-emerald">
           Every tailored statement traces back to your master resume.
         </p>
+      )}
+    </div>
+  );
+}
+
+/** Inline PDF of the finished, tailored résumé — review the actual output
+ * without downloading. Fetched as a blob, shown fit-to-width, chrome hidden. */
+function ResumePreview({ id }: { id: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let obj: string | null = null;
+    let cancelled = false;
+    setError(false);
+    setUrl(null);
+    api
+      .blob(`/applications/${id}/download/resume_pdf`)
+      .then((b) => {
+        if (cancelled) return;
+        obj = URL.createObjectURL(b);
+        setUrl(obj);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => {
+      cancelled = true;
+      if (obj) URL.revokeObjectURL(obj);
+    };
+  }, [id]);
+
+  return (
+    <div className="h-[78vh] max-h-[calc(100dvh-14rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
+      {error ? (
+        <div className="flex h-full items-center justify-center text-sm text-danger">
+          Couldn't render the résumé.
+        </div>
+      ) : !url ? (
+        <div className="flex h-full items-center justify-center">
+          <Spinner className="h-6 w-6" />
+        </div>
+      ) : (
+        <iframe title="Final résumé" src={`${url}#navpanes=0&zoom=page-width`} className="h-full w-full" />
       )}
     </div>
   );
