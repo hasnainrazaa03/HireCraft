@@ -813,6 +813,16 @@ const METRIC_COLOR: Record<string, string> = {
   grounding: "#2DD4BF",
 };
 
+/** Fallback grounded instruction per metric, when the metric has no open
+ *  suggestion (e.g. it's already strong). Suggestion instructions — which name
+ *  the actual missing keywords — take priority when present. */
+const METRIC_INSTRUCTION: Record<string, string> = {
+  ats: "Weave more of this job's keywords into my résumé wherever I have genuine supporting experience — never fabricate.",
+  impact: "Add quantified outcomes (numbers, %, $, time saved) to my strongest bullets that lack a metric — only where truthful.",
+  verbs: "Rewrite any bullets that open with weak or duty verbs (e.g. 'Responsible for') to lead with a strong action verb, keeping every fact unchanged.",
+  conciseness: "Tighten overly long bullets to the 6–34 word range without dropping key facts.",
+};
+
 /** Flips true one frame after mount so bars/rings animate 0→value.
  *  Respects prefers-reduced-motion (jumps straight to the value). */
 function useMountReveal(): boolean {
@@ -872,13 +882,19 @@ function ScoreRing({ score, size = 150, stroke = 12 }: { score: number; size?: n
   );
 }
 
-/** One metric tile: icon · label · score · progress bar · detail · verdict pill. */
-function MetricTile({ m }: { m: Scorecard["metrics"][number] }) {
+/** One metric tile: icon · label · score · progress bar · detail · verdict pill.
+ *  The whole tile is a button — clicking hands a targeted grounded fix to the AI. */
+function MetricTile({ m, onFix }: { m: Scorecard["metrics"][number]; onFix: () => void }) {
   const t = tier(m.score);
   const tint = METRIC_TINT[m.key] ?? "bg-brand-500/15 text-brand-300";
   const width = useMountReveal() ? m.score : 0;
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-surface-2/60 p-4 transition duration-200 hover:-translate-y-1 hover:border-white/[0.14] hover:bg-surface-2 hover:shadow-lg hover:shadow-black/25 motion-reduce:hover:transform-none">
+    <button
+      type="button"
+      onClick={onFix}
+      title="Improve this with AI"
+      className="group w-full rounded-xl border border-white/[0.07] bg-surface-2/60 p-4 text-left transition duration-200 hover:-translate-y-1 hover:border-white/[0.14] hover:bg-surface-2 hover:shadow-lg hover:shadow-black/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 motion-reduce:hover:transform-none"
+    >
       <div className="flex items-center gap-2.5">
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
           <MetricGlyph k={m.key} />
@@ -893,7 +909,10 @@ function MetricTile({ m }: { m: Scorecard["metrics"][number] }) {
         <div className="h-full rounded-full" style={{ width: `${width}%`, background: scoreHex(m.score), transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
       </div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-xs text-subtle" title={m.detail}>{m.detail}</span>
+        <span className="min-w-0 truncate text-xs" title={m.detail}>
+          <span className="text-subtle group-hover:hidden">{m.detail}</span>
+          <span className="hidden font-medium group-hover:inline" style={{ color: "#AC8CFF" }}>Improve with AI →</span>
+        </span>
         <span
           className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
           style={{ color: t.color, background: `${t.color}1f` }}
@@ -901,7 +920,7 @@ function MetricTile({ m }: { m: Scorecard["metrics"][number] }) {
           {t.label}
         </span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -911,6 +930,10 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
   const t = tier(card.overall);
   const grid = card.metrics.filter((m) => m.key !== "grounding").slice(0, 4);
   const grounding = card.metrics.find((m) => m.key === "grounding");
+  const instructionFor = (key: string) =>
+    card.suggestions.find((s) => s.metric_key === key)?.instruction ??
+    METRIC_INSTRUCTION[key] ??
+    `Improve the "${key}" of my résumé wherever it stays truthful.`;
 
   return (
     <div className="card p-6">
@@ -965,7 +988,7 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
 
         <div className="grid gap-3 sm:grid-cols-2">
           {grid.map((m) => (
-            <MetricTile key={m.key} m={m} />
+            <MetricTile key={m.key} m={m} onFix={() => onSuggest(instructionFor(m.key))} />
           ))}
         </div>
       </div>
