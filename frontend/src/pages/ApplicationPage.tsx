@@ -813,6 +813,21 @@ const METRIC_COLOR: Record<string, string> = {
   grounding: "#2DD4BF",
 };
 
+/** Flips true one frame after mount so bars/rings animate 0→value.
+ *  Respects prefers-reduced-motion (jumps straight to the value). */
+function useMountReveal(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setOn(true);
+      return;
+    }
+    const id = requestAnimationFrame(() => setOn(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return on;
+}
+
 /** Score → { verdict label, color } tier. Matches the donut and pills. */
 function tier(score: number): { label: string; color: string } {
   if (score >= 85) return { label: "Excellent", color: "#34D399" };
@@ -828,10 +843,11 @@ const OVERALL_BLURB: Record<string, string> = {
   "Needs work": "Let's strengthen this — start with the suggestions below.",
 };
 
-/** Large gradient score ring for the quality card. */
+/** Large gradient score ring for the quality card. Draws clockwise on mount. */
 function ScoreRing({ score, size = 150, stroke = 12 }: { score: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
+  const shown = useMountReveal() ? score : 0;
   return (
     <div className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
@@ -844,8 +860,8 @@ function ScoreRing({ score, size = 150, stroke = 12 }: { score: number; size?: n
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
         <circle
           cx={size / 2} cy={size / 2} r={r} fill="none" stroke="url(#ringGrad)" strokeWidth={stroke}
-          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - score / 100)}
-          style={{ transition: "stroke-dashoffset 0.7s ease" }}
+          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - shown / 100)}
+          style={{ transition: "stroke-dashoffset 0.9s cubic-bezier(0.22,1,0.36,1)" }}
         />
       </svg>
       <div className="absolute text-center leading-none">
@@ -860,8 +876,9 @@ function ScoreRing({ score, size = 150, stroke = 12 }: { score: number; size?: n
 function MetricTile({ m }: { m: Scorecard["metrics"][number] }) {
   const t = tier(m.score);
   const tint = METRIC_TINT[m.key] ?? "bg-brand-500/15 text-brand-300";
+  const width = useMountReveal() ? m.score : 0;
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-surface-2/60 p-4">
+    <div className="rounded-xl border border-white/[0.07] bg-surface-2/60 p-4 transition duration-200 hover:-translate-y-1 hover:border-white/[0.14] hover:bg-surface-2 hover:shadow-lg hover:shadow-black/25 motion-reduce:hover:transform-none">
       <div className="flex items-center gap-2.5">
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
           <MetricGlyph k={m.key} />
@@ -873,7 +890,7 @@ function MetricTile({ m }: { m: Scorecard["metrics"][number] }) {
         </span>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
-        <div className="h-full rounded-full" style={{ width: `${m.score}%`, background: scoreHex(m.score), transition: "width 0.6s ease" }} />
+        <div className="h-full rounded-full" style={{ width: `${width}%`, background: scoreHex(m.score), transition: "width 0.8s cubic-bezier(0.22,1,0.36,1)" }} />
       </div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-xs text-subtle" title={m.detail}>{m.detail}</span>
@@ -986,7 +1003,7 @@ function SuggestionColumn({ s, onSuggest }: { s: ScorecardSuggestion; onSuggest:
   const tint = METRIC_TINT[s.metric_key] ?? "bg-brand-500/15 text-brand-300";
   const color = METRIC_COLOR[s.metric_key] ?? "#AC8CFF";
   return (
-    <div className="flex min-w-0 flex-1 flex-col p-5">
+    <div className="flex min-w-0 flex-1 flex-col p-5 transition-colors duration-200 hover:bg-white/[0.02]">
       <div className="flex items-start gap-2.5">
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
           <MetricGlyph k={s.metric_key} />
