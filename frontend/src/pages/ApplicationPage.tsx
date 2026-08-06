@@ -804,6 +804,15 @@ const METRIC_TINT: Record<string, string> = {
   grounding: "bg-emerald/15 text-emerald",
 };
 
+/** Same hue as the tile, as a raw hex — for the "Improve with AI" link. */
+const METRIC_COLOR: Record<string, string> = {
+  ats: "#AC8CFF",
+  impact: "#4CC9F0",
+  verbs: "#2DD4BF",
+  conciseness: "#2DD4BF",
+  grounding: "#2DD4BF",
+};
+
 /** Score → { verdict label, color } tier. Matches the donut and pills. */
 function tier(score: number): { label: string; color: string } {
   if (score >= 85) return { label: "Excellent", color: "#34D399" };
@@ -945,24 +954,22 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
       </div>
 
       {card.suggestions.length > 0 ? (
-        <div className="mt-5 rounded-xl border border-brand-500/25 bg-brand-500/[0.06] p-5">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,240px)_1fr] lg:items-center">
-            <div className="flex items-start gap-2.5">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-500/20 text-brand-300">
+        <div className="mt-5 overflow-hidden rounded-xl border border-brand-500/25 bg-brand-500/[0.05]">
+          <div className="flex flex-col divide-y divide-white/[0.06] md:flex-row md:divide-x md:divide-y-0">
+            <div className="flex items-start gap-3 p-5 md:w-[27%] md:shrink-0">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/20 text-brand-300">
                 <IconSparkles className="h-4 w-4" />
               </span>
-              <div>
-                <h3 className="text-base font-semibold">Improve your score</h3>
-                <p className="mt-0.5 text-xs text-subtle">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold leading-tight">Improve your score</h3>
+                <p className="mt-1 text-xs leading-relaxed text-subtle">
                   Real gaps from this résumé — hand any to the grounded AI to fix.
                 </p>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {card.suggestions.map((s) => (
-                <SuggestionCard key={s.key} s={s} onSuggest={onSuggest} />
-              ))}
-            </div>
+            {card.suggestions.map((s) => (
+              <SuggestionColumn key={s.key} s={s} onSuggest={onSuggest} />
+            ))}
           </div>
         </div>
       ) : (
@@ -974,18 +981,23 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
   );
 }
 
-function SuggestionCard({ s, onSuggest }: { s: ScorecardSuggestion; onSuggest: (instruction: string) => void }) {
+/** One borderless improvement column (icon + title · detail · AI link). */
+function SuggestionColumn({ s, onSuggest }: { s: ScorecardSuggestion; onSuggest: (instruction: string) => void }) {
   const tint = METRIC_TINT[s.metric_key] ?? "bg-brand-500/15 text-brand-300";
+  const color = METRIC_COLOR[s.metric_key] ?? "#AC8CFF";
   return (
-    <div className="flex flex-col rounded-lg border border-white/[0.07] bg-surface p-3.5">
-      <span className={`grid h-8 w-8 place-items-center rounded-lg ${tint}`}>
-        <MetricGlyph k={s.metric_key} />
-      </span>
-      <h4 className="mt-2.5 text-sm font-semibold text-content">{s.title}</h4>
-      <p className="mt-1 flex-1 text-xs leading-relaxed text-subtle">{s.detail}</p>
+    <div className="flex min-w-0 flex-1 flex-col p-5">
+      <div className="flex items-start gap-2.5">
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
+          <MetricGlyph k={s.metric_key} />
+        </span>
+        <h4 className="pt-1 text-sm font-semibold leading-snug text-content">{s.title}</h4>
+      </div>
+      <p className="mt-2.5 flex-1 text-xs leading-relaxed text-subtle">{s.detail}</p>
       <button
         onClick={() => onSuggest(s.instruction)}
-        className="mt-3 flex items-center gap-1 self-start text-xs font-medium text-brand-300 transition hover:text-brand-200"
+        className="mt-3 flex items-center gap-1 self-start text-xs font-semibold transition hover:opacity-80"
+        style={{ color }}
       >
         Improve with AI <IconArrowRight className="h-3.5 w-3.5" />
       </button>
