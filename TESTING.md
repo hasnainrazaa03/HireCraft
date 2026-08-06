@@ -225,8 +225,8 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Cards show company logo (initials fallback), title, company, location, match ring + verdict, skill chips, and "Posted · source".
 - ⬜ **T-JOB-06** **Flip** a card (↻ top-right) → quick analysis (strengths ✓ / gaps ⚠ / interview chance); flip back.
   - Notes:
-- ⬜ **T-JOB-07** **Save** (bookmark) a job → persists across reloads; saving one job doesn't mark others saved.
-  - Notes:
+- ✅ **T-JOB-07** **Save** (bookmark) a job → persists across reloads; saving one job doesn't mark others saved.
+  - Notes: PASS. Save → bookmark persists across reopen/reload; saving one job doesn't mark others (keyed by job identity, not shared ""). **Saved-state visibility improved**: card bookmark and modal button now use a filled brand accent + filled icon when saved, so bookmarked roles are easy to scan.
 - ✅ **T-JOB-08** **View More** → centered modal with tabs **Overview · Match Analysis · Requirements · Recruiters**; each renders; ✕ / Esc / click-outside close it.
   - Notes: PASS. View More modal with tabs Overview · Match Analysis · Requirements · Recruiters (each renders); Tailor/Save/Interview-chance; ✕/Esc/click-outside close; search state preserved. **Backdrop fixed**: this modal is bespoke and had missed the shared-Modal backdrop fix — now `bg-black/70 backdrop-blur-md`, z-90, consistent with the rest. **UX backlog #19**: convert to a right-side drawer (list + details side-by-side).
 - ⬜ **T-JOB-09** No fake data: cards/modal should **not** show a hardcoded "Full Time" or invented fields.
@@ -235,8 +235,8 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Remote-only toggle filters to remote roles (Quora/Ancestry ML roles); Sort Best match/Newest reorders instantly; smooth, no reload or flicker.
 
 ### 6.3 Hand-off to tailoring
-- ⬜ **T-JOB-11** Click **Tailor Resume** (card or modal) → routes to New Application pre-filled with that job. (Continue in Section 7.)
-  - Notes:
+- ✅ **T-JOB-11** Click **Tailor Resume** (card or modal) → routes to New Application pre-filled with that job. (Continue in Section 7.)
+  - Notes: PASS. Tailor Resume (card/modal) → routes to New Application pre-filled: default résumé (MHR_ML), From-URL mode with the job URL inserted; Paste-text + optional cover-letter options present. Context preserved through navigation. (Continues in Section 7.)
 
 ---
 

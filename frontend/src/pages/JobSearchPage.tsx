@@ -247,8 +247,8 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
               </button>
               <div className="flex items-center gap-1.5">
                 <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor Resume</button>
-                <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "text-brand-300" : ""}`} title={saved ? "Saved" : "Save"} aria-label={saved ? "Remove from saved" : "Save job"} aria-pressed={saved}>
-                  <IconBookmark className="h-4 w-4" />
+                <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "!bg-brand-500/20 !text-brand-200" : ""}`} title={saved ? "Saved" : "Save"} aria-label={saved ? "Remove from saved" : "Save job"} aria-pressed={saved}>
+                  <IconBookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} />
                 </button>
               </div>
             </div>
@@ -329,8 +329,8 @@ function JobModal({ job, saved, onSave, onTailor, onClose }: {
             <button onClick={onTailor} className={`${GRADIENT_BTN} flex-1 sm:flex-none`} style={GRADIENT_STYLE}>
               <IconSparkles className="h-4 w-4" /> Tailor My Resume
             </button>
-            <button onClick={onSave} className="btn-secondary">
-              <IconBookmark className="h-4 w-4" /> {saved ? "Saved" : "Save Job"}
+            <button onClick={onSave} className={`btn-secondary ${saved ? "!border-brand-500/40 !bg-brand-500/20 !text-brand-200" : ""}`}>
+              <IconBookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} /> {saved ? "Saved" : "Save Job"}
             </button>
           </div>
         </div>
