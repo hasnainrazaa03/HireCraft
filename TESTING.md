@@ -213,26 +213,26 @@ Confirms the app is up before deep testing.
 ### 6.1 Recommended feed & search
 - 🔧 **T-JOB-01** Land on Job Search with an **empty search box** → a **"Recommended for your profile"** banner + roles matched to your résumé (e.g. Machine Learning Engineer), not random jobs.
   - Notes: **FAIL → FIXED (P1).** Feed was empty ("No matching roles right now"). Two causes: (a) `search_jobs` filtered by a **verbatim substring** of the whole query, so the résumé-derived seed "technology analyst machine learning" matched 0 postings; (b) a narrow seed could strand the feed empty. Fixes: (1) token-aware filter — a posting matches the full phrase **or** all significant query tokens; (2) recommended feed now **seeds from career-profile `preferred_roles`** (what you're targeting) → résumé positioning → broad recent pool, picking the first that the boards actually carry, never empty. Verified live: feed now opens on **Machine Learning Engineer @ Qualcomm (79%)** + ML Grad roles @ TikTok (68/67%), fit-ranked, granular scores. **Re-test.**
-- ⬜ **T-JOB-02** Search **"machine learning engineer"** → relevant results; the grid **does not blank to a spinner** — old results stay with a subtle fade while loading.
-  - Notes:
+- ✅ **T-JOB-02** Search **"machine learning engineer"** → relevant results; the grid **does not blank to a spinner** — old results stay with a subtle fade while loading.
+  - Notes: PASS. "machine learning engineer" → relevant results (Qualcomm ML Engineer, TikTok ML Grad roles) with company/location/match score/tags/source/Tailor action; grid faded rather than blanking to a spinner.
 - ⬜ **T-JOB-03** Footer shows **"Aggregated from GitHub · Arbeitnow · …"** (multiple real sources).
   - Notes:
 - ⬜ **T-JOB-04 (P1 check)** Match scores are **granular and sensible** (e.g. 76, 73, 69 — not all 100%, not all round multiples of 5). A clearly off-domain search (e.g. **"nurse"** or **"SEO manager"**) scores **low**, an ML role scores **high**.
   - Notes:
 
 ### 6.2 Cards & interactions
-- ⬜ **T-JOB-05** Each card: **company logo** (or clean initials fallback), title, company, location, **match ring** (color by score, verdict), skill chips, "Posted · source".
-  - Notes:
+- ✅ **T-JOB-05** Each card: **company logo** (or clean initials fallback), title, company, location, **match ring** (color by score, verdict), skill chips, "Posted · source".
+  - Notes: PASS. Cards show company logo (initials fallback), title, company, location, match ring + verdict, skill chips, and "Posted · source".
 - ⬜ **T-JOB-06** **Flip** a card (↻ top-right) → quick analysis (strengths ✓ / gaps ⚠ / interview chance); flip back.
   - Notes:
 - ⬜ **T-JOB-07** **Save** (bookmark) a job → persists across reloads; saving one job doesn't mark others saved.
   - Notes:
-- ⬜ **T-JOB-08** **View More** → centered modal with tabs **Overview · Match Analysis · Requirements · Recruiters**; each renders; ✕ / Esc / click-outside close it.
-  - Notes:
+- ✅ **T-JOB-08** **View More** → centered modal with tabs **Overview · Match Analysis · Requirements · Recruiters**; each renders; ✕ / Esc / click-outside close it.
+  - Notes: PASS. View More modal with tabs Overview · Match Analysis · Requirements · Recruiters (each renders); Tailor/Save/Interview-chance; ✕/Esc/click-outside close; search state preserved. **Backdrop fixed**: this modal is bespoke and had missed the shared-Modal backdrop fix — now `bg-black/70 backdrop-blur-md`, z-90, consistent with the rest. **UX backlog #19**: convert to a right-side drawer (list + details side-by-side).
 - ⬜ **T-JOB-09** No fake data: cards/modal should **not** show a hardcoded "Full Time" or invented fields.
   - Notes:
-- ⬜ **T-JOB-10** Filters: **Remote only** toggle and **Sort: Best match / Newest** change the list.
-  - Notes:
+- ✅ **T-JOB-10** Filters: **Remote only** toggle and **Sort: Best match / Newest** change the list.
+  - Notes: PASS. Remote-only toggle filters to remote roles (Quora/Ancestry ML roles); Sort Best match/Newest reorders instantly; smooth, no reload or flicker.
 
 ### 6.3 Hand-off to tailoring
 - ⬜ **T-JOB-11** Click **Tailor Resume** (card or modal) → routes to New Application pre-filled with that job. (Continue in Section 7.)
@@ -496,6 +496,7 @@ Confirms the app is up before deep testing.
 | 16 | T-TMPL-02 | Enh | Template preview modal too narrow; PDF-viewer chrome dominates; backdrop blur inconsistent up top. | ✅ Fixed — `size="xl"` modal + taller iframe; PDF opened with `#navpanes=0&zoom=page-width` (hides thumbnail rail, fits width); more opaque backdrop (`bg-black/70 backdrop-blur-md`) — pending re-test |
 | 17 | T-TMPL-04 | P2 | "Use in builder" was a dead link — it navigated away and never applied the selected template. | ✅ Fixed ("Use this template" button PATCHes `template`, toast + list refresh; renders default to `profile.template`) — pending re-test |
 | 18 | T-JOB-01 | P1 | Recommended feed was empty — `search_jobs` matched the whole query as a verbatim substring, so the multi-word résumé seed found 0 postings. | ✅ Fixed — token-aware filter + feed seeds from career-profile `preferred_roles` (→ résumé → broad), never empty. Live: opens on ML Engineer roles, fit-ranked — pending re-test |
+| 19 | T-JOB-08 | P3 | Job-details is a centered modal — interrupts browsing; hard to compare/scan roles; wants a right-side drawer (list + details side-by-side, LinkedIn/Ashby-style). | 📋 Backlog — convert to a right-side drawer. (Backdrop already aligned to the app standard: `bg-black/70 backdrop-blur-md`, z-90.) |
 
 ---
 
