@@ -20,6 +20,10 @@ import {
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
 import { Spinner } from "../components/ui";
+import {
+  IconResume, IconLetter, IconBriefcase, IconSparkles, IconPen,
+  IconBell, IconRefresh, IconArrowRight, IconUpload,
+} from "../components/icons";
 import { ALL_STAGES, trackerLabel } from "../lib/tracker";
 
 const ACTIVE = new Set([
@@ -30,13 +34,15 @@ const ACTIVE = new Set([
   "rendering",
 ]);
 
-type Tab = "diff" | "match" | "guardrails" | "requirements" | "preview";
+type Tab = "overview" | "documents" | "activity" | "notes" | "analytics";
+type DocTab = "diff" | "match" | "guardrails" | "requirements" | "preview";
 
 export default function ApplicationPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("diff");
+  const [tab, setTab] = useState<Tab>("overview");
+  const [docTab, setDocTab] = useState<DocTab>("diff");
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -198,9 +204,26 @@ export default function ApplicationPage() {
         </div>
       </div>
 
-      {!busy && pipeline !== "failed" && (
-        <WorkflowStepper application={application} onUpdate={update.mutate} />
-      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-md bg-surface-2 px-2.5 py-1 text-subtle">
+          Created {fmtDate(application.created_at)}
+        </span>
+        {application.job?.source && (
+          <span className="rounded-md bg-surface-2 px-2.5 py-1 text-subtle">
+            Via {application.job.source}
+          </span>
+        )}
+        {application.job?.url && (
+          <a
+            href={application.job.url}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md bg-surface-2 px-2.5 py-1 text-brand-300 hover:text-brand-200"
+          >
+            View posting ↗
+          </a>
+        )}
+      </div>
 
       {busy && (
         <div className="card mt-6 flex items-center gap-3 p-4">
@@ -248,181 +271,134 @@ export default function ApplicationPage() {
             />
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              onClick={() => void download("package", "application_package.zip")}
-              className="btn-primary"
-            >
-              Download package (.zip)
-            </button>
-            <button
-              onClick={() => void download("resume_pdf", "resume.pdf")}
-              className="btn-secondary"
-            >
-              Résumé PDF
-            </button>
-            {application.artifacts.some((a) => a.kind === "cover_letter_pdf") && (
-              <button
-                onClick={() => void download("cover_letter_pdf", "cover_letter.pdf")}
-                className="btn-secondary"
-              >
-                Cover letter PDF
-              </button>
-            )}
-            <button
-              onClick={() => void download("resume_tex", "resume.tex")}
-              className="btn-secondary"
-            >
-              LaTeX source
-            </button>
-            <button
-              onClick={() => retry.mutate()}
-              disabled={retry.isPending}
-              className="btn-secondary"
-            >
-              Regenerate
-            </button>
-          </div>
-
           {downloadError && (
             <div
               role="alert"
-              className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
+              className="mt-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-sm text-danger"
             >
               {downloadError}
             </div>
           )}
 
-          {errors.length > 0 && (
-            <div className="mt-6 rounded-xl border border-coral/30 bg-coral/10 p-4">
-              <div className="font-medium text-coral">
-                HireCraft blocked {errors.length} unsupported{" "}
-                {errors.length === 1 ? "claim" : "claims"}
+          <div className="mt-6 flex gap-1 overflow-x-auto border-b border-white/[0.08]">
+            {(
+              [
+                ["overview", "Overview"],
+                ["documents", "Résumé & Documents"],
+                ["activity", "Activity"],
+                ["notes", "Notes"],
+                ["analytics", "Analytics"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setTab(value)}
+                className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition ${
+                  tab === value
+                    ? "border-brand-600 text-content"
+                    : "border-transparent text-subtle hover:text-content"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "overview" && (
+            <OverviewTab
+              application={application}
+              onUpdate={update.mutate}
+              onSaveNotes={(notes) => update.mutate({ notes })}
+              download={(kind, name) => void download(kind, name)}
+              onOpenDocs={() => setTab("documents")}
+              onOpenNotes={() => setTab("notes")}
+              onTailorAgain={() =>
+                navigate("/new", { state: application.job?.url ? { url: application.job.url } : {} })
+              }
+              onRegenerate={() => retry.mutate()}
+            />
+          )}
+
+          {tab === "documents" && (
+            <div className="mt-6 space-y-5">
+              {errors.length > 0 && (
+                <div className="rounded-xl border border-coral/30 bg-coral/10 p-4">
+                  <div className="font-medium text-coral">
+                    HireCraft blocked {errors.length} unsupported{" "}
+                    {errors.length === 1 ? "claim" : "claims"}
+                  </div>
+                  <p className="mt-1 text-sm text-coral">
+                    The AI tried to state something your master resume does not support.
+                    Those edits were removed automatically — see the Guardrails tab.
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-1 overflow-x-auto border-b border-white/[0.08]">
+                {(
+                  [
+                    ["diff", `Changes (${application.diff?.length ?? 0})`],
+                    ["match", match ? `Match · ${match.overall_score}` : "Match"],
+                    ["guardrails", `Guardrails (${report?.violations.length ?? 0})`],
+                    ["requirements", "Job requirements"],
+                    ["preview", "Final résumé"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setDocTab(value)}
+                    className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition ${
+                      docTab === value
+                        ? "border-brand-600 text-content"
+                        : "border-transparent text-subtle hover:text-content"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              <p className="mt-1 text-sm text-coral">
-                The AI tried to state something your master resume does not support.
-                Those edits were removed automatically — see the Guardrails tab.
-              </p>
+              <div>
+                {docTab === "diff" && (
+                  <DiffView
+                    diff={application.diff ?? []}
+                    emptyMessage="No changes were made — your resume already matched this posting."
+                  />
+                )}
+                {docTab === "match" && <MatchView match={match} />}
+                {docTab === "guardrails" && (
+                  <GuardrailView
+                    errors={errors}
+                    warnings={warnings}
+                    verified={report?.keywords_verified ?? []}
+                    requested={report?.keywords_requested ?? []}
+                    confidence={report?.bullet_confidence ?? []}
+                    locks={report?.locks ?? []}
+                  />
+                )}
+                {docTab === "requirements" && (
+                  <RequirementsView requirements={application.job?.requirements ?? null} />
+                )}
+                {docTab === "preview" && <ResumePreview id={id!} />}
+              </div>
+              {application.scorecard && <ScorecardPanel card={application.scorecard} />}
             </div>
           )}
 
-          {application.scorecard && <ScorecardPanel card={application.scorecard} />}
+          {tab === "activity" && <ActivityView application={application} />}
 
-          <div className="mt-8">
-            <div className="flex gap-1 border-b border-white/[0.08]">
-              {(
-                [
-                  ["diff", `Changes (${application.diff?.length ?? 0})`],
-                  ["match", match ? `Match · ${match.overall_score}` : "Match"],
-                  [
-                    "guardrails",
-                    `Guardrails (${report?.violations.length ?? 0})`,
-                  ],
-                  ["requirements", "Job requirements"],
-                  ["preview", "Final résumé"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  onClick={() => setTab(value)}
-                  className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition ${
-                    tab === value
-                      ? "border-brand-600 text-content"
-                      : "border-transparent text-subtle hover:text-content"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+          {tab === "notes" && (
+            <div className="mt-6 grid max-w-2xl gap-5">
+              <NotesCard application={application} onSave={(notes) => update.mutate({ notes })} />
+              <DatesCard application={application} onUpdate={update.mutate} />
             </div>
+          )}
 
-            <div className="pt-5">
-              {tab === "diff" && (
-                <DiffView
-                  diff={application.diff ?? []}
-                  emptyMessage="No changes were made — your resume already matched this posting."
-                />
-              )}
-              {tab === "match" && <MatchView match={match} />}
-              {tab === "guardrails" && (
-                <GuardrailView
-                  errors={errors}
-                  warnings={warnings}
-                  verified={report?.keywords_verified ?? []}
-                  requested={report?.keywords_requested ?? []}
-                  confidence={report?.bullet_confidence ?? []}
-                  locks={report?.locks ?? []}
-                />
-              )}
-              {tab === "requirements" && (
-                <RequirementsView requirements={application.job?.requirements ?? null} />
-              )}
-              {tab === "preview" && <ResumePreview id={id!} />}
+          {tab === "analytics" && (
+            <div className="card mt-6 p-8 text-center text-sm text-subtle">
+              Per-application analytics are coming soon.
             </div>
-          </div>
+          )}
         </>
       )}
-
-      <div className="mt-10 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="label" htmlFor="interview_at">
-            Interview date
-          </label>
-          {/* onBlur, not onChange: a datetime-local fires per component as the
-              user steps through day/month/hour, so onChange sent a PATCH per
-              keystroke — enough of them to trip the rate limiter. */}
-          <input
-            id="interview_at"
-            type="datetime-local"
-            className="input"
-            defaultValue={toLocalInput(application.interview_at)}
-            onBlur={(e) => {
-              const next = e.target.value
-                ? new Date(e.target.value).toISOString()
-                : null;
-              if (next !== application.interview_at) {
-                update.mutate({ interview_at: next });
-              }
-            }}
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="reminder_at">
-            Follow-up reminder
-          </label>
-          <input
-            id="reminder_at"
-            type="datetime-local"
-            className="input"
-            defaultValue={toLocalInput(application.reminder_at)}
-            onBlur={(e) => {
-              const next = e.target.value
-                ? new Date(e.target.value).toISOString()
-                : null;
-              if (next !== application.reminder_at) {
-                update.mutate({ reminder_at: next });
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <label className="label" htmlFor="notes">
-          Notes
-        </label>
-        <textarea
-          id="notes"
-          className="input min-h-[90px]"
-          defaultValue={application.notes ?? ""}
-          placeholder="Recruiter name, referral, follow-up date…"
-          onBlur={(e) => {
-            if (e.target.value !== (application.notes ?? "")) {
-              update.mutate({ notes: e.target.value });
-            }
-          }}
-        />
-      </div>
 
       {actionError && (
         <div
@@ -657,7 +633,13 @@ const FUNNEL_POS: Partial<Record<TrackerStatus, number>> = {
 };
 const TERMINAL_NEG = new Set<TrackerStatus>(["rejected", "withdrawn", "ghosted", "archived"]);
 
-function WorkflowStepper({
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Vertical workflow stepper (matches the workspace design). */
+function WorkflowCard({
   application,
   onUpdate,
 }: {
@@ -666,61 +648,53 @@ function WorkflowStepper({
 }) {
   const status = application.tracker_status;
   const closed = TERMINAL_NEG.has(status);
-  const reached = FUNNEL_POS[status] ?? -1; // -1 = not applied yet
+  const reached = FUNNEL_POS[status] ?? -1;
 
   return (
-    <div className="card mt-6 p-5">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">Application workflow</h2>
-          <p className="text-xs text-subtle">Track your progress through each stage.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-subtle">Update status</span>
-          <select
-            value={status}
-            onChange={(e) => onUpdate({ tracker_status: e.target.value as TrackerStatus })}
-            className={`badge cursor-pointer appearance-none border-0 pr-6 ${TRACKER_STYLES[status]}`}
-          >
-            {ALL_STAGES.map((s) => (
-              <option key={s} value={s} className="bg-surface text-content">
-                {trackerLabel(s)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+    <div className="card p-5">
+      <h2 className="text-base font-semibold">Application workflow</h2>
+      <p className="mt-0.5 text-xs text-subtle">Track your progress through each stage.</p>
 
-      <ol className="flex items-center">
+      <ol className="mt-4">
         {FUNNEL.map((stage, i) => {
           const done = !closed && reached > i;
           const current = !closed && reached === i;
+          const sub = done
+            ? i === 0
+              ? fmtDate(application.created_at)
+              : "Completed"
+            : current
+              ? "In progress"
+              : "Pending";
           return (
-            <li key={stage.key} className="flex flex-1 items-center last:flex-none">
+            <li key={stage.key} className="relative flex gap-3 pb-4 last:pb-0">
+              {i < FUNNEL.length - 1 && (
+                <span className={`absolute left-[11px] top-6 h-full w-px ${done ? "bg-emerald/40" : "bg-white/[0.09]"}`} />
+              )}
               <button
                 type="button"
                 onClick={() => onUpdate({ tracker_status: stage.key })}
                 title={`Mark as ${stage.label}`}
-                className="flex flex-col items-center gap-1.5"
+                className="relative z-10 mt-0.5 shrink-0"
               >
                 <span
-                  className={`grid h-7 w-7 place-items-center rounded-full border text-xs font-medium transition ${
+                  className={`grid h-6 w-6 place-items-center rounded-full border text-[11px] transition ${
                     done
-                      ? "border-emerald/50 bg-emerald/20 text-emerald"
+                      ? "border-emerald/50 bg-emerald/25 text-emerald"
                       : current
                         ? "border-brand-500 bg-brand-500/25 text-brand-100"
-                        : "border-white/[0.12] text-subtle hover:border-white/30"
+                        : "border-white/[0.14] text-transparent hover:border-white/30"
                   }`}
                 >
-                  {done ? "✓" : i + 1}
-                </span>
-                <span className={`text-[11px] ${current ? "font-medium text-content" : "text-subtle"}`}>
-                  {stage.label}
+                  {done ? "✓" : current ? "●" : ""}
                 </span>
               </button>
-              {i < FUNNEL.length - 1 && (
-                <div className={`mx-1 mb-5 h-px flex-1 ${done ? "bg-emerald/40" : "bg-white/[0.1]"}`} />
-              )}
+              <div className="min-w-0">
+                <div className={`text-sm ${current ? "font-medium text-content" : done ? "text-content" : "text-subtle"}`}>
+                  {stage.label}
+                </div>
+                <div className={`text-xs ${current ? "text-brand-300" : "text-subtle"}`}>{sub}</div>
+              </div>
             </li>
           );
         })}
@@ -728,20 +702,373 @@ function WorkflowStepper({
 
       {closed && (
         <div
-          className={`mt-5 rounded-lg border px-3 py-2 text-sm ${
+          className={`mb-3 rounded-lg border px-3 py-2 text-sm ${
             status === "rejected"
               ? "border-danger/30 bg-danger/10 text-danger"
               : "border-white/[0.1] bg-surface-2 text-muted"
           }`}
         >
-          This application is marked <span className="font-medium">{trackerLabel(status)}</span>.
+          Marked <span className="font-medium">{trackerLabel(status)}</span>.
         </div>
       )}
-      {reached === -1 && !closed && (
-        <p className="mt-4 text-xs text-subtle">
-          Not submitted yet — set the status to <span className="text-content">Applied</span> once you apply.
-        </p>
+
+      <label className="mt-4 block">
+        <span className="sr-only">Update status</span>
+        <div className="relative">
+          <select
+            value={status}
+            onChange={(e) => onUpdate({ tracker_status: e.target.value as TrackerStatus })}
+            className="btn-primary w-full cursor-pointer appearance-none justify-center pr-8 text-center"
+          >
+            {ALL_STAGES.map((s) => (
+              <option key={s} value={s} className="bg-surface text-content">
+                Update Status — {trackerLabel(s)}
+              </option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+        </div>
+      </label>
+    </div>
+  );
+}
+
+/** One document tile in the Application overview card. */
+function DocCard({
+  icon,
+  tint,
+  title,
+  subtitle,
+  action,
+  onAction,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  tint: string;
+  title: string;
+  subtitle: string;
+  action: string;
+  onAction: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-surface-2 p-3.5">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tint}`}>{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-content">{title}</div>
+        <div className="truncate text-xs text-subtle">{subtitle}</div>
+      </div>
+      <button
+        onClick={onAction}
+        disabled={disabled}
+        className="btn-secondary btn-sm shrink-0 disabled:opacity-40"
+      >
+        {action}
+      </button>
+    </div>
+  );
+}
+
+function scoreHex(score: number): string {
+  if (score >= 80) return "#2DD4BF";
+  if (score >= 60) return "#4CC9F0";
+  if (score >= 40) return "#FF9F43";
+  return "#FF5C7A";
+}
+
+/** Compact donut score ring — replaces the tall bar breakdown. */
+function Donut({ score, size = 66, stroke = 7 }: { score: number; size?: number; stroke?: number }) {
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const color = scoreHex(score);
+  return (
+    <div className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - score / 100)}
+          style={{ transition: "stroke-dashoffset 0.6s ease" }}
+        />
+      </svg>
+      <div className="absolute text-center leading-none">
+        <div className="text-base font-semibold tabular-nums" style={{ color }}>{score}</div>
+        <div className="text-[9px] text-subtle">/100</div>
+      </div>
+    </div>
+  );
+}
+
+/** Compact quality card: donut + a tight metric grid. */
+function QualityCard({ card }: { card: Scorecard }) {
+  const chips = card.metrics.slice(0, 4);
+  return (
+    <div className="flex items-center gap-4 rounded-xl border border-white/[0.07] bg-surface-2 p-4">
+      <Donut score={card.overall} />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-content">AI Résumé Quality</div>
+        <div className="text-xs text-subtle">Tailored for this role</div>
+        <div className="mt-2 grid grid-cols-2 gap-1.5">
+          {chips.map((m) => (
+            <span
+              key={m.key}
+              title={`${m.label} — ${m.detail}`}
+              className="inline-flex items-center justify-between gap-1 rounded-md border border-white/[0.06] bg-surface px-2 py-1 text-xs text-subtle"
+            >
+              <span className="truncate">{m.label}</span>
+              <span className="shrink-0 font-semibold tabular-nums" style={{ color: scoreHex(m.score) }}>{m.score}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Right-sidebar quick actions. */
+function QuickActions({ items }: { items: { label: string; icon: React.ReactNode; onClick: () => void }[] }) {
+  return (
+    <div className="card p-5">
+      <h2 className="text-base font-semibold">Quick actions</h2>
+      <div className="mt-3 space-y-0.5">
+        {items.map((it) => (
+          <button
+            key={it.label}
+            onClick={it.onClick}
+            className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left text-sm text-content transition hover:bg-white/[0.04]"
+          >
+            <span className="text-brand-300">{it.icon}</span>
+            <span className="flex-1">{it.label}</span>
+            <span className="text-subtle">›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Notes editor (saves via PATCH on button click). */
+function NotesCard({ application, onSave }: { application: ApplicationDetail; onSave: (notes: string) => void }) {
+  const [text, setText] = useState(application.notes ?? "");
+  const dirty = text !== (application.notes ?? "");
+  return (
+    <div className="card p-5">
+      <h2 className="text-base font-semibold">Application notes</h2>
+      <p className="mt-0.5 text-xs text-subtle">Your thoughts, interview feedback, or anything important.</p>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Write a note…"
+        className="input mt-3 min-h-[90px] leading-relaxed"
+      />
+      <button onClick={() => onSave(text)} disabled={!dirty} className="btn-primary btn-sm mt-2 disabled:opacity-40">
+        Save note
+      </button>
+    </div>
+  );
+}
+
+/** Job details panel. */
+function JobDetailsCard({ job }: { job: ApplicationDetail["job"] }) {
+  const req = (job?.requirements ?? {}) as Record<string, unknown>;
+  const rows: [string, string][] = [
+    ["Company", job?.company ?? "—"],
+    ["Location", job?.location ?? "—"],
+    ["Seniority", (req.seniority as string) ?? "—"],
+    ["Posted", fmtDate(job?.created_at) || "—"],
+    ["Source", job?.source ?? "—"],
+  ];
+  return (
+    <div className="card p-5">
+      <h2 className="text-base font-semibold">Job details</h2>
+      <dl className="mt-3 space-y-2 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-3">
+            <dt className="text-subtle">{k}</dt>
+            <dd className="truncate text-right text-content">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {job?.url && (
+        <a
+          href={job.url}
+          target="_blank"
+          rel="noreferrer"
+          className="btn-secondary mt-4 w-full justify-center"
+        >
+          View original posting ↗
+        </a>
       )}
+    </div>
+  );
+}
+
+/** Grounded AI assistant — visual card; full inline chat + apply-changes is Phase B. */
+function AIAssistantCard() {
+  const navigate = useNavigate();
+  return (
+    <div className="card p-5">
+      <div className="flex items-center gap-2">
+        <IconSparkles className="h-5 w-5 text-brand-300" />
+        <h2 className="text-base font-semibold">AI Assistant</h2>
+        <span className="badge-emerald text-[10px]">Grounded</span>
+      </div>
+      <p className="mt-1.5 text-sm text-muted">
+        Chat with an assistant that only uses your real résumé and this job — ask it to strengthen bullets,
+        surface keywords, or rewrite a section. Inline editing lands next; for now it opens in Copilot.
+      </p>
+      <button onClick={() => navigate("/copilot")} className="btn-primary mt-3">
+        <IconSparkles className="h-4 w-4" /> Open grounded assistant
+      </button>
+    </div>
+  );
+}
+
+/** The Overview tab: two-column workspace (docs + quality + assistant | workflow + actions + notes + job). */
+function OverviewTab({
+  application,
+  onUpdate,
+  onSaveNotes,
+  download,
+  onOpenDocs,
+  onOpenNotes,
+  onTailorAgain,
+  onRegenerate,
+}: {
+  application: ApplicationDetail;
+  onUpdate: (body: { tracker_status: TrackerStatus }) => void;
+  onSaveNotes: (notes: string) => void;
+  download: (kind: string, name: string) => void;
+  onOpenDocs: () => void;
+  onOpenNotes: () => void;
+  onTailorAgain: () => void;
+  onRegenerate: () => void;
+}) {
+  const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
+  const quick = [
+    { label: "Tailor résumé again", icon: <IconRefresh className="h-4 w-4" />, onClick: onTailorAgain },
+    { label: "Regenerate this tailoring", icon: <IconSparkles className="h-4 w-4" />, onClick: onRegenerate },
+    { label: "Review changes & guardrails", icon: <IconPen className="h-4 w-4" />, onClick: onOpenDocs },
+    { label: "Download package (.zip)", icon: <IconUpload className="h-4 w-4" />, onClick: () => download("package", "application_package.zip") },
+    { label: "Download résumé PDF", icon: <IconResume className="h-4 w-4" />, onClick: () => download("resume_pdf", "resume.pdf") },
+    ...(hasCover
+      ? [{ label: "Download cover letter", icon: <IconLetter className="h-4 w-4" />, onClick: () => download("cover_letter_pdf", "cover_letter.pdf") }]
+      : []),
+    { label: "Download LaTeX (.tex)", icon: <IconArrowRight className="h-4 w-4" />, onClick: () => download("resume_tex", "resume.tex") },
+    { label: "Set a reminder", icon: <IconBell className="h-4 w-4" />, onClick: onOpenNotes },
+  ];
+  return (
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="min-w-0 space-y-6">
+        <div className="card p-5">
+          <h2 className="text-base font-semibold">Application overview</h2>
+          <p className="mt-0.5 text-sm text-muted">
+            Track, manage, and optimize your application — update status, grab your documents, and refine your materials.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <DocCard
+              icon={<IconResume className="h-4 w-4" />} tint="bg-brand-500/15 text-brand-300"
+              title="Résumé (Tailored)" subtitle={`Updated ${fmtDate(application.updated_at)}`}
+              action="Preview" onAction={onOpenDocs}
+            />
+            <DocCard
+              icon={<IconLetter className="h-4 w-4" />} tint="bg-electric/15 text-electric"
+              title="Cover Letter" subtitle={hasCover ? `Updated ${fmtDate(application.updated_at)}` : "Not generated"}
+              action={hasCover ? "Download" : "—"} disabled={!hasCover}
+              onAction={() => download("cover_letter_pdf", "cover_letter.pdf")}
+            />
+            <DocCard
+              icon={<IconUpload className="h-4 w-4" />} tint="bg-emerald/15 text-emerald"
+              title="Résumé source" subtitle="Your master résumé" action="Open" onAction={onOpenDocs}
+            />
+            <DocCard
+              icon={<IconBriefcase className="h-4 w-4" />} tint="bg-coral/15 text-coral"
+              title="Job description" subtitle={application.job?.company ? `From ${application.job.company}` : "Extracted"}
+              action="View" onAction={onOpenDocs}
+            />
+          </div>
+          {application.scorecard && (
+            <div className="mt-4">
+              <QualityCard card={application.scorecard} />
+            </div>
+          )}
+        </div>
+        <AIAssistantCard />
+      </div>
+
+      <div className="space-y-5">
+        <WorkflowCard application={application} onUpdate={onUpdate} />
+        <QuickActions items={quick} />
+        <NotesCard application={application} onSave={onSaveNotes} />
+        <JobDetailsCard job={application.job} />
+      </div>
+    </div>
+  );
+}
+
+/** Interview date + follow-up reminder, shown in the Notes tab. */
+function DatesCard({
+  application,
+  onUpdate,
+}: {
+  application: ApplicationDetail;
+  onUpdate: (body: { interview_at?: string | null; reminder_at?: string | null }) => void;
+}) {
+  return (
+    <div className="card p-5">
+      <h2 className="text-base font-semibold">Dates &amp; reminders</h2>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="label">Interview date</span>
+          <input
+            type="datetime-local"
+            className="input"
+            defaultValue={toLocalInput(application.interview_at)}
+            onBlur={(e) => {
+              const next = e.target.value ? new Date(e.target.value).toISOString() : null;
+              if (next !== application.interview_at) onUpdate({ interview_at: next });
+            }}
+          />
+        </label>
+        <label className="block">
+          <span className="label">Follow-up reminder</span>
+          <input
+            type="datetime-local"
+            className="input"
+            defaultValue={toLocalInput(application.reminder_at)}
+            onBlur={(e) => {
+              const next = e.target.value ? new Date(e.target.value).toISOString() : null;
+              if (next !== application.reminder_at) onUpdate({ reminder_at: next });
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/** Simple activity timeline from the application's own timestamps. */
+function ActivityView({ application }: { application: ApplicationDetail }) {
+  const events = [
+    { label: "Application created", at: application.created_at },
+    { label: "Last updated", at: application.updated_at },
+    ...(application.interview_at ? [{ label: "Interview scheduled", at: application.interview_at }] : []),
+    ...(application.reminder_at ? [{ label: "Follow-up reminder set", at: application.reminder_at }] : []),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  return (
+    <div className="card mt-6 p-5">
+      <h2 className="text-base font-semibold">Activity</h2>
+      <ol className="mt-4 space-y-3">
+        {events.map((e, i) => (
+          <li key={i} className="flex items-start gap-3">
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-400" />
+            <div>
+              <div className="text-sm text-content">{e.label}</div>
+              <div className="text-xs text-subtle">{new Date(e.at).toLocaleString()}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

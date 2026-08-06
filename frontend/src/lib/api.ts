@@ -668,11 +668,13 @@ export interface ApplicationDetail {
   job: {
     id: string;
     url: string | null;
+    source: string | null;
     title: string | null;
     company: string | null;
     location: string | null;
     raw_text: string;
     requirements: JobRequirements | null;
+    created_at: string;
   } | null;
   artifacts: { id: string; kind: string; size_bytes: number }[];
 }
