@@ -197,14 +197,14 @@ Confirms the app is up before deep testing.
 
 ## 5. Templates  (`/templates`)
 
-- ⬜ **T-TMPL-01** Four templates shown: **Modern · ATS · Minimal · Academic**.
-  - Notes:
-- ⬜ **T-TMPL-02** Click a template → **preview modal** renders *your default résumé* in that template as a PDF.
-  - Notes:
-- ⬜ **T-TMPL-03** Preview each of the four; the modal caps to the viewport and scrolls (no lost close button).
-  - Notes:
-- ⬜ **T-TMPL-04** Apply/select a template for a résumé → subsequent renders use it.
-  - Notes:
+- ✅ **T-TMPL-01** Four templates shown: **Modern · ATS · Minimal · Academic**.
+  - Notes: PASS. All four render with preview thumbnail, name, and description; consistent, no layout issues.
+- ✅ **T-TMPL-02** Click a template → **preview modal** renders *your default résumé* in that template as a PDF.
+  - Notes: PASS. Modal opens, default résumé renders in an embedded PDF viewer (thumbnails, zoom/print/download, Download PDF). **UX backlog (P3, Issue #16):** modal too narrow (want 85–90% vp); PDF-viewer chrome dominates → collapsible thumbnail pane + higher default zoom; backdrop blur inconsistent near top.
+- ✅ **T-TMPL-03** Preview each of the four; the modal caps to the viewport and scrolls (no lost close button).
+  - Notes: PASS. All four preview correctly; modal stable; no crashes/render failures.
+- 🔧 **T-TMPL-04** Apply/select a template for a résumé → subsequent renders use it.
+  - Notes: **FAIL → FIXED (P2).** "Use in builder" was a dead `<Link to="/resumes">` — it navigated away and never applied the template, so the résumé kept Modern. Fix: replaced with a **"Use this template"** button that PATCHes the résumé's `template` (presentation-only → no version churn), shows a success toast, invalidates the résumé list (badge updates), and closes the modal; shows "Current template" (disabled) when already applied. Backend confirmed: `render_resume_file` defaults to `profile.template`, so subsequent Preview/Export use it. **Re-test.**
 
 ---
 
@@ -493,6 +493,8 @@ Confirms the app is up before deep testing.
 | 13 | T-RES-13 | Enh | Rewrite modal: too narrow; side-by-side text instead of word-level diff; Verified/Likely unexplained; score change unexplained. | 📋 Backlog — widen modal, word-diff, confidence tooltip, score-delta rationale |
 | 14 | T-RES-14 | P2 | Version history mislabeled: snapshot took the *incoming* change's label, so the original import displayed as "AI rewrite". (History itself was append-only + immutable — not data loss.) | ✅ Fixed (`ResumeProfile.label` + migration `d3e4f5a6b7c8`; snapshots inherit their own content's label; live label shown) — pending re-test |
 | 15 | T-RES-15 | Enh | Export is now 2 pages (content complete after the P0 fix). Not a bug. | 📋 Backlog — optional 1-page density pass (margins/spacing) |
+| 16 | T-TMPL-02 | Enh | Template preview modal too narrow; PDF-viewer chrome dominates; backdrop blur inconsistent up top. | 📋 Backlog — widen modal, collapsible thumbnails, higher default zoom, fix backdrop |
+| 17 | T-TMPL-04 | P2 | "Use in builder" was a dead link — it navigated away and never applied the selected template. | ✅ Fixed ("Use this template" button PATCHes `template`, toast + list refresh; renders default to `profile.template`) — pending re-test |
 
 ---
 

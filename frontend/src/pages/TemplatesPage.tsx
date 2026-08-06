@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api, type TemplateInfo, type ResumeProfileSummary } from "../lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError, type TemplateInfo, type ResumeProfileSummary } from "../lib/api";
 import { PageLoader, Modal, Spinner } from "../components/ui";
 import { IconTemplate, IconResume } from "../components/icons";
 import { useToast } from "../lib/toast";
@@ -110,8 +110,19 @@ function TemplatePreviewModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const qc = useQueryClient();
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const apply = useMutation({
+    mutationFn: () => api.patch(`/resumes/${resume!.id}`, { template: template.id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["resumes"] });
+      toast.success("Template applied", `${resume!.name} now uses ${template.name}.`);
+      onClose();
+    },
+    onError: (e) => toast.error("Couldn't apply", e instanceof ApiError ? e.message : undefined),
+  });
 
   useEffect(() => {
     if (!resume) return;
@@ -156,7 +167,17 @@ function TemplatePreviewModal({
             >
               Download PDF
             </button>
-            <Link to="/resumes" className="btn-primary" onClick={onClose}>Use in builder</Link>
+            <button
+              onClick={() => apply.mutate()}
+              disabled={apply.isPending || resume.template === template.id}
+              className="btn-primary"
+            >
+              {resume.template === template.id
+                ? "Current template"
+                : apply.isPending
+                  ? "Applying…"
+                  : "Use this template"}
+            </button>
           </div>
         </>
       )}
