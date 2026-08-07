@@ -19,7 +19,7 @@ from app.schemas.job import JobRequirements, ScrapeResult
 from app.schemas.resume import MasterResume
 from app.schemas.tailoring import DiffEntry, GuardrailReport, TailoringResult
 from app.schemas.writing import VoiceProfile
-from app.services.latex.compiler import CompileResult, compile_latex
+from app.services.latex.compiler import compile_latex
 from app.services.latex.renderer import render_and_fit, render_cover_letter
 from app.services.latex.templates import resolve_filename
 from app.services.llm.client import LlmResult, Usage, get_client

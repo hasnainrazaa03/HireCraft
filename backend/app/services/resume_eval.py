@@ -39,6 +39,30 @@ class EvalMetric:
     score: int  # 0–100
     weight: float
     detail: str
+    measured: bool = True  # False → excluded from the overall (can't be scored)
+
+
+def filter_company_keywords(keywords: list[str], company: str | None) -> list[str]:
+    """Drop the employer's own name from an ATS keyword list.
+
+    A company name (e.g. "Qualcomm") is never a skill the candidate should add to
+    their résumé, yet extraction sometimes captures it — which then reads as a
+    "0% keyword match" the candidate can't truthfully fix. Token-based and
+    conservative: only removes a keyword that is entirely the company's own words,
+    so real skills are never stripped.
+    """
+    if not company:
+        return keywords
+    comp = company.lower().strip()
+    comp_tokens = set(_WORD.findall(comp))
+    out: list[str] = []
+    for k in keywords:
+        kl = k.lower().strip()
+        ktokens = set(_WORD.findall(kl))
+        if kl == comp or (ktokens and ktokens <= comp_tokens):
+            continue
+        out.append(k)
+    return out
 
 
 @dataclass
@@ -131,7 +155,7 @@ def score_resume(
 
 
 def score_from_report(
-    tailored: MasterResume, report: GuardrailReport
+    tailored: MasterResume, report: GuardrailReport, *, company: str | None = None
 ) -> ResumeScorecard:
     """Scorecard for a completed tailoring, from data already stored on it.
 
@@ -139,28 +163,37 @@ def score_from_report(
     the extracted requirements, so job fit is read off the report's verified vs.
     requested keywords (already computed) — no re-extraction, no LLM. The other
     dimensions come straight off the tailored bullets.
+
+    When the posting yielded no real ATS keywords (e.g. a JS-heavy board where the
+    only token captured was the company name), keyword fit is marked *not
+    measured* and dropped from the overall — an honest "we couldn't read this"
+    beats a misleading 0 the candidate can't fix.
     """
     bullets = _bullets(tailored)
-    requested = list(report.keywords_requested)
-    verified = list(report.keywords_verified)
-    ats = _pct(len(verified), len(requested)) if requested else 100
-    ats_d = (
-        f"{len(verified)}/{len(requested)} job keywords surfaced"
-        if requested else "no ATS keywords extracted"
-    )
+    requested = filter_company_keywords(list(report.keywords_requested), company)
+    verified = filter_company_keywords(list(report.keywords_verified), company)
+    ats_measured = bool(requested)
+    if ats_measured:
+        ats = _pct(len(verified), len(requested))
+        ats_d = f"{len(verified)}/{len(requested)} job keywords surfaced"
+    else:
+        ats = 0
+        ats_d = "couldn't read keywords from this posting"
     impact, impact_d = _impact_density(bullets)
     verb, verb_d = _verb_strength(bullets)
     concise, concise_d = _conciseness(bullets)
     ground, ground_d = _grounding(report)
 
     metrics = [
-        EvalMetric("ats", "Job-fit keywords", ats, 0.30, ats_d),
+        EvalMetric("ats", "Job-fit keywords", ats, 0.30, ats_d, measured=ats_measured),
         EvalMetric("impact", "Quantified impact", impact, 0.20, impact_d),
         EvalMetric("verbs", "Action-verb strength", verb, 0.15, verb_d),
         EvalMetric("conciseness", "Conciseness", concise, 0.10, concise_d),
         EvalMetric("grounding", "Truthfulness", ground, 0.25, ground_d),
     ]
-    overall = round(sum(m.score * m.weight for m in metrics))
+    scored = [m for m in metrics if m.measured]
+    weight_sum = sum(m.weight for m in scored) or 1.0
+    overall = round(sum(m.score * m.weight for m in scored) / weight_sum)
     return ResumeScorecard(overall=overall, metrics=metrics)
 
 
@@ -181,7 +214,7 @@ class ImprovementTip:
 
 
 def suggestions_from_report(
-    tailored: MasterResume, report: GuardrailReport, *, limit: int = 3
+    tailored: MasterResume, report: GuardrailReport, *, company: str | None = None, limit: int = 3
 ) -> list[ImprovementTip]:
     """The weakest, most fixable areas — named with real data from this résumé.
 
@@ -191,8 +224,8 @@ def suggestions_from_report(
     """
     bullets = _bullets(tailored)
     total = len(bullets)
-    requested = list(report.keywords_requested)
-    verified = {k.lower() for k in report.keywords_verified}
+    requested = filter_company_keywords(list(report.keywords_requested), company)
+    verified = {k.lower() for k in filter_company_keywords(list(report.keywords_verified), company)}
     missing = [k for k in requested if k.lower() not in verified]
 
     without_metric = sum(1 for b in bullets if not _numbers_in(b))
@@ -204,7 +237,7 @@ def suggestions_from_report(
     off_length = sum(1 for b in bullets if not 6 <= len(b.split()) <= 34)
     errors = sum(1 for v in report.violations if v.severity == "error")
 
-    card = score_from_report(tailored, report)
+    card = score_from_report(tailored, report, company=company)
     candidates: list[tuple[int, ImprovementTip]] = []
 
     ats = card.get("ats")
@@ -305,14 +338,14 @@ def _iter_bullets(resume: MasterResume):
 
 
 def inspect_resume(
-    tailored: MasterResume, report: GuardrailReport
+    tailored: MasterResume, report: GuardrailReport, *, company: str | None = None
 ) -> dict[str, list]:
     """Locate the exact items behind each metric — raw material for the per-metric
     "fix it" side panel. Deterministic; mirrors the scorers so the panel shows
     precisely what pulled the score down.
     """
-    requested = list(report.keywords_requested)
-    verified = {k.lower() for k in report.keywords_verified}
+    requested = filter_company_keywords(list(report.keywords_requested), company)
+    verified = {k.lower() for k in filter_company_keywords(list(report.keywords_verified), company)}
     missing = [k for k in requested if k.lower() not in verified]
 
     impact: list[BulletRef] = []

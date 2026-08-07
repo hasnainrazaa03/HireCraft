@@ -127,3 +127,29 @@ def test_inspect_flags_unquantified_and_weak_bullets():
     assert any("Responsible for" in t for t in verb_texts)  # weak opener → verbs
     assert all("Cut build times" not in t for t in impact_texts)  # quantified → clean
     assert all(b.id and b.where for b in data["impact"])  # locatable
+
+
+def test_company_name_is_not_treated_as_a_keyword():
+    from app.services.resume_eval import filter_company_keywords
+
+    assert filter_company_keywords(["Qualcomm"], "Qualcomm") == []
+    assert filter_company_keywords(["Qualcomm", "Python", "gRPC"], "Qualcomm") == ["Python", "gRPC"]
+    # token-based, so no false positives on real skills that share a substring
+    assert filter_company_keywords(["metadata"], "Meta") == ["metadata"]
+
+
+def test_ats_not_measured_when_only_keyword_was_the_company():
+    """The Qualcomm case: the only extracted keyword is the employer name → keyword
+    fit is 'not measured' and dropped from the overall, not a misleading 0."""
+    from app.services.resume_eval import score_from_report
+
+    resume = MasterResume.model_validate(MASTER_RESUME_FIXTURE)
+    report = _report(["Qualcomm"], [])
+    card = score_from_report(resume, report, company="Qualcomm")
+    ats = next(m for m in card.metrics if m.key == "ats")
+    assert ats.measured is False
+    # overall must ignore the unmeasured metric (its 0 would otherwise tank it)
+    scored = [m for m in card.metrics if m.measured]
+    expected = round(sum(m.score * m.weight for m in scored) / sum(m.weight for m in scored))
+    assert card.overall == expected
+    assert card.overall > 0

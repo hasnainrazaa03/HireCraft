@@ -28,6 +28,7 @@ from app.services.llm.client import get_client
 from app.services.llm.prompts import COPILOT_SYSTEM, build_copilot_prompt
 from app.services.matching import match_resume_to_job, skill_gaps
 from app.services.pipeline import UsageLedger
+from app.services.resume_eval import filter_company_keywords
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard
     from app.services.llm.factory import LlmClient
@@ -96,8 +97,9 @@ def build_context(
                 for v in report.get("violations", [])
                 if v.get("severity") == "error"
             ]
-            verified = report.get("keywords_verified", []) or []
-            requested = report.get("keywords_requested", []) or []
+            company = application.job.company if application.job else None
+            verified = filter_company_keywords(report.get("keywords_verified", []) or [], company)
+            requested = filter_company_keywords(report.get("keywords_requested", []) or [], company)
             missing_kw = [k for k in requested if k not in verified]
             confidence = report.get("bullet_confidence", []) or []
             conf_counts: dict[str, int] = {}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
@@ -890,6 +890,28 @@ function MetricTile({ m, onFix }: { m: Scorecard["metrics"][number]; onFix: () =
   const t = tier(m.score);
   const tint = METRIC_TINT[m.key] ?? "bg-brand-500/15 text-brand-300";
   const width = useMountReveal() ? m.score : 0;
+
+  // Couldn't be scored (e.g. no ATS keywords read from the posting) — show it
+  // honestly as "not measured", greyed and non-interactive, not a red 0.
+  if (m.measured === false) {
+    return (
+      <div className="rounded-xl border border-white/[0.07] bg-surface-2/40 p-4">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-subtle">
+            <MetricGlyph k={m.key} />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted">{m.label}</span>
+          <span className="shrink-0 text-sm tabular-nums text-subtle">—</span>
+        </div>
+        <div className="mt-3 h-1.5 rounded-full bg-white/[0.05]" />
+        <div className="mt-2.5 flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-xs text-subtle" title={m.detail}>{m.detail}</span>
+          <span className="shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[11px] font-medium text-subtle">Not measured</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -1147,9 +1169,23 @@ function MetricDrawer({
 }) {
   const qc = useQueryClient();
   const shown = useMountReveal();
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | null>(null);
+  const open = shown && !closing;
   const meta = DRAWER_META[metric.key];
   const tint = METRIC_TINT[metric.key] ?? "bg-brand-500/15 text-brand-300";
   const color = METRIC_COLOR[metric.key] ?? "#AC8CFF";
+
+  // Play a slide-out before unmounting (skipped under reduce-motion).
+  const requestClose = useCallback(() => {
+    if (closing) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, 280);
+  }, [closing, onClose]);
 
   const inspect = useQuery({
     queryKey: ["quality-inspect", applicationId],
@@ -1157,17 +1193,21 @@ function MetricDrawer({
   });
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      if (closeTimer.current) window.clearTimeout(closeTimer.current);
     };
-  }, [onClose]);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [requestClose]);
 
   // Re-open should always reflect the latest résumé.
   useEffect(() => () => void qc.invalidateQueries({ queryKey: ["quality-inspect", applicationId] }), [applicationId, qc]);
@@ -1186,11 +1226,11 @@ function MetricDrawer({
   return createPortal(
     <div className="fixed inset-0 z-50">
       <div
-        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${shown ? "opacity-100" : "opacity-0"}`}
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0"}`}
+        onClick={requestClose}
       />
       <div
-        className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${shown ? "translate-x-0" : "translate-x-full"}`}
+        className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${open ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="flex items-center gap-3 border-b border-white/10 p-5">
           <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tint}`}>
@@ -1202,7 +1242,7 @@ function MetricDrawer({
               Score <span className="font-semibold" style={{ color: scoreHex(metric.score) }}>{metric.score}</span>/100
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-subtle transition hover:bg-white/5 hover:text-content" aria-label="Close">
+          <button onClick={requestClose} className="rounded-lg p-1.5 text-subtle transition hover:bg-white/5 hover:text-content" aria-label="Close">
             <IconClose className="h-5 w-5" />
           </button>
         </div>

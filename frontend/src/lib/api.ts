@@ -640,6 +640,7 @@ export interface ScorecardMetric {
   label: string;
   score: number;
   detail: string;
+  measured: boolean;
 }
 
 export interface ScorecardSuggestion {

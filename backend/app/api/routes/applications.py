@@ -65,6 +65,7 @@ from app.services.pipeline import (
     revise_resume,
 )
 from app.services.resume_eval import (
+    filter_company_keywords,
     inspect_resume,
     score_from_report,
     suggestions_from_report,
@@ -193,6 +194,14 @@ def create_application(
 def _to_detail(application: Application) -> ApplicationDetail:
     detail = ApplicationDetail.model_validate(application)
     detail.scorecard = _scorecard_for(application)
+    # Drop the employer's own name from the keyword lists the UI reads, so the
+    # header "Keyword match" and the ATS panel agree with the scorecard.
+    if detail.guardrail_report:
+        company = application.job.company if application.job else None
+        for key in ("keywords_requested", "keywords_verified"):
+            values = detail.guardrail_report.get(key)
+            if isinstance(values, list):
+                detail.guardrail_report[key] = filter_company_keywords(values, company)
     return detail
 
 
@@ -207,12 +216,13 @@ def _scorecard_for(application: Application) -> Scorecard | None:
     try:
         tailored = MasterResume.model_validate(application.tailored_resume)
         report = GuardrailReport.model_validate(application.guardrail_report)
-        card = score_from_report(tailored, report)
-        tips = suggestions_from_report(tailored, report)
+        company = application.job.company if application.job else None
+        card = score_from_report(tailored, report, company=company)
+        tips = suggestions_from_report(tailored, report, company=company)
         return Scorecard(
             overall=card.overall,
             metrics=[
-                ScorecardMetric(key=m.key, label=m.label, score=m.score, detail=m.detail)
+                ScorecardMetric(key=m.key, label=m.label, score=m.score, detail=m.detail, measured=m.measured)
                 for m in card.metrics
             ],
             suggestions=[
@@ -329,7 +339,8 @@ def inspect_quality(
         return QualityInspect()
     tailored = MasterResume.model_validate(application.tailored_resume)
     report = GuardrailReport.model_validate(application.guardrail_report)
-    data = inspect_resume(tailored, report)
+    company = application.job.company if application.job else None
+    data = inspect_resume(tailored, report, company=company)
 
     def to_bullets(items: list) -> list[QualityBullet]:
         return [QualityBullet(id=b.id, where=b.where, text=b.text, note=b.note) for b in items]

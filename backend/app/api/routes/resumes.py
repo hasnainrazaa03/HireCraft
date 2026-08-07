@@ -31,7 +31,7 @@ from app.schemas.resume import MasterResume
 from app.services import resume_versions, storage
 from app.services.analysis import analyze_resume
 from app.services.export.docx import resume_to_docx
-from app.services.latex.compiler import LatexCompilationError, compile_latex
+from app.services.latex.compiler import LatexCompilationError
 from app.services.latex.renderer import render_and_fit, render_resume
 from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
 from app.services.llm.client import LlmConfigurationError, LlmError, LlmResponseError

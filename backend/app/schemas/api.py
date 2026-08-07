@@ -318,6 +318,7 @@ class ScorecardMetric(ApiModel):
     label: str
     score: int
     detail: str
+    measured: bool = True  # False → couldn't be scored (e.g. no ATS keywords read)
 
 
 class ScorecardSuggestion(ApiModel):
