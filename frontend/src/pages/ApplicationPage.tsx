@@ -395,7 +395,7 @@ export default function ApplicationPage() {
           {tab === "emails" && <EmailsTab applicationId={id!} />}
 
           {tab === "notes" && (
-            <div className="mt-6 grid max-w-2xl gap-5">
+            <div className="mt-6 grid gap-5 lg:grid-cols-2 lg:items-start">
               <NotesCard application={application} onSave={(notes) => update.mutate({ notes })} />
               <DatesCard application={application} onUpdate={update.mutate} />
             </div>
