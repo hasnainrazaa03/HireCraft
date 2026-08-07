@@ -824,7 +824,8 @@ def application_outreach(
     try:
         draft, warnings = generate_outreach(
             resume, payload.kind, company=company, role=role,
-            recipient=payload.recipient, context=payload.context, client=client, ledger=ledger,
+            recipient=payload.recipient, context=payload.context, source=payload.source,
+            client=client, ledger=ledger,
         )
     except LlmError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The AI service is unavailable right now: {exc}") from exc

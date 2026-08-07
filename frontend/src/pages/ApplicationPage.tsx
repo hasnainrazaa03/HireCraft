@@ -2250,10 +2250,20 @@ const OUTREACH_KINDS = [
   { key: "referral_request", label: "Referral request" },
 ];
 
+// How the candidate came to the role — sets the warmth/opener of the message.
+const OUTREACH_SOURCES = [
+  { key: "cold", label: "Cold" },
+  { key: "referral", label: "Referral" },
+  { key: "community", label: "Community" },
+  { key: "event", label: "Met at event" },
+  { key: "recruiter_inbound", label: "They reached out" },
+];
+
 /** Draft short, grounded outreach for this application (Emails tab). */
 function EmailsTab({ applicationId }: { applicationId: string }) {
   const toast = useToast();
   const [kind, setKind] = useState("recruiter_email");
+  const [source, setSource] = useState("cold");
   const [recipient, setRecipient] = useState("");
   const [context, setContext] = useState("");
   const [draft, setDraft] = useState<{ subject: string; body: string; warnings: string[] } | null>(null);
@@ -2262,7 +2272,7 @@ function EmailsTab({ applicationId }: { applicationId: string }) {
     mutationFn: () =>
       api.post<{ subject: string; body: string; warnings: string[] }>(
         `/applications/${applicationId}/outreach`,
-        { kind, recipient: recipient || null, context: context || null },
+        { kind, source, recipient: recipient || null, context: context || null },
       ),
     onSuccess: (d) => setDraft(d),
     onError: (e) => toast.error("Couldn't draft the message", e instanceof ApiError ? e.message : undefined),
@@ -2290,6 +2300,25 @@ function EmailsTab({ applicationId }: { applicationId: string }) {
             </button>
           ))}
         </div>
+        <label className="mt-3 block">
+          <span className="label">How you found this</span>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {OUTREACH_SOURCES.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setSource(s.key)}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  source === s.key
+                    ? "border-brand-500/60 bg-brand-500/15 text-brand-200"
+                    : "border-white/[0.1] bg-surface-2 text-muted hover:text-content"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </label>
         <label className="mt-3 block">
           <span className="label">Recipient (optional)</span>
           <input className="input" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="A recruiter or contact's name" />

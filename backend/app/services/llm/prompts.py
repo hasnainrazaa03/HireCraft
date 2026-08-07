@@ -417,14 +417,19 @@ technologies, or motivations beyond those two sources.
 - Never claim a skill that appears in neither the résumé nor the attested evidence.
 - Four well-developed paragraphs, roughly 300-380 words total. No filler, no "I am \
 writing to express my interest in".
-- Paragraph 1 (opening): hook with the single most relevant, concrete piece of real \
-experience, and name the specific role and company.
-- Paragraphs 2-3 (body): connect the candidate's actual experience, skills, and \
-projects to what this role needs — specific, evidence-backed, not a restatement of \
-the resume.
-- Paragraph 4 (closing): a brief, confident close referencing the company and a \
-forward-looking note. Do not include a salutation or sign-off - those are added by \
-the template.
+- Paragraph 1 (hook): open by connecting something SPECIFIC about this role, team, \
+product, or the problem it solves (drawn from the posting itself) to the candidate's \
+single most relevant real accomplishment. Name the role and company. Show you read the \
+posting — never a generic "I am excited to apply".
+- Paragraphs 2-3 (value): address the role's top 2-3 STATED needs directly, each \
+backed by the candidate's actual experience, skills, or projects. Lead with the proof \
+that matters most to THIS role — not a restatement of the resume.
+- Paragraph 4 (closing): a brief, confident close that names a CONCRETE reason this \
+role/company is a genuine fit — tie it to a real detail from the posting, not vague \
+mission-praise — plus a forward-looking note. Do not include a salutation or sign-off \
+- those are added by the template.
+- The hook and any company reference must come from the posting text provided; never \
+invent company facts, funding, news, or product details that aren't in it.
 
 Return a JSON object with a `paragraphs` array of strings.
 """
@@ -607,6 +612,21 @@ OUTREACH_KINDS: dict[str, str] = {
 
 DEFAULT_OUTREACH_TONE = "professional and warm"
 
+# How the candidate came to this role — sets the warmth and opener. A warm
+# referral and a cold email are different messages; naming the source guides it.
+OUTREACH_SOURCES: dict[str, str] = {
+    "cold": "No prior connection. Earn attention in the first line with a specific, "
+    "relevant hook tied to the role. Never fake familiarity.",
+    "referral": "You have a warm connection or mutual contact (see context). Open by "
+    "referencing it naturally and warmly, then make the ask.",
+    "community": "You found this through a shared community, group, or newsletter (see "
+    "context). Open with that shared context before the pitch.",
+    "event": "You met or connected at an event/conference (see context). Reference it "
+    "warmly and specifically up front — only if the context states it.",
+    "recruiter_inbound": "The recipient reached out to you first. Respond with genuine "
+    "interest and a couple of specifics; don't re-introduce yourself as a cold contact.",
+}
+
 
 def build_outreach_prompt(
     kind: str,
@@ -616,9 +636,12 @@ def build_outreach_prompt(
     role: str | None = None,
     recipient: str | None = None,
     context: str | None = None,
+    source: str | None = None,
     voice: VoiceProfile | None = None,
 ) -> str:
     guidance = OUTREACH_KINDS.get(kind, OUTREACH_KINDS["recruiter_email"])
+    source_line = OUTREACH_SOURCES.get(source or "")
+    source_block = f"\n=== CONNECTION / HOW YOU FOUND THIS ===\n{source_line}\n" if source_line else ""
     highlights = [
         f"- {e.company} ({e.title}): " + "; ".join(e.highlights[:2])
         for e in resume.experience[:3]
@@ -631,7 +654,7 @@ Draft this outreach message.
 
 === MESSAGE TYPE ===
 {guidance}
-{_voice_block(voice)}
+{source_block}{_voice_block(voice)}
 
 === WHO IT'S FROM (the candidate) ===
 Name: {resume.basics.name}

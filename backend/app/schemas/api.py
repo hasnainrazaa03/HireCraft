@@ -429,6 +429,7 @@ class OutreachRequest(ApiModel):
     kind: str = "recruiter_email"
     recipient: str | None = Field(default=None, max_length=120)
     context: str | None = Field(default=None, max_length=1000)
+    source: str | None = Field(default=None, max_length=32)
 
 
 class OutreachDraftResponse(ApiModel):
