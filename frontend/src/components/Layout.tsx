@@ -168,7 +168,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* ---- Main column ---- */}
-      <div className="flex min-h-screen flex-1 flex-col lg:pl-64">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-64">
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-white/[0.06] bg-canvas/70 px-5 py-3.5 backdrop-blur-xl">
           {/* Global search isn't built yet. It was rendered as a live, focusable
@@ -277,7 +277,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
         {user && !user.is_verified && <VerifyBanner />}
 
-        <main className="mx-auto w-full max-w-7xl flex-1 px-5 py-7">{children}</main>
+        <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 px-5 py-7">{children}</main>
       </div>
     </div>
   );
