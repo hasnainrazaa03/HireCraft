@@ -2,7 +2,7 @@
  * Small, reusable presentational primitives shared across pages. Behavioral
  * pieces (theme, toast) live in lib/; these are pure UI.
  */
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 // -- Spinner ------------------------------------------------------------------
 
@@ -155,42 +155,6 @@ const STAT_TONE: Record<string, { tile: string; hex: string }> = {
   coral: { tile: "bg-coral/15 text-coral", hex: "#FF9F43" },
 };
 
-// An upward-trending wiggle over a 120×44 box (y grows downward).
-const SPARK_PATH =
-  "M0,34 C8,32 12,26 20,28 C28,30 32,20 40,22 C48,24 52,14 62,16 C72,18 78,10 88,12 C98,14 104,4 118,6";
-
-/** A live, glowing trend line — draws in on mount, endpoint pulses. Decorative. */
-function Sparkline({ hex }: { hex: string }) {
-  const id = useId().replace(/:/g, "");
-  return (
-    <svg
-      className="pointer-events-none absolute bottom-3 right-0 h-12 w-[56%]"
-      viewBox="0 0 120 44"
-      preserveAspectRatio="none"
-      fill="none"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id={`fill${id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={hex} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={hex} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={`${SPARK_PATH} L118,44 L0,44 Z`} fill={`url(#fill${id})`} />
-      <path
-        d={SPARK_PATH}
-        stroke={hex}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="spark-line"
-        style={{ strokeDasharray: 320, strokeDashoffset: 320, filter: `drop-shadow(0 0 4px ${hex}aa)` }}
-      />
-      <circle cx="118" cy="6" r="2.6" fill={hex} className="spark-dot" style={{ filter: `drop-shadow(0 0 5px ${hex})` }} />
-    </svg>
-  );
-}
-
 export function StatCard({
   label,
   value,
@@ -229,7 +193,6 @@ export function StatCard({
       </div>
       <div className="relative mt-5 text-3xl font-bold tabular-nums text-content">{value}</div>
       <div className="relative mt-0.5 text-sm text-muted">{label}</div>
-      <Sparkline hex={t.hex} />
     </div>
   );
 }
