@@ -282,6 +282,55 @@ def suggestions_from_report(
     return [tip for _, tip in candidates[:limit]]
 
 
+@dataclass
+class BulletRef:
+    id: str      # "exp:{i}:{j}" / "prj:{i}:{j}" — stable within one résumé blob
+    where: str   # "Company — Title" or project name, for context
+    text: str
+    note: str    # why it's flagged, e.g. "42 words" or "opens with “Worked”"
+
+
+def _iter_bullets(resume: MasterResume):
+    """Yield (id, where, text) for every experience/project highlight."""
+    for ei, e in enumerate(resume.experience):
+        where = " — ".join(x for x in (e.company, e.title) if x) or "Experience"
+        for hi, h in enumerate(e.highlights):
+            if h.strip():
+                yield f"exp:{ei}:{hi}", where, h
+    for pi, p in enumerate(resume.projects):
+        where = p.name or "Project"
+        for hi, h in enumerate(p.highlights):
+            if h.strip():
+                yield f"prj:{pi}:{hi}", where, h
+
+
+def inspect_resume(
+    tailored: MasterResume, report: GuardrailReport
+) -> dict[str, list]:
+    """Locate the exact items behind each metric — raw material for the per-metric
+    "fix it" side panel. Deterministic; mirrors the scorers so the panel shows
+    precisely what pulled the score down.
+    """
+    requested = list(report.keywords_requested)
+    verified = {k.lower() for k in report.keywords_verified}
+    missing = [k for k in requested if k.lower() not in verified]
+
+    impact: list[BulletRef] = []
+    verbs: list[BulletRef] = []
+    conciseness: list[BulletRef] = []
+    for bid, where, text in _iter_bullets(tailored):
+        if not _numbers_in(text):
+            impact.append(BulletRef(bid, where, text, "no metric"))
+        m = _WORD.search(text)
+        if m and m.group().lower() in _WEAK_OPENERS:
+            verbs.append(BulletRef(bid, where, text, f"opens with “{m.group()}”"))
+        words = len(text.split())
+        if not 6 <= words <= 34:
+            conciseness.append(BulletRef(bid, where, text, f"{words} words"))
+
+    return {"keywords": missing, "impact": impact, "verbs": verbs, "conciseness": conciseness}
+
+
 def compare(before: ResumeScorecard, after: ResumeScorecard) -> dict[str, int]:
     """Per-metric delta (after − before), plus 'overall'. For A/B on changes."""
     deltas = {m.key: m.score - before.get(m.key) for m in after.metrics}

@@ -657,6 +657,20 @@ export interface Scorecard {
   suggestions: ScorecardSuggestion[];
 }
 
+export interface QualityBullet {
+  id: string;
+  where: string;
+  text: string;
+  note: string;
+}
+
+export interface QualityInspect {
+  keywords: string[];
+  impact: QualityBullet[];
+  verbs: QualityBullet[];
+  conciseness: QualityBullet[];
+}
+
 export interface ApplicationDetail {
   id: string;
   pipeline_status: PipelineStatus;

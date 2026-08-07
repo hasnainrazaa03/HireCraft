@@ -36,6 +36,8 @@ from app.schemas.api import (
     AssistantReviseRequest,
     OutreachDraftResponse,
     OutreachRequest,
+    QualityBullet,
+    QualityInspect,
     Scorecard,
     ScorecardMetric,
     ScorecardSuggestion,
@@ -62,7 +64,11 @@ from app.services.pipeline import (
     generate_outreach,
     revise_resume,
 )
-from app.services.resume_eval import score_from_report, suggestions_from_report
+from app.services.resume_eval import (
+    inspect_resume,
+    score_from_report,
+    suggestions_from_report,
+)
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
 from app.services.usage import accrue_usage
 from app.workers.tasks import enqueue_tailoring
@@ -310,6 +316,30 @@ def get_application(
     application_id: uuid.UUID, user: CurrentUser, db: DbSession
 ) -> ApplicationDetail:
     return _to_detail(_get_owned(db, user.id, application_id))
+
+
+@router.get("/{application_id}/quality/inspect", response_model=QualityInspect)
+def inspect_quality(
+    application_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> QualityInspect:
+    """The specific bullets/keywords behind each fixable metric — powers the
+    per-metric 'fix it' side panel. Deterministic, no LLM."""
+    application = _get_owned(db, user.id, application_id)
+    if not application.tailored_resume or not application.guardrail_report:
+        return QualityInspect()
+    tailored = MasterResume.model_validate(application.tailored_resume)
+    report = GuardrailReport.model_validate(application.guardrail_report)
+    data = inspect_resume(tailored, report)
+
+    def to_bullets(items: list) -> list[QualityBullet]:
+        return [QualityBullet(id=b.id, where=b.where, text=b.text, note=b.note) for b in items]
+
+    return QualityInspect(
+        keywords=data["keywords"],
+        impact=to_bullets(data["impact"]),
+        verbs=to_bullets(data["verbs"]),
+        conciseness=to_bullets(data["conciseness"]),
+    )
 
 
 @router.get("/{application_id}/status", response_model=ApplicationStatusResponse)

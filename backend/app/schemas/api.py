@@ -339,6 +339,24 @@ class Scorecard(ApiModel):
     suggestions: list[ScorecardSuggestion] = Field(default_factory=list)
 
 
+class QualityBullet(ApiModel):
+    """A single flagged bullet, for the per-metric fix panel."""
+
+    id: str
+    where: str
+    text: str
+    note: str
+
+
+class QualityInspect(ApiModel):
+    """The specific items behind each fixable metric."""
+
+    keywords: list[str] = Field(default_factory=list)
+    impact: list[QualityBullet] = Field(default_factory=list)
+    verbs: list[QualityBullet] = Field(default_factory=list)
+    conciseness: list[QualityBullet] = Field(default_factory=list)
+
+
 class ApplicationDetail(ApiModel):
     id: uuid.UUID
     pipeline_status: PipelineStatus

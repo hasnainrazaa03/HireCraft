@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   useQuery,
@@ -17,6 +18,7 @@ import {
   type JobMatch,
   type Scorecard,
   type ScorecardSuggestion,
+  type QualityInspect,
   type CopilotResponse,
   type DiffEntry,
 } from "../lib/api";
@@ -924,9 +926,22 @@ function MetricTile({ m, onFix }: { m: Scorecard["metrics"][number]; onFix: () =
   );
 }
 
+/** Metrics with a granular per-bullet inspector → open the side panel.
+ *  Everything else (e.g. truthfulness) routes to the holistic AI chat. */
+const INSPECTABLE = new Set(["ats", "impact", "verbs", "conciseness"]);
+
 /** Full AI Résumé Quality card — donut + metric grid + AI-wired improvements. */
-function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruction: string) => void }) {
+function QualityCard({
+  card,
+  onSuggest,
+  applicationId,
+}: {
+  card: Scorecard;
+  onSuggest: (instruction: string) => void;
+  applicationId: string;
+}) {
   const [howOpen, setHowOpen] = useState(false);
+  const [panel, setPanel] = useState<string | null>(null);
   const t = tier(card.overall);
   const grid = card.metrics.filter((m) => m.key !== "grounding").slice(0, 4);
   const grounding = card.metrics.find((m) => m.key === "grounding");
@@ -934,9 +949,14 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
     card.suggestions.find((s) => s.metric_key === key)?.instruction ??
     METRIC_INSTRUCTION[key] ??
     `Improve the "${key}" of my résumé wherever it stays truthful.`;
+  // Inspectable metrics open the fix panel; the rest fall back to the AI chat.
+  const improve = (key: string, instruction: string) =>
+    INSPECTABLE.has(key) ? setPanel(key) : onSuggest(instruction);
+  const panelMetric = panel ? card.metrics.find((m) => m.key === panel) : undefined;
 
   return (
-    <div className="card p-6">
+    <>
+      <div className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-500/15 text-brand-300">
@@ -988,7 +1008,7 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
 
         <div className="grid gap-3 sm:grid-cols-2">
           {grid.map((m) => (
-            <MetricTile key={m.key} m={m} onFix={() => onSuggest(instructionFor(m.key))} />
+            <MetricTile key={m.key} m={m} onFix={() => improve(m.key, instructionFor(m.key))} />
           ))}
         </div>
       </div>
@@ -1008,7 +1028,7 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
               </div>
             </div>
             {card.suggestions.map((s) => (
-              <SuggestionColumn key={s.key} s={s} onSuggest={onSuggest} />
+              <SuggestionColumn key={s.key} s={s} onClick={() => improve(s.metric_key, s.instruction)} />
             ))}
           </div>
         </div>
@@ -1017,12 +1037,20 @@ function QualityCard({ card, onSuggest }: { card: Scorecard; onSuggest: (instruc
           <IconShieldCheck className="h-4 w-4" /> Your résumé is in great shape — nothing to fix right now.
         </div>
       )}
-    </div>
+      </div>
+      {panelMetric && (
+        <MetricDrawer
+          applicationId={applicationId}
+          metric={{ key: panelMetric.key, label: panelMetric.label, score: panelMetric.score }}
+          onClose={() => setPanel(null)}
+        />
+      )}
+    </>
   );
 }
 
 /** One borderless improvement column (icon + title · detail · AI link). */
-function SuggestionColumn({ s, onSuggest }: { s: ScorecardSuggestion; onSuggest: (instruction: string) => void }) {
+function SuggestionColumn({ s, onClick }: { s: ScorecardSuggestion; onClick: () => void }) {
   const tint = METRIC_TINT[s.metric_key] ?? "bg-brand-500/15 text-brand-300";
   const color = METRIC_COLOR[s.metric_key] ?? "#AC8CFF";
   return (
@@ -1035,7 +1063,7 @@ function SuggestionColumn({ s, onSuggest }: { s: ScorecardSuggestion; onSuggest:
       </div>
       <p className="mt-2.5 flex-1 text-xs leading-relaxed text-subtle">{s.detail}</p>
       <button
-        onClick={() => onSuggest(s.instruction)}
+        onClick={onClick}
         className="mt-3 flex items-center gap-1 self-start text-xs font-semibold transition hover:opacity-80"
         style={{ color }}
       >
@@ -1060,6 +1088,257 @@ function IconShieldCheck({ className }: { className?: string }) {
       <path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z" />
       <path d="m9 12 2 2 4-4" />
     </svg>
+  );
+}
+
+function IconClose({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+/* ── Per-metric "fix it" side panel (quality workspace) ───────────────── */
+
+type DrawerMeta = { kind: "keywords" | "bullets"; action: string; blurb: string; instruction: (text: string) => string };
+
+const DRAWER_META: Record<string, DrawerMeta> = {
+  ats: {
+    kind: "keywords",
+    action: "Insert",
+    blurb: "Terms from the job description your résumé doesn't surface yet. Insert one only where your real experience supports it — guardrails block anything you can't back.",
+    instruction: (kw) =>
+      `Weave the keyword "${kw}" into exactly one existing résumé bullet where I have genuine supporting experience. If nothing genuinely supports it, make NO change. Keep every other line identical.`,
+  },
+  impact: {
+    kind: "bullets",
+    action: "Add metric",
+    blurb: "Bullets with no measurable outcome. Add a real number, %, $, or time saved — never an invented one.",
+    instruction: (t) =>
+      `Rewrite ONLY this one bullet to include a concrete, truthful metric (a real number, %, $, or time saved). Do not invent numbers — if no real metric fits, sharpen the outcome instead. Keep every other line identical:\n"${t}"`,
+  },
+  verbs: {
+    kind: "bullets",
+    action: "Strengthen",
+    blurb: "Bullets that open with a weak or duty verb. Lead with a strong action verb, facts unchanged.",
+    instruction: (t) =>
+      `Rewrite ONLY this one bullet to open with a strong action verb instead of a weak or duty verb, keeping every fact identical. Keep every other line identical:\n"${t}"`,
+  },
+  conciseness: {
+    kind: "bullets",
+    action: "Shorten",
+    blurb: "Bullets outside the 6–34 word range. Tighten without dropping key facts.",
+    instruction: (t) =>
+      `Rewrite ONLY this one bullet to fall within 6–34 words without dropping key facts. Keep every other line identical:\n"${t}"`,
+  },
+};
+
+/** A slide-over that lists the exact items behind a metric, each fixable in
+ *  place via the grounded rewrite→review→apply loop. */
+function MetricDrawer({
+  applicationId,
+  metric,
+  onClose,
+}: {
+  applicationId: string;
+  metric: { key: string; label: string; score: number };
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const shown = useMountReveal();
+  const meta = DRAWER_META[metric.key];
+  const tint = METRIC_TINT[metric.key] ?? "bg-brand-500/15 text-brand-300";
+  const color = METRIC_COLOR[metric.key] ?? "#AC8CFF";
+
+  const inspect = useQuery({
+    queryKey: ["quality-inspect", applicationId],
+    queryFn: () => api.get<QualityInspect>(`/applications/${applicationId}/quality/inspect`),
+  });
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  // Re-open should always reflect the latest résumé.
+  useEffect(() => () => void qc.invalidateQueries({ queryKey: ["quality-inspect", applicationId] }), [applicationId, qc]);
+
+  const items: { id: string; primary: string; where?: string; note?: string; instruction: string }[] =
+    metric.key === "ats"
+      ? (inspect.data?.keywords ?? []).map((kw) => ({ id: kw, primary: kw, instruction: meta.instruction(kw) }))
+      : ((inspect.data?.[metric.key as "impact" | "verbs" | "conciseness"] ?? []).map((b) => ({
+          id: b.id,
+          primary: b.text,
+          where: b.where,
+          note: b.note,
+          instruction: meta.instruction(b.text),
+        })));
+
+  return createPortal(
+    <div className="fixed inset-0 z-50">
+      <div
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${shown ? "opacity-100" : "opacity-0"}`}
+        onClick={onClose}
+      />
+      <div
+        className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${shown ? "translate-x-0" : "translate-x-full"}`}
+      >
+        <div className="flex items-center gap-3 border-b border-white/10 p-5">
+          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tint}`}>
+            <MetricGlyph k={metric.key} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-base font-semibold">{metric.label}</h3>
+            <p className="text-xs tabular-nums text-subtle">
+              Score <span className="font-semibold" style={{ color: scoreHex(metric.score) }}>{metric.score}</span>/100
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-subtle transition hover:bg-white/5 hover:text-content" aria-label="Close">
+            <IconClose className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <p className="text-xs leading-relaxed text-subtle">{meta.blurb}</p>
+          <div className="mt-4 space-y-2.5">
+            {inspect.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-subtle"><Spinner className="h-4 w-4" /> Analyzing…</div>
+            ) : items.length === 0 ? (
+              <div className="flex items-center gap-2 rounded-lg border border-emerald/25 bg-emerald/[0.06] p-4 text-sm text-emerald">
+                <IconShieldCheck className="h-4 w-4" /> Nothing to fix here — this metric is already strong.
+              </div>
+            ) : (
+              items.map((it) => (
+                <DrawerItem
+                  key={it.id}
+                  applicationId={applicationId}
+                  primary={it.primary}
+                  where={it.where}
+                  note={it.note}
+                  actionLabel={meta.action}
+                  color={color}
+                  instruction={it.instruction}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** One fixable row: propose a grounded rewrite, preview the diff, apply it. */
+function DrawerItem({
+  applicationId,
+  primary,
+  where,
+  note,
+  actionLabel,
+  color,
+  instruction,
+}: {
+  applicationId: string;
+  primary: string;
+  where?: string;
+  note?: string;
+  actionLabel: string;
+  color: string;
+  instruction: string;
+}) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [proposal, setProposal] = useState<{ diff: DiffEntry[]; proposed: unknown; blocked: string[] } | null>(null);
+  const [applied, setApplied] = useState(false);
+
+  const revise = useMutation({
+    mutationFn: () =>
+      api.post<{ note: string; diff: DiffEntry[]; proposed: unknown; blocked: string[] }>(
+        `/applications/${applicationId}/assistant/revise`,
+        { instruction },
+      ),
+    onSuccess: (r) => setProposal({ diff: r.diff, proposed: r.proposed, blocked: r.blocked }),
+    onError: (e) => toast.error("Couldn't draft a fix", e instanceof ApiError ? e.message : undefined),
+  });
+
+  const apply = useMutation({
+    mutationFn: () => api.post(`/applications/${applicationId}/assistant/apply`, { proposed: proposal!.proposed }),
+    onSuccess: () => {
+      setApplied(true);
+      setProposal(null);
+      qc.invalidateQueries({ queryKey: ["application", applicationId] });
+      toast.success("Applied — résumé & PDF updated");
+    },
+    onError: (e) => toast.error("Couldn't apply the change", e instanceof ApiError ? e.message : undefined),
+  });
+
+  if (applied)
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald/25 bg-emerald/[0.06] p-3 text-xs text-emerald">
+        <IconShieldCheck className="h-4 w-4 shrink-0" /> Applied — résumé &amp; PDF updated.
+      </div>
+    );
+
+  const noChange = proposal !== null && proposal.diff.length === 0;
+
+  return (
+    <div className="rounded-lg border border-white/[0.07] bg-surface-2/50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {where && <div className="text-[10px] uppercase tracking-wide text-subtle">{where}</div>}
+          <p className="text-sm leading-snug text-content">{primary}</p>
+          {note && <span className="mt-1.5 inline-block rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-subtle">{note}</span>}
+        </div>
+        {!proposal && (
+          <button
+            onClick={() => revise.mutate()}
+            disabled={revise.isPending}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition hover:opacity-80 disabled:opacity-40"
+            style={{ color, borderColor: `${color}55`, background: `${color}14` }}
+          >
+            {revise.isPending ? <Spinner className="h-3.5 w-3.5" /> : <IconSparkles className="h-3.5 w-3.5" />}
+            {actionLabel}
+          </button>
+        )}
+      </div>
+
+      {proposal && (
+        <div className="mt-3 border-t border-white/[0.06] pt-3">
+          {noChange ? (
+            <p className="text-xs text-subtle">The AI didn't find a truthful change here — your experience may not support it.</p>
+          ) : (
+            <>
+              <DiffView diff={proposal.diff} afterLabel="Proposed" />
+              {proposal.blocked.length > 0 && (
+                <div className="mt-2 rounded bg-coral/10 p-2 text-[11px] text-coral">
+                  Blocked as unsupported: {proposal.blocked.join("; ")}
+                </div>
+              )}
+            </>
+          )}
+          <div className="mt-3 flex gap-2">
+            {!noChange && (
+              <button onClick={() => apply.mutate()} disabled={apply.isPending} className="btn-primary text-xs disabled:opacity-40">
+                {apply.isPending ? "Applying…" : "Apply"}
+              </button>
+            )}
+            <button onClick={() => setProposal(null)} disabled={apply.isPending} className="btn-secondary text-xs disabled:opacity-40">
+              {noChange ? "Close" : "Discard"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1473,7 +1752,7 @@ function OverviewTab({
           </div>
         </div>
         {application.scorecard && (
-          <QualityCard card={application.scorecard} onSuggest={handleSuggest} />
+          <QualityCard card={application.scorecard} onSuggest={handleSuggest} applicationId={application.id} />
         )}
         <AIAssistantCard applicationId={application.id} prefill={assist} />
       </div>

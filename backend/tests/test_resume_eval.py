@@ -74,3 +74,56 @@ def test_compare_reports_overall_and_per_metric_delta():
     deltas = compare(before, after)
     assert "overall" in deltas and "ats" in deltas
     assert deltas["ats"] >= 0  # added the missing ATS keyword (React)
+
+
+def _report(requested, verified, *, errors=0):
+    from app.schemas.tailoring import GuardrailReport, GuardrailViolation
+
+    violations = [
+        GuardrailViolation(severity="error", rule="unsupported", detail=f"claim {i}")
+        for i in range(errors)
+    ]
+    return GuardrailReport(
+        keywords_requested=requested, keywords_verified=verified, violations=violations
+    )
+
+
+def test_suggestions_name_the_real_missing_keywords():
+    from app.services.resume_eval import suggestions_from_report
+
+    resume = MasterResume.model_validate(MASTER_RESUME_FIXTURE)
+    tips = suggestions_from_report(resume, _report(["Python", "Kafka", "Terraform"], ["Python"]))
+    kw_tip = next(t for t in tips if t.metric_key == "ats")
+    assert "Kafka" in kw_tip.keywords and "Terraform" in kw_tip.keywords
+    assert "Kafka" in kw_tip.instruction  # instruction is actionable by the AI
+    assert len(tips) <= 3  # capped, weakest-first
+
+
+def test_suggestions_empty_when_everything_is_strong():
+    from app.services.resume_eval import suggestions_from_report
+
+    strong = copy.deepcopy(MASTER_RESUME_FIXTURE)
+    strong["experience"][0]["highlights"] = ["Built a dashboard serving 200 daily users worldwide"]
+    resume = MasterResume.model_validate(strong)
+    tips = suggestions_from_report(resume, _report(["Python"], ["Python"]))
+    assert tips == []
+
+
+def test_inspect_flags_unquantified_and_weak_bullets():
+    from app.services.resume_eval import inspect_resume
+
+    fixture = copy.deepcopy(MASTER_RESUME_FIXTURE)
+    fixture["experience"][0]["highlights"] = [
+        "Responsible for the internal dashboard used by the team",  # weak + no metric
+        "Cut build times by 40% across the pipeline",  # strong + metric
+    ]
+    resume = MasterResume.model_validate(fixture)
+    data = inspect_resume(resume, _report(["Python", "Kafka"], ["Python"]))
+
+    assert data["keywords"] == ["Kafka"]
+    impact_texts = [b.text for b in data["impact"]]
+    verb_texts = [b.text for b in data["verbs"]]
+    assert any("Responsible for" in t for t in impact_texts)  # no number → impact
+    assert any("Responsible for" in t for t in verb_texts)  # weak opener → verbs
+    assert all("Cut build times" not in t for t in impact_texts)  # quantified → clean
+    assert all(b.id and b.where for b in data["impact"])  # locatable
