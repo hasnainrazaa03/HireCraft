@@ -364,14 +364,21 @@ def draft_cover_letter(
     tone: str | None = None,
     voice: VoiceProfile | None = None,
     evidence: list[str] | None = None,
+    feedback: str | None = None,
+    previous: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> list[str]:
-    """Optional stage: draft cover letter paragraphs, vetted like everything else."""
+    """Optional stage: draft cover letter paragraphs, vetted like everything else.
+
+    Pass ``feedback`` (+ the ``previous`` paragraphs) to revise an existing letter
+    per the candidate's request instead of drafting from scratch.
+    """
     client = client or get_client()
     result: LlmResult[CoverLetterDraft] = client.generate_structured(
         prompt=build_cover_letter_prompt(
-            resume, requirements, job_text, tone=tone, voice=voice, evidence=evidence
+            resume, requirements, job_text, tone=tone, voice=voice,
+            evidence=evidence, feedback=feedback, previous=previous,
         ),
         schema=CoverLetterDraft,
         system_instruction=COVER_LETTER_SYSTEM,

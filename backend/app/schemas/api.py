@@ -376,10 +376,19 @@ class ApplicationDetail(ApiModel):
     total_output_tokens: int
     total_cost_usd: float
     cost_breakdown: dict[str, Any] = Field(default_factory=dict)
+    cover_letter: list[str] | None = None
     created_at: datetime
     updated_at: datetime
     job: JobResponse | None = None
     artifacts: list[ArtifactResponse] = Field(default_factory=list)
+
+
+class CoverLetterRequest(ApiModel):
+    """Generate or revise the cover letter. `feedback` triggers a grounded revision
+    of the existing letter; `tone` optionally re-keys the register."""
+
+    feedback: Annotated[str, Field(min_length=2, max_length=600)] | None = None
+    tone: str | None = None
 
 
 class AssistantReviseRequest(ApiModel):

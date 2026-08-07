@@ -482,6 +482,8 @@ def build_cover_letter_prompt(
     tone: str | None = None,
     voice: VoiceProfile | None = None,
     evidence: list[str] | None = None,
+    feedback: str | None = None,
+    previous: list[str] | None = None,
     max_job_chars: int = 3500,
 ) -> str:
     highlights = [
@@ -503,9 +505,30 @@ def build_cover_letter_prompt(
             "cite any of them):\n" + bullets + "\n"
         )
 
+    # Revision mode: the candidate is giving feedback on an existing draft. Show
+    # the current letter and their request; keep everything else truthful.
+    revision_block = ""
+    if feedback and previous:
+        current = "\n\n".join(previous)
+        revision_block = (
+            "\n=== REVISE THE EXISTING LETTER ===\n"
+            "This is a revision, not a fresh draft. Here is the current cover letter:\n"
+            f"\"\"\"\n{current[:4000]}\n\"\"\"\n\n"
+            "Apply this feedback from the candidate, changing only what it asks for "
+            "and leaving the rest intact where possible:\n"
+            f"→ {feedback.strip()[:600]}\n"
+            "Still obey every truthfulness rule — never add a claim the résumé or "
+            "attested evidence doesn't support.\n"
+        )
+    elif feedback:
+        revision_block = (
+            "\n=== CANDIDATE REQUEST ===\n"
+            f"Incorporate this while drafting (stay truthful): {feedback.strip()[:600]}\n"
+        )
+
     return f"""\
 Write a cover letter for this candidate.
-
+{revision_block}
 === TONE ===
 {tone_line}
 {_voice_block(voice)}

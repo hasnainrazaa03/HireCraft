@@ -40,7 +40,7 @@ const ACTIVE = new Set([
   "rendering",
 ]);
 
-type Tab = "overview" | "documents" | "activity" | "notes" | "emails" | "analytics";
+type Tab = "overview" | "documents" | "cover_letter" | "activity" | "notes" | "emails" | "analytics";
 type DocTab = "diff" | "match" | "guardrails" | "requirements" | "preview";
 
 export default function ApplicationPage() {
@@ -51,6 +51,13 @@ export default function ApplicationPage() {
   const [docTab, setDocTab] = useState<DocTab>("diff");
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // "Improve with AI" from the quality card lands a grounded rewrite in the
+  // résumé assistant, which lives on the Résumé tab — so route there and prefill.
+  const [assist, setAssist] = useState<{ instruction: string; nonce: number }>({ instruction: "", nonce: 0 });
+  const routeToAssistant = (instruction: string) => {
+    setTab("documents");
+    setAssist((p) => ({ instruction, nonce: p.nonce + 1 }));
+  };
 
   // A rejected download would otherwise be an unhandled promise rejection: the
   // button appears to do nothing and the user has no idea why.
@@ -293,7 +300,8 @@ export default function ApplicationPage() {
             {(
               [
                 ["overview", "Overview"],
-                ["documents", "Résumé & Documents"],
+                ["documents", "Résumé"],
+                ["cover_letter", "Cover Letter"],
                 ["activity", "Activity"],
                 ["notes", "Notes"],
                 ["emails", "Emails"],
@@ -325,6 +333,8 @@ export default function ApplicationPage() {
                 if (dt) setDocTab(dt);
               }}
               onOpenNotes={() => setTab("notes")}
+              onOpenCoverLetter={() => setTab("cover_letter")}
+              onSuggest={routeToAssistant}
               onTailorAgain={() =>
                 navigate("/new", { state: application.job?.url ? { url: application.job.url } : {} })
               }
@@ -393,7 +403,12 @@ export default function ApplicationPage() {
                 {docTab === "preview" && <ResumePreview id={id!} />}
               </div>
               {application.scorecard && <ScorecardPanel card={application.scorecard} />}
+              <AIAssistantCard applicationId={id!} prefill={assist} />
             </div>
+          )}
+
+          {tab === "cover_letter" && (
+            <CoverLetterTab application={application} download={(kind, name) => void download(kind, name)} />
           )}
 
           {tab === "activity" && <ActivityView application={application} />}
@@ -585,7 +600,7 @@ function GuardrailView({
 /** Inline PDF of a stored application artifact (résumé / cover letter), fetched
  *  as an authed blob and shown fit-to-width with viewer chrome hidden. Fills its
  *  container; the caller sizes and frames it. */
-function PdfBlobFrame({ id, kind, title }: { id: string; kind: string; title: string }) {
+function PdfBlobFrame({ id, kind, title, refreshKey = 0 }: { id: string; kind: string; title: string; refreshKey?: number }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -607,7 +622,7 @@ function PdfBlobFrame({ id, kind, title }: { id: string; kind: string; title: st
       cancelled = true;
       if (obj) URL.revokeObjectURL(obj);
     };
-  }, [id, kind]);
+  }, [id, kind, refreshKey]);
 
   if (error)
     return <div className="flex h-full items-center justify-center text-sm text-danger">Couldn't render this document.</div>;
@@ -625,47 +640,133 @@ function ResumePreview({ id }: { id: string }) {
   );
 }
 
-/** Lightbox to read the cover letter inline, with a Download shortcut. */
-function CoverLetterModal({ id, onClose, onDownload }: { id: string; onClose: () => void; onDownload: () => void }) {
-  const shown = useMountReveal();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+const COVER_FEEDBACK_CHIPS = [
+  "Make it more concise",
+  "Sound more enthusiastic",
+  "More formal tone",
+  "Emphasize my impact",
+  "Less generic — make it specific to this role",
+];
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${shown ? "opacity-100" : "opacity-0"}`}
-        onClick={onClose}
-      />
-      <div
-        className={`relative z-10 flex h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl transition-all duration-200 ${shown ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}
-      >
-        <header className="flex items-center gap-3 border-b border-white/10 p-4">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-electric/15 text-electric">
-            <IconLetter className="h-4 w-4" />
-          </span>
-          <h3 className="flex-1 text-base font-semibold">Cover Letter</h3>
-          <button onClick={onDownload} className="btn-secondary btn-sm shrink-0">Download</button>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-subtle transition hover:bg-white/5 hover:text-content" aria-label="Close">
-            <IconClose className="h-5 w-5" />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 bg-white">
-          <PdfBlobFrame id={id} kind="cover_letter_pdf" title="Cover letter" />
+/** Cover Letter workspace: live PDF preview + a feedback chat that regenerates
+ *  the letter, grounded to the résumé. */
+function CoverLetterTab({ application, download }: { application: ApplicationDetail; download: (kind: string, name: string) => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const id = application.id;
+  const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const gen = useMutation({
+    mutationFn: (body: { feedback?: string; tone?: string }) =>
+      api.post<ApplicationDetail>(`/applications/${id}/cover-letter`, body),
+    onSuccess: (_d, body) => {
+      qc.invalidateQueries({ queryKey: ["application", id] });
+      setRefreshKey((k) => k + 1);
+      if (body.feedback) setMessages((m) => [...m, { role: "assistant", content: "✓ Updated the letter to your feedback — the preview just refreshed." }]);
+      toast.success(body.feedback ? "Cover letter updated" : "Cover letter generated");
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiError ? e.message : "Something went wrong. Try again.";
+      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${msg}` }]);
+      toast.error("Couldn't update the cover letter", msg);
+    },
+  });
+
+  useEffect(() => {
+    if (messages.length) endRef.current?.scrollIntoView({ block: "nearest" });
+  }, [messages, gen.isPending]);
+
+  function send(text: string) {
+    const f = text.trim();
+    if (!f || gen.isPending) return;
+    setMessages((m) => [...m, { role: "user", content: f }]);
+    setInput("");
+    gen.mutate({ feedback: f });
+  }
+
+  if (!hasCover) {
+    return (
+      <div className="mt-6 card grid place-items-center p-12 text-center">
+        <span className="grid h-12 w-12 place-items-center rounded-xl bg-electric/15 text-electric">
+          <IconLetter className="h-6 w-6" />
+        </span>
+        <h2 className="mt-4 text-lg font-semibold">No cover letter yet</h2>
+        <p className="mt-1 max-w-sm text-sm text-subtle">
+          Generate a cover letter grounded in your tailored résumé, then refine it with feedback right here.
+        </p>
+        <button onClick={() => gen.mutate({})} disabled={gen.isPending} className="btn-primary mt-5 disabled:opacity-50">
+          {gen.isPending ? <><Spinner className="h-4 w-4" /> Drafting…</> : <><IconSparkles className="h-4 w-4" /> Generate cover letter</>}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-stretch">
+      <div className="card flex flex-col p-3">
+        <div className="flex items-center justify-between px-2 pb-2 pt-1">
+          <h2 className="text-sm font-semibold">Cover letter preview</h2>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => gen.mutate({})} disabled={gen.isPending} className="btn-ghost btn-sm text-subtle hover:text-content disabled:opacity-40" title="Regenerate from scratch">
+              <IconRefresh className="h-3.5 w-3.5" /> Regenerate
+            </button>
+            <button onClick={() => download("cover_letter_pdf", "cover_letter.pdf")} className="btn-secondary btn-sm">Download</button>
+          </div>
+        </div>
+        <div className="relative min-h-[70vh] flex-1 overflow-hidden rounded-lg bg-white">
+          <PdfBlobFrame id={id} kind="cover_letter_pdf" title="Cover letter" refreshKey={refreshKey} />
+          {gen.isPending && (
+            <div className="absolute inset-0 grid place-items-center bg-black/40 backdrop-blur-sm">
+              <div className="flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-sm text-content shadow-lg">
+                <Spinner className="h-4 w-4" /> Rewriting your letter…
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>,
-    document.body,
+
+      <div className="card flex flex-col p-5">
+        <div className="flex items-center gap-2">
+          <IconSparkles className="h-5 w-5 text-electric" />
+          <h2 className="text-base font-semibold">Refine with feedback</h2>
+          <span className="badge-emerald text-[10px]">Grounded</span>
+        </div>
+        <p className="mt-0.5 text-xs text-subtle">Tell it what to change — it rewrites the letter, still only using facts from your résumé.</p>
+
+        <div className="mt-3 min-h-[16rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
+          {messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 py-4 text-center">
+              <p className="max-w-xs text-sm text-subtle">Not loving a paragraph? Ask for a change and watch the preview update.</p>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {COVER_FEEDBACK_CHIPS.map((s) => (
+                  <button key={s} onClick={() => send(s)} className="rounded-full border border-white/[0.1] bg-surface px-3 py-1 text-xs text-muted transition hover:text-content">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((m, i) => <ChatBubble key={i} msg={{ role: m.role, content: m.content }} />)
+          )}
+          {gen.isPending && (
+            <div className="flex items-center gap-2 text-xs text-subtle"><Spinner className="h-3.5 w-3.5" /> Rewriting…</div>
+          )}
+          <div ref={endRef} />
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="mt-2 flex gap-2">
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="e.g. Shorten the intro and lead with my ML work" className="input flex-1" />
+          <button type="submit" disabled={gen.isPending || !input.trim()} className="btn-primary shrink-0 disabled:opacity-40" title="Send feedback">
+            <IconArrowRight className="h-4 w-4" />
+          </button>
+        </form>
+        <p className="mt-1.5 text-[11px] text-subtle">Each message regenerates the letter and refreshes the preview. Guardrails still block anything unsupported.</p>
+      </div>
+    </div>
   );
 }
 
@@ -1852,6 +1953,8 @@ function OverviewTab({
   download,
   onOpenDocs,
   onOpenNotes,
+  onOpenCoverLetter,
+  onSuggest,
   onTailorAgain,
   onRegenerate,
 }: {
@@ -1861,6 +1964,8 @@ function OverviewTab({
   download: (kind: string, name: string) => void;
   onOpenDocs: (docTab?: DocTab) => void;
   onOpenNotes: () => void;
+  onOpenCoverLetter: () => void;
+  onSuggest: (instruction: string) => void;
   onTailorAgain: () => void;
   onRegenerate: () => void;
 }) {
@@ -1868,9 +1973,6 @@ function OverviewTab({
   const toast = useToast();
   const navigate = useNavigate();
   const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
-  const [assist, setAssist] = useState<{ instruction: string; nonce: number }>({ instruction: "", nonce: 0 });
-  const [coverPreview, setCoverPreview] = useState(false);
-  const handleSuggest = (instruction: string) => setAssist((p) => ({ instruction, nonce: p.nonce + 1 }));
 
   const coverLetter = useMutation({
     mutationFn: () => api.post<ApplicationDetail>(`/applications/${application.id}/cover-letter`, {}),
@@ -1920,9 +2022,9 @@ function OverviewTab({
               icon={<IconLetter className="h-4 w-4" />} tint="bg-electric/15 text-electric"
               title="Cover Letter"
               subtitle={coverLetter.isPending ? "Drafting…" : hasCover ? `Updated ${fmtDate(application.updated_at)}` : "Not generated yet"}
-              action={coverLetter.isPending ? "…" : hasCover ? "View" : "Generate"}
+              action={coverLetter.isPending ? "…" : hasCover ? "Open" : "Generate"}
               disabled={coverLetter.isPending}
-              onAction={() => (hasCover ? setCoverPreview(true) : coverLetter.mutate())}
+              onAction={() => (hasCover ? onOpenCoverLetter() : coverLetter.mutate())}
               secondary={hasCover && !coverLetter.isPending ? { label: "Download", onClick: () => download("cover_letter_pdf", "cover_letter.pdf") } : undefined}
             />
             <DocCard
@@ -1943,9 +2045,8 @@ function OverviewTab({
           </div>
         </div>
         {application.scorecard && (
-          <QualityCard card={application.scorecard} onSuggest={handleSuggest} applicationId={application.id} />
+          <QualityCard card={application.scorecard} onSuggest={onSuggest} applicationId={application.id} />
         )}
-        <AIAssistantCard applicationId={application.id} prefill={assist} />
       </div>
 
       <div className="space-y-5">
@@ -1954,14 +2055,6 @@ function OverviewTab({
         <NotesCard application={application} onSave={onSaveNotes} />
         <JobDetailsCard job={application.job} />
       </div>
-
-      {coverPreview && (
-        <CoverLetterModal
-          id={application.id}
-          onClose={() => setCoverPreview(false)}
-          onDownload={() => download("cover_letter_pdf", "cover_letter.pdf")}
-        />
-      )}
     </div>
   );
 }

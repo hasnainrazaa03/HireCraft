@@ -120,6 +120,9 @@ class Application(Base, TimestampMixin):
     guardrail_report: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
 
     include_cover_letter: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # The current cover letter body as an ordered list of paragraphs. Persisted so
+    # the Cover Letter tab can render it and feed it back for feedback-driven edits.
+    cover_letter: Mapped[list[str] | None] = mapped_column(JsonB)
     notes: Mapped[str | None] = mapped_column(Text)
     # Tracker v2: a scheduled interview and an optional follow-up reminder.
     interview_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -685,6 +685,7 @@ export interface ApplicationDetail {
   diff: DiffEntry[] | null;
   guardrail_report: GuardrailReport | null;
   scorecard: Scorecard | null;
+  cover_letter: string[] | null;
   total_input_tokens: number;
   total_output_tokens: number;
   total_cost_usd: number;

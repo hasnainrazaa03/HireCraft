@@ -34,6 +34,7 @@ from app.schemas.api import (
     AssistantApplyRequest,
     AssistantProposal,
     AssistantReviseRequest,
+    CoverLetterRequest,
     OutreachDraftResponse,
     OutreachRequest,
     QualityBullet,
@@ -733,9 +734,9 @@ def assistant_apply(
 
 @router.post("/{application_id}/cover-letter", response_model=ApplicationDetail)
 def generate_cover_letter(
-    application_id: uuid.UUID, user: GenerationUser, db: DbSession
+    application_id: uuid.UUID, payload: CoverLetterRequest, user: GenerationUser, db: DbSession
 ) -> ApplicationDetail:
-    """Draft (or redraft) a grounded cover letter for this application and store it."""
+    """Draft, redraft, or revise-from-feedback a grounded cover letter and store it."""
     application = _get_owned(db, user.id, application_id)
     if not application.tailored_resume:
         raise HTTPException(
@@ -758,7 +759,11 @@ def generate_cover_letter(
     ledger = UsageLedger()
     try:
         paragraphs = draft_cover_letter(
-            resume, requirements, job_text, evidence=evidence, client=client, ledger=ledger
+            resume, requirements, job_text,
+            tone=payload.tone,
+            feedback=payload.feedback,
+            previous=application.cover_letter if payload.feedback else None,
+            evidence=evidence, client=client, ledger=ledger,
         )
     except LlmError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The AI service is unavailable right now: {exc}") from exc
@@ -781,6 +786,7 @@ def generate_cover_letter(
 
     _write_artifact(db, application, user.id, ArtifactKind.COVER_LETTER_PDF, "cover_letter.pdf", compiled.pdf_bytes, "application/pdf")
     _write_artifact(db, application, user.id, ArtifactKind.COVER_LETTER_TEX, "cover_letter.tex", tex.encode("utf-8"), "application/x-tex")
+    application.cover_letter = paragraphs
     application.include_cover_letter = True
     _charge(db, user.id, application, ledger)
     db.commit()
