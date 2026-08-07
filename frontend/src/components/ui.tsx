@@ -2,7 +2,7 @@
  * Small, reusable presentational primitives shared across pages. Behavioral
  * pieces (theme, toast) live in lib/; these are pure UI.
  */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 
 // -- Spinner ------------------------------------------------------------------
 
@@ -147,6 +147,50 @@ export function Modal({
 
 // -- Stat card ----------------------------------------------------------------
 
+const STAT_TONE: Record<string, { tile: string; hex: string }> = {
+  brand: { tile: "bg-brand-500/15 text-brand-300", hex: "#7C4DFF" },
+  blue: { tile: "bg-electric/15 text-electric", hex: "#4CC9F0" },
+  pink: { tile: "bg-hotpink/15 text-hotpink", hex: "#FF4FD8" },
+  emerald: { tile: "bg-emerald/15 text-emerald", hex: "#2DD4BF" },
+  coral: { tile: "bg-coral/15 text-coral", hex: "#FF9F43" },
+};
+
+// An upward-trending wiggle over a 120×44 box (y grows downward).
+const SPARK_PATH =
+  "M0,34 C8,32 12,26 20,28 C28,30 32,20 40,22 C48,24 52,14 62,16 C72,18 78,10 88,12 C98,14 104,4 118,6";
+
+/** A live, glowing trend line — draws in on mount, endpoint pulses. Decorative. */
+function Sparkline({ hex }: { hex: string }) {
+  const id = useId().replace(/:/g, "");
+  return (
+    <svg
+      className="pointer-events-none absolute bottom-3 right-0 h-12 w-[56%]"
+      viewBox="0 0 120 44"
+      preserveAspectRatio="none"
+      fill="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`fill${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={hex} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={hex} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${SPARK_PATH} L118,44 L0,44 Z`} fill={`url(#fill${id})`} />
+      <path
+        d={SPARK_PATH}
+        stroke={hex}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="spark-line"
+        style={{ strokeDasharray: 320, strokeDashoffset: 320, filter: `drop-shadow(0 0 4px ${hex}aa)` }}
+      />
+      <circle cx="118" cy="6" r="2.6" fill={hex} className="spark-dot" style={{ filter: `drop-shadow(0 0 5px ${hex})` }} />
+    </svg>
+  );
+}
+
 export function StatCard({
   label,
   value,
@@ -160,35 +204,32 @@ export function StatCard({
   trend?: { value: string; positive?: boolean };
   tone?: "brand" | "blue" | "pink" | "emerald" | "coral";
 }) {
-  const toneRing: Record<string, string> = {
-    brand: "bg-brand-500/12 text-brand-300",
-    blue: "bg-electric/12 text-electric",
-    pink: "bg-hotpink/12 text-hotpink",
-    emerald: "bg-emerald/12 text-emerald",
-    coral: "bg-coral/12 text-coral",
-  };
+  const t = STAT_TONE[tone];
   return (
-    <div className="card card-hover p-5">
-      <div className="flex items-start justify-between">
+    <div className="card card-hover relative overflow-hidden p-5">
+      {/* ambient tone glow */}
+      <div
+        className="pointer-events-none absolute -right-8 -top-12 h-36 w-36 rounded-full opacity-50 blur-2xl"
+        style={{ background: `radial-gradient(circle, ${t.hex}40, transparent 68%)` }}
+      />
+      <div className="relative flex items-start justify-between">
         {icon && (
-          <div className={`grid h-11 w-11 place-items-center rounded-xl ${toneRing[tone]}`}>
+          <div
+            className={`grid h-12 w-12 place-items-center rounded-2xl ring-1 ring-inset ring-white/10 ${t.tile}`}
+            style={{ boxShadow: `0 0 22px -8px ${t.hex}` }}
+          >
             {icon}
           </div>
         )}
         {trend && (
-          <span
-            className={`text-xs font-medium ${
-              trend.positive === false ? "text-danger" : "text-emerald"
-            }`}
-          >
+          <span className={`text-xs font-medium ${trend.positive === false ? "text-danger" : "text-emerald"}`}>
             {trend.value}
           </span>
         )}
       </div>
-      <div className="mt-4 text-2xl font-semibold tabular-nums text-content">
-        {value}
-      </div>
-      <div className="mt-0.5 text-sm text-muted">{label}</div>
+      <div className="relative mt-5 text-3xl font-bold tabular-nums text-content">{value}</div>
+      <div className="relative mt-0.5 text-sm text-muted">{label}</div>
+      <Sparkline hex={t.hex} />
     </div>
   );
 }

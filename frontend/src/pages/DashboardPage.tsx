@@ -139,25 +139,25 @@ export default function DashboardPage() {
             <StatCard
               label="Total applications"
               value={String(applications.length)}
-              icon={<IconApplications className="h-5 w-5" />}
+              icon={<IconApplications className="h-6 w-6" />}
               tone="brand"
             />
             <StatCard
               label="In progress"
               value={String(active)}
-              icon={<IconSparkles className="h-5 w-5" />}
+              icon={<IconSparkles className="h-6 w-6" />}
               tone="coral"
             />
             <StatCard
               label="Interviewing"
               value={String(interviews)}
-              icon={<IconChart className="h-5 w-5" />}
+              icon={<IconChart className="h-6 w-6" />}
               tone="pink"
             />
             <StatCard
               label="Offers"
               value={String(offers)}
-              icon={<IconShield className="h-5 w-5" />}
+              icon={<IconShield className="h-6 w-6" />}
               tone="emerald"
               trend={offers > 0 ? { value: "🎉", positive: true } : undefined}
             />
