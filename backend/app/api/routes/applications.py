@@ -35,6 +35,7 @@ from app.schemas.api import (
     AssistantProposal,
     AssistantReviseRequest,
     CoverLetterRequest,
+    JobSignalsResponse,
     OutreachDraftResponse,
     OutreachRequest,
     QualityBullet,
@@ -53,6 +54,7 @@ from app.schemas.tailoring import (
 )
 from app.services import storage
 from app.services.evidence import evidence_lines
+from app.services.job_signals import analyze_job
 from app.services.latex.compiler import LatexCompilationError, compile_latex
 from app.services.latex.renderer import render_and_fit, render_cover_letter
 from app.services.latex.templates import resolve_filename
@@ -195,6 +197,12 @@ def create_application(
 def _to_detail(application: Application) -> ApplicationDetail:
     detail = ApplicationDetail.model_validate(application)
     detail.scorecard = _scorecard_for(application)
+    if application.job:
+        sig = analyze_job(application.job.title, application.job.location, application.job.raw_text)
+        detail.job_signals = JobSignalsResponse(
+            red_flags=sig.red_flags, geo_mismatch=sig.geo_mismatch,
+            injection=sig.injection, thin=sig.thin, word_count=sig.word_count,
+        )
     # Drop the employer's own name from the keyword lists the UI reads, so the
     # header "Keyword match" and the ATS panel agree with the scorecard.
     if detail.guardrail_report:

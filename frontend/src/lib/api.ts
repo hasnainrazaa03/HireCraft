@@ -658,6 +658,14 @@ export interface Scorecard {
   suggestions: ScorecardSuggestion[];
 }
 
+export interface JobSignals {
+  red_flags: string[];
+  geo_mismatch: string | null;
+  injection: string[];
+  thin: boolean;
+  word_count: number;
+}
+
 export interface QualityBullet {
   id: string;
   where: string;
@@ -685,6 +693,7 @@ export interface ApplicationDetail {
   diff: DiffEntry[] | null;
   guardrail_report: GuardrailReport | null;
   scorecard: Scorecard | null;
+  job_signals: JobSignals | null;
   cover_letter: string[] | null;
   total_input_tokens: number;
   total_output_tokens: number;

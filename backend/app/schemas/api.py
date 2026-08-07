@@ -261,6 +261,16 @@ class JobResponse(ApiModel):
     created_at: datetime
 
 
+class JobSignalsResponse(ApiModel):
+    """Deterministic pre-application read on the posting (red flags, etc.)."""
+
+    red_flags: list[str] = Field(default_factory=list)
+    geo_mismatch: str | None = None
+    injection: list[str] = Field(default_factory=list)
+    thin: bool = False
+    word_count: int = 0
+
+
 # --- Applications -----------------------------------------------------------
 
 
@@ -372,6 +382,7 @@ class ApplicationDetail(ApiModel):
     diff: list[dict[str, Any]] | None
     guardrail_report: dict[str, Any] | None
     scorecard: Scorecard | None = None
+    job_signals: JobSignalsResponse | None = None
     total_input_tokens: int
     total_output_tokens: int
     total_cost_usd: float

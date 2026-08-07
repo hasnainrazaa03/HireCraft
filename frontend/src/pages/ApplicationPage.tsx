@@ -18,6 +18,7 @@ import {
   type JobMatch,
   type Scorecard,
   type ScorecardSuggestion,
+  type JobSignals,
   type QualityInspect,
   type CopilotResponse,
   type DiffEntry,
@@ -1668,6 +1669,51 @@ function NotesCard({ application, onSave, bare }: { application: ApplicationDeta
   return bare ? <div>{inner}</div> : <div className="card p-5">{inner}</div>;
 }
 
+/** Deterministic pre-application read on the posting — red flags, remote-vs-onsite
+ *  mismatch, prompt-injection attempts, thin JD. Only renders when there's signal. */
+function JobSignalsCard({ signals }: { signals: JobSignals }) {
+  const has = signals.injection.length > 0 || !!signals.geo_mismatch || signals.red_flags.length > 0 || signals.thin;
+  if (!has) return null;
+  return (
+    <div className="card p-5">
+      <h2 className="flex items-center gap-2 text-base font-semibold">
+        <IconBriefcase className="h-4 w-4 text-coral" /> Job signals
+      </h2>
+      <p className="mt-0.5 text-xs text-subtle">A quick read on this posting before you invest in it.</p>
+      <div className="mt-3 space-y-2 text-sm">
+        {signals.injection.length > 0 && (
+          <div className="rounded-lg border border-danger/30 bg-danger/10 p-2.5 text-xs text-danger">
+            <span className="font-semibold">Caution:</span> this posting contains text aimed at manipulating AI screeners
+            (“{signals.injection[0]}…”). HireCraft treats the JD as data, never instructions — but review it yourself.
+          </div>
+        )}
+        {signals.geo_mismatch && (
+          <div className="flex items-start gap-2 rounded-lg border border-coral/25 bg-coral/[0.08] p-2.5 text-xs text-coral">
+            <span>Listed as <span className="font-medium">remote</span>, but the description mentions <span className="font-medium">“{signals.geo_mismatch}”</span> — confirm the real location.</span>
+          </div>
+        )}
+        {signals.red_flags.length > 0 && (
+          <div className="rounded-lg border border-white/[0.08] bg-surface-2/60 p-2.5">
+            <div className="text-[11px] uppercase tracking-wide text-subtle">Worth a closer look</div>
+            <ul className="mt-1.5 space-y-1">
+              {signals.red_flags.map((f) => (
+                <li key={f} className="flex items-start gap-1.5 text-xs text-content">
+                  <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-coral" /> {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {signals.thin && (
+          <div className="rounded-lg border border-white/[0.08] bg-surface-2/60 p-2.5 text-xs text-subtle">
+            Only {signals.word_count} words were read from this posting — keyword coverage and the score may be incomplete. Paste the full description to improve them.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Job details panel. */
 function JobDetailsCard({ job }: { job: ApplicationDetail["job"] }) {
   const req = (job?.requirements ?? {}) as Record<string, unknown>;
@@ -2055,6 +2101,7 @@ function OverviewTab({
 
       <div className="space-y-5">
         <WorkflowCard application={application} onUpdate={onUpdate} />
+        {application.job_signals && <JobSignalsCard signals={application.job_signals} />}
         <QuickActions items={quick} />
         <NotesCard application={application} onSave={onSaveNotes} />
         <JobDetailsCard job={application.job} />
