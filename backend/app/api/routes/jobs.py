@@ -56,6 +56,8 @@ def job_search(
     db: DbSession,
     q: str | None = Query(default=None, max_length=200),
     remote_only: bool = False,
+    exclude: str | None = Query(default=None, max_length=200, description="Comma-separated title keywords to drop"),
+    must_have: str | None = Query(default=None, max_length=200, description="Comma-separated terms a posting must contain"),
     limit: int = Query(default=20, ge=1, le=50),
 ) -> list[JobSearchResult]:
     """Search recent public job postings, scored against the user's default
@@ -86,13 +88,21 @@ def job_search(
     if recommending:
         effective_q = _recommend_query(db, user.id, resume, remote_only)
 
-    results = search_jobs(effective_q, remote_only=remote_only, limit=limit)
+    exclude_terms = [t for t in (exclude or "").split(",") if t.strip()]
+    must_terms = [t for t in (must_have or "").split(",") if t.strip()]
+    results = search_jobs(
+        effective_q, remote_only=remote_only,
+        exclude=exclude_terms, must_have=must_terms, limit=limit,
+    )
     # A seed can still be too specific for the boards to match; never strand the
     # recommended feed on an empty state — broaden to the recent pool and let the
     # fit-ranking below surface the relevant roles.
     if recommending and len(results) < 5:
         effective_q = None
-        results = search_jobs(None, remote_only=remote_only, limit=limit)
+        results = search_jobs(
+            None, remote_only=remote_only,
+            exclude=exclude_terms, must_have=must_terms, limit=limit,
+        )
 
     if resume is not None and results:
         precise = _score(resume, results)

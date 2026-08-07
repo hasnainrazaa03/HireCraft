@@ -368,10 +368,19 @@ def search_jobs(
     query: str | None = None,
     *,
     remote_only: bool = False,
+    exclude: list[str] | None = None,
+    must_have: list[str] | None = None,
     limit: int = 30,
     sources: list[str] | None = None,
 ) -> list[JobSearchResult]:
-    """Aggregate + filter recent postings across all enabled sources."""
+    """Aggregate + filter recent postings across all enabled sources.
+
+    ``exclude`` drops postings whose title/company contains any of the terms
+    (e.g. "senior", "sales"); ``must_have`` keeps only postings whose
+    title/snippet/tags contain every term (e.g. "python", "remote").
+    """
+    exclude_terms = [t.strip().lower() for t in (exclude or []) if t.strip()]
+    must_terms = [t.strip().lower() for t in (must_have or []) if t.strip()]
     enabled = sources or [s.strip() for s in settings.job_sources.split(",") if s.strip()]
     fns = [(_SOURCES[s]) for s in enabled if s in _SOURCES]
 
@@ -391,6 +400,13 @@ def search_jobs(
     for j in raw:
         if remote_only and not j.get("remote"):
             continue
+        title_co = f"{j.get('title', '')} {j.get('company', '')}".lower()
+        if exclude_terms and any(t in title_co for t in exclude_terms):
+            continue
+        if must_terms:
+            body = f"{title_co} {j.get('snippet', '')} {' '.join(j.get('tags', []))}".lower()
+            if not all(t in body for t in must_terms):
+                continue
         if q:
             hay = f"{j.get('title', '')} {j.get('company', '')} {' '.join(j.get('tags', []))}".lower()
             # Match the whole phrase (precise) or every significant token, so a

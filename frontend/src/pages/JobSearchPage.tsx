@@ -59,15 +59,20 @@ export default function JobSearchPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [remoteOnly, setRemoteOnly] = useState(false);
+  const [exclude, setExclude] = useState("");
+  const [mustHave, setMustHave] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [sort, setSort] = useState<Sort>("match");
   const [saved, setSaved] = useState<Set<string>>(loadSaved);
   const [modal, setModal] = useState<JobSearchResult | null>(null);
 
   const { data: jobs, isLoading, isFetching } = useQuery({
-    queryKey: ["job-search", query, remoteOnly],
+    queryKey: ["job-search", query, remoteOnly, exclude, mustHave],
     queryFn: () =>
       api.get<JobSearchResult[]>(
-        `/jobs/search?limit=30${query ? `&q=${encodeURIComponent(query)}` : ""}${remoteOnly ? "&remote_only=true" : ""}`,
+        `/jobs/search?limit=30${query ? `&q=${encodeURIComponent(query)}` : ""}${remoteOnly ? "&remote_only=true" : ""}` +
+          `${exclude.trim() ? `&exclude=${encodeURIComponent(exclude.trim())}` : ""}` +
+          `${mustHave.trim() ? `&must_have=${encodeURIComponent(mustHave.trim())}` : ""}`,
       ),
     // Keep the current results on screen while a new search loads, instead of
     // blanking the whole grid to a spinner on every keystroke-search.
@@ -121,11 +126,26 @@ export default function JobSearchPage() {
         </form>
         <div className="flex flex-wrap items-center gap-2">
           <FilterPill active={remoteOnly} onClick={() => setRemoteOnly((v) => !v)}>Remote only</FilterPill>
+          <FilterPill active={showFilters || !!(exclude || mustHave)} onClick={() => setShowFilters((v) => !v)}>
+            Filters{exclude || mustHave ? " •" : ""}
+          </FilterPill>
           <div className="mx-1 h-5 w-px bg-white/[0.08]" />
           <span className="text-xs text-subtle">Sort</span>
           <FilterPill active={sort === "match"} onClick={() => setSort("match")}>Best match</FilterPill>
           <FilterPill active={sort === "newest"} onClick={() => setSort("newest")}>Newest</FilterPill>
         </div>
+        {showFilters && (
+          <div className="grid gap-3 rounded-xl border border-white/[0.08] bg-surface-2/50 p-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="label">Must include <span className="text-subtle">(comma-separated)</span></span>
+              <input className="input mt-1" placeholder="e.g. python, remote" value={mustHave} onChange={(e) => setMustHave(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="label">Exclude from title <span className="text-subtle">(comma-separated)</span></span>
+              <input className="input mt-1" placeholder="e.g. senior, staff, sales" value={exclude} onChange={(e) => setExclude(e.target.value)} />
+            </label>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
