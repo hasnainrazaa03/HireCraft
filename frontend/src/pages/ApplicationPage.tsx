@@ -697,7 +697,16 @@ function fmtDate(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** Vertical workflow stepper (matches the workspace design). */
+function IconCheck({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 12 5 5L20 6" />
+    </svg>
+  );
+}
+
+/** Vertical workflow stepper — a live timeline with done / current / upcoming
+ *  states, a filling rail, and one-click stage marking. */
 function WorkflowCard({
   application,
   onUpdate,
@@ -708,51 +717,80 @@ function WorkflowCard({
   const status = application.tracker_status;
   const closed = TERMINAL_NEG.has(status);
   const reached = FUNNEL_POS[status] ?? -1;
+  const pct = closed || reached < 0 ? 0 : Math.round(((reached + 1) / FUNNEL.length) * 100);
 
   return (
     <div className="card p-5">
-      <h2 className="text-base font-semibold">Application workflow</h2>
-      <p className="mt-0.5 text-xs text-subtle">Track your progress through each stage.</p>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Application workflow</h2>
+        <span className={`badge ${TRACKER_STYLES[status]} text-[11px]`}>{trackerLabel(status)}</span>
+      </div>
+      <p className="mt-0.5 text-xs text-subtle">
+        {closed
+          ? "This application is closed."
+          : reached < 0
+            ? "Not applied yet — mark a stage as you go."
+            : `${pct}% through the pipeline.`}
+      </p>
 
-      <ol className="mt-4">
+      <ol className={`mt-4 ${closed ? "opacity-60" : ""}`}>
         {FUNNEL.map((stage, i) => {
           const done = !closed && reached > i;
           const current = !closed && reached === i;
-          const sub = done
-            ? i === 0
-              ? fmtDate(application.created_at)
-              : "Completed"
-            : current
-              ? "In progress"
-              : "Pending";
+          const next = !closed && reached < 0 && i === 0;
+          const isLast = i === FUNNEL.length - 1;
           return (
-            <li key={stage.key} className="relative flex gap-3 pb-4 last:pb-0">
-              {i < FUNNEL.length - 1 && (
-                <span className={`absolute left-[11px] top-6 h-full w-px ${done ? "bg-emerald/40" : "bg-white/[0.09]"}`} />
+            <li key={stage.key} className="relative flex gap-3.5 pb-5 last:pb-0">
+              {!isLast && (
+                <span
+                  className={`absolute left-[13px] top-7 h-full w-0.5 rounded-full ${
+                    done ? "bg-gradient-to-b from-emerald to-emerald/25" : "bg-white/[0.07]"
+                  }`}
+                />
               )}
               <button
                 type="button"
                 onClick={() => onUpdate({ tracker_status: stage.key })}
                 title={`Mark as ${stage.label}`}
-                className="relative z-10 mt-0.5 shrink-0"
+                className="relative z-10 shrink-0"
               >
                 <span
-                  className={`grid h-6 w-6 place-items-center rounded-full border text-[11px] transition ${
+                  className={`grid h-7 w-7 place-items-center rounded-full border-2 transition ${
                     done
-                      ? "border-emerald/50 bg-emerald/25 text-emerald"
+                      ? "border-emerald/60 bg-emerald/20 text-emerald"
                       : current
-                        ? "border-brand-500 bg-brand-500/25 text-brand-100"
-                        : "border-white/[0.14] text-transparent hover:border-white/30"
+                        ? "border-brand-400 bg-brand-500 text-white shadow-[0_0_0_4px_rgba(124,77,255,0.18)]"
+                        : next
+                          ? "border-dashed border-brand-500/60 bg-brand-500/5"
+                          : "border-white/15 bg-white/[0.02] hover:border-white/30"
                   }`}
                 >
-                  {done ? "✓" : current ? "●" : ""}
+                  {done ? (
+                    <IconCheck className="h-3.5 w-3.5" />
+                  ) : current ? (
+                    <span className="h-2 w-2 rounded-full bg-white" />
+                  ) : (
+                    <span className={`h-1.5 w-1.5 rounded-full ${next ? "bg-brand-300" : "bg-white/20"}`} />
+                  )}
                 </span>
               </button>
-              <div className="min-w-0">
-                <div className={`text-sm ${current ? "font-medium text-content" : done ? "text-content" : "text-subtle"}`}>
+              <div className="min-w-0 pt-0.5">
+                <div
+                  className={`text-sm leading-tight ${
+                    current ? "font-semibold text-content" : done || next ? "font-medium text-content" : "text-subtle"
+                  }`}
+                >
                   {stage.label}
                 </div>
-                <div className={`text-xs ${current ? "text-brand-300" : "text-subtle"}`}>{sub}</div>
+                {done && i === 0 ? (
+                  <div className="mt-0.5 text-xs text-subtle">Applied {fmtDate(application.created_at)}</div>
+                ) : done ? (
+                  <div className="mt-0.5 text-xs text-emerald/80">Completed</div>
+                ) : current ? (
+                  <div className="mt-0.5 text-xs font-medium text-brand-300">In progress</div>
+                ) : next ? (
+                  <div className="mt-0.5 text-xs text-brand-300">Up next</div>
+                ) : null}
               </div>
             </li>
           );
@@ -761,7 +799,7 @@ function WorkflowCard({
 
       {closed && (
         <div
-          className={`mb-3 rounded-lg border px-3 py-2 text-sm ${
+          className={`mt-1 mb-3 rounded-lg border px-3 py-2 text-sm ${
             status === "rejected"
               ? "border-danger/30 bg-danger/10 text-danger"
               : "border-white/[0.1] bg-surface-2 text-muted"
@@ -771,7 +809,7 @@ function WorkflowCard({
         </div>
       )}
 
-      <label className="mt-4 block">
+      <label className="mt-5 block">
         <span className="sr-only">Update status</span>
         <div className="relative">
           <select
@@ -781,7 +819,7 @@ function WorkflowCard({
           >
             {ALL_STAGES.map((s) => (
               <option key={s} value={s} className="bg-surface text-content">
-                Update Status — {trackerLabel(s)}
+                Update status — {trackerLabel(s)}
               </option>
             ))}
           </select>
