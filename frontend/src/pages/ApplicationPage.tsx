@@ -1626,7 +1626,7 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
   }
 
   return (
-    <div id="ai-assistant" className="card flex scroll-mt-24 flex-col p-5">
+    <div id="ai-assistant" className="card flex flex-1 scroll-mt-24 flex-col p-5">
       <div className="flex items-center gap-2">
         <IconSparkles className="h-5 w-5 text-brand-300" />
         <h2 className="text-base font-semibold">AI Assistant</h2>
@@ -1634,7 +1634,7 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
       </div>
       <p className="mt-0.5 text-xs text-subtle">Grounded in your résumé and this job — it never invents.</p>
 
-      <div className="mt-3 max-h-[30rem] min-h-[9rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
+      <div className="mt-3 min-h-[16rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 py-4 text-center">
             <p className="max-w-xs text-sm text-subtle">
@@ -1759,8 +1759,8 @@ function OverviewTab({
     { label: "Set a reminder", icon: <IconBell className="h-4 w-4" />, onClick: onOpenNotes },
   ];
   return (
-    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="min-w-0 space-y-6">
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="flex min-w-0 flex-col gap-6">
         <div className="card p-5">
           <h2 className="text-base font-semibold">Application overview</h2>
           <p className="mt-0.5 text-sm text-muted">
