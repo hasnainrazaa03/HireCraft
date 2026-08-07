@@ -193,14 +193,17 @@ export default function ApplicationPage() {
       </Link>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {application.job?.title ?? "Untitled role"}
-          </h1>
-          <p className="text-sm text-muted">
-            {application.job?.company ?? "Unknown company"}
-            {application.job?.location ? ` · ${application.job.location}` : ""}
-          </p>
+        <div className="flex items-start gap-3">
+          <CompanyLogo company={application.job?.company ?? null} />
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {application.job?.title ?? "Untitled role"}
+            </h1>
+            <p className="text-sm text-muted">
+              {application.job?.company ?? "Unknown company"}
+              {application.job?.location ? ` · ${application.job.location}` : ""}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <PipelineBadge status={pipeline} />
@@ -317,7 +320,10 @@ export default function ApplicationPage() {
               onUpdate={update.mutate}
               onSaveNotes={(notes) => update.mutate({ notes })}
               download={(kind, name) => void download(kind, name)}
-              onOpenDocs={() => setTab("documents")}
+              onOpenDocs={(dt) => {
+                setTab("documents");
+                if (dt) setDocTab(dt);
+              }}
               onOpenNotes={() => setTab("notes")}
               onTailorAgain={() =>
                 navigate("/new", { state: application.job?.url ? { url: application.job.url } : {} })
@@ -395,9 +401,13 @@ export default function ApplicationPage() {
           {tab === "emails" && <EmailsTab applicationId={id!} />}
 
           {tab === "notes" && (
-            <div className="mt-6 grid gap-5 lg:grid-cols-2 lg:items-start">
-              <NotesCard application={application} onSave={(notes) => update.mutate({ notes })} />
-              <DatesCard application={application} onUpdate={update.mutate} />
+            <div className="card mt-6 p-6">
+              <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2">
+                <NotesCard application={application} onSave={(notes) => update.mutate({ notes })} bare />
+                <div className="lg:border-l lg:border-white/[0.06] lg:pl-8">
+                  <DatesCard application={application} onUpdate={update.mutate} bare />
+                </div>
+              </div>
             </div>
           )}
 
@@ -1173,6 +1183,42 @@ function IconClose({ className }: { className?: string }) {
   );
 }
 
+/** Company logo tile — tries a few logo/favicon sources for the guessed domain,
+ *  then falls back to a monogram if none load. */
+function CompanyLogo({ company, size = 44 }: { company: string | null; size?: number }) {
+  const [idx, setIdx] = useState(0);
+  const name = (company ?? "").trim();
+  const domain = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const initial = name.slice(0, 1).toUpperCase() || "?";
+  const box = "shrink-0 overflow-hidden rounded-xl border border-white/10";
+  const sources = domain
+    ? [
+        `https://logo.clearbit.com/${domain}.com`,
+        `https://icons.duckduckgo.com/ip3/${domain}.com.ico`,
+        `https://www.google.com/s2/favicons?domain=${domain}.com&sz=64`,
+      ]
+    : [];
+  if (idx < sources.length) {
+    return (
+      <img
+        src={sources[idx]}
+        alt=""
+        onError={() => setIdx((i) => i + 1)}
+        style={{ width: size, height: size }}
+        className={`${box} bg-white object-contain p-1.5`}
+      />
+    );
+  }
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className={`${box} grid place-items-center bg-brand-500/15 text-lg font-semibold text-brand-200`}
+    >
+      {initial}
+    </div>
+  );
+}
+
 /* ── Per-metric "fix it" side panel (quality workspace) ───────────────── */
 
 type DrawerMeta = { kind: "keywords" | "bullets"; action: string; blurb: string; instruction: (text: string) => string };
@@ -1456,25 +1502,27 @@ function QuickActions({ items }: { items: { label: string; icon: React.ReactNode
   );
 }
 
-/** Notes editor (saves via PATCH on button click). */
-function NotesCard({ application, onSave }: { application: ApplicationDetail; onSave: (notes: string) => void }) {
+/** Notes editor (saves via PATCH on button click). `bare` drops the card
+ *  wrapper so it can share a card with the dates panel on the Notes tab. */
+function NotesCard({ application, onSave, bare }: { application: ApplicationDetail; onSave: (notes: string) => void; bare?: boolean }) {
   const [text, setText] = useState(application.notes ?? "");
   const dirty = text !== (application.notes ?? "");
-  return (
-    <div className="card p-5">
+  const inner = (
+    <>
       <h2 className="text-base font-semibold">Application notes</h2>
       <p className="mt-0.5 text-xs text-subtle">Your thoughts, interview feedback, or anything important.</p>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Write a note…"
-        className="input mt-3 min-h-[90px] leading-relaxed"
+        className={`input mt-3 leading-relaxed ${bare ? "min-h-[150px]" : "min-h-[90px]"}`}
       />
       <button onClick={() => onSave(text)} disabled={!dirty} className="btn-primary btn-sm mt-2 disabled:opacity-40">
         Save note
       </button>
-    </div>
+    </>
   );
+  return bare ? <div>{inner}</div> : <div className="card p-5">{inner}</div>;
 }
 
 /** Job details panel. */
@@ -1609,7 +1657,7 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
   const qc = useQueryClient();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const push = (m: ChatMsg) => setMessages((p) => [...p, m]);
   const setProposalStatus = (index: number, status: ProposalStatus) =>
@@ -1648,8 +1696,13 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
   });
 
   const busy = send.isPending || revise.isPending || apply.isPending;
+  // Keep the chat pinned to the latest — but scroll ONLY the chat container,
+  // never the page, and never on an empty mount (that yanked the page down to
+  // the assistant every time the workspace opened).
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length === 0) return;
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, busy]);
 
   // A "Improve with AI" click from the quality card lands a grounded rewrite here.
@@ -1686,7 +1739,7 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
       </div>
       <p className="mt-0.5 text-xs text-subtle">Grounded in your résumé and this job — it never invents.</p>
 
-      <div className="mt-3 min-h-[16rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
+      <div ref={listRef} className="mt-3 min-h-[16rem] flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/[0.06] bg-surface-2/40 p-3">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 py-4 text-center">
             <p className="max-w-xs text-sm text-subtle">
@@ -1724,7 +1777,6 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
             <Spinner className="h-3.5 w-3.5" /> {revise.isPending ? "Drafting a grounded revision…" : apply.isPending ? "Applying…" : "Thinking…"}
           </div>
         )}
-        <div ref={endRef} />
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); ask(input); }} className="mt-2 flex gap-2">
@@ -1769,13 +1821,14 @@ function OverviewTab({
   onUpdate: (body: { tracker_status: TrackerStatus }) => void;
   onSaveNotes: (notes: string) => void;
   download: (kind: string, name: string) => void;
-  onOpenDocs: () => void;
+  onOpenDocs: (docTab?: DocTab) => void;
   onOpenNotes: () => void;
   onTailorAgain: () => void;
   onRegenerate: () => void;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const navigate = useNavigate();
   const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
   const [assist, setAssist] = useState<{ instruction: string; nonce: number }>({ instruction: "", nonce: 0 });
   const [coverPreview, setCoverPreview] = useState(false);
@@ -1823,7 +1876,7 @@ function OverviewTab({
             <DocCard
               icon={<IconResume className="h-4 w-4" />} tint="bg-brand-500/15 text-brand-300"
               title="Résumé (Tailored)" subtitle={`Updated ${fmtDate(application.updated_at)}`}
-              action="Preview" onAction={onOpenDocs}
+              action="Preview" onAction={() => onOpenDocs("preview")}
             />
             <DocCard
               icon={<IconLetter className="h-4 w-4" />} tint="bg-electric/15 text-electric"
@@ -1836,12 +1889,18 @@ function OverviewTab({
             />
             <DocCard
               icon={<IconUpload className="h-4 w-4" />} tint="bg-emerald/15 text-emerald"
-              title="Résumé source" subtitle="Your master résumé" action="Open" onAction={onOpenDocs}
+              title="Résumé source" subtitle="Your master résumé" action="Open"
+              onAction={() => navigate("/resumes")}
             />
             <DocCard
               icon={<IconBriefcase className="h-4 w-4" />} tint="bg-coral/15 text-coral"
               title="Job description" subtitle={application.job?.company ? `From ${application.job.company}` : "Extracted"}
-              action="View" onAction={onOpenDocs}
+              action="View"
+              onAction={() =>
+                application.job?.url
+                  ? window.open(application.job.url, "_blank", "noopener,noreferrer")
+                  : onOpenDocs("requirements")
+              }
             />
           </div>
         </div>
@@ -1869,18 +1928,21 @@ function OverviewTab({
   );
 }
 
-/** Interview date + follow-up reminder, shown in the Notes tab. */
+/** Interview date + follow-up reminder, shown in the Notes tab. `bare` drops the
+ *  card wrapper so it can sit beside the notes editor in one card. */
 function DatesCard({
   application,
   onUpdate,
+  bare,
 }: {
   application: ApplicationDetail;
   onUpdate: (body: { interview_at?: string | null; reminder_at?: string | null }) => void;
+  bare?: boolean;
 }) {
-  return (
-    <div className="card p-5">
+  const inner = (
+    <>
       <h2 className="text-base font-semibold">Dates &amp; reminders</h2>
-      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+      <div className="mt-3 grid gap-4">
         <label className="block">
           <span className="label">Interview date</span>
           <input
@@ -1906,8 +1968,9 @@ function DatesCard({
           />
         </label>
       </div>
-    </div>
+    </>
   );
+  return bare ? <div>{inner}</div> : <div className="card p-5">{inner}</div>;
 }
 
 /** Simple activity timeline from the application's own timestamps. */
