@@ -279,7 +279,17 @@ Confirms the app is up before deep testing.
 ### 7.4 Application workspace  (Application detail → tabs: Overview · Documents · Activity · Notes · Emails · Analytics)  ⭐ new engine
 - ⬜ **T-WS-01** **Overview → Workflow** card: vertical status stepper (funnel) shows the current stage; **mark a new status** (e.g. Applied → Interviewing) and it **persists on reload** and updates the tracker board + dashboard funnel.
   - Notes:
-- ⬜ **T-WS-02** **AI Résumé Quality** card: donut overall /100 + metric pills (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness). **Each pill now has a colored progress bar** under it — green (high) → amber (mid) → red (low), width matching the score. Colors track the number.
+- ⬜ **T-WS-02** **AI Résumé Quality** card (redesigned): large **gradient score ring** (draws clockwise on load) + a verdict pill (**Needs work → Fair → Good → Excellent**, colored by tier) + a friendly one-liner. A **2×2 metric grid** (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness), each tile with an icon, a score-colored **progress bar** (fills from 0 on load), the real detail line, and a status pill. **"Every claim verified"** shows under the ring when guardrails are clean. **How we score** toggles an honest explanation.
+  - Notes:
+- ⬜ **T-WS-02a** **Micro-interactions:** hovering a metric tile **lifts** it and swaps the detail line for **"Improve with AI →"**; tiles are keyboard-focusable (visible ring). With OS "reduce motion" on, animations don't play.
+  - Notes:
+- ⬜ **T-WS-02b** **Improve your score** panel: a single divided row — heading on the left, then borderless suggestion columns (real gaps from *this* résumé: names actual missing keywords, real bullet counts), each with a hue-matched **"Improve with AI →"**. Stacks vertically on a narrow window.
+  - Notes:
+- ⬜ **T-WS-02c** **Metric fix panel (⭐ per-metric workspace):** click a metric tile (or a suggestion) → a **right-side slide-over** opens listing the exact items behind that score — e.g. **Quantified impact** lists your un-quantified bullets (with their role); **Job-fit keywords** lists the real missing terms. **Esc** or clicking the backdrop closes it; a strong metric shows *"Nothing to fix here."*
+  - Notes:
+- ⬜ **T-WS-02d** **Fix in place:** in the panel, hit the action (**Add metric / Strengthen / Shorten / Insert**) on an item → it drafts a **grounded diff** shown inline → **Apply** updates the résumé + PDF (toast), and the score/ring behind the panel moves; **Discard** leaves it. Re-open the panel → applied items drop off the list.
+  - Notes:
+- ⬜ **T-WS-02e (P0 check)** **Panel stays truthful:** try **Insert** on a keyword you have no experience for → the AI returns **"no truthful change"** (or the claim is listed **blocked**), never a fabricated bullet. "Add metric" never invents a number.
   - Notes:
 - ⬜ **T-WS-03** **AI Assistant** (chat at bottom): ask a question about the résumé → reply is **grounded** (a "grounded in" line cites your résumé / brag bank / this application), not generic web advice. Off-topic asks stay grounded to your material.
   - Notes:
