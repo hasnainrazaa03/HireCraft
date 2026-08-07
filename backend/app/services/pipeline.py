@@ -41,6 +41,7 @@ from app.services.llm.prompts import (
     build_outreach_prompt,
     build_rewrite_prompt,
 )
+from app.services.writing_quality import strip_leak_lines
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard
     from app.services.llm.factory import LlmClient
@@ -396,7 +397,8 @@ def draft_cover_letter(
             vetted.append(paragraph)
         else:
             logger.warning("pipeline.cover_letter_paragraph_rejected")
-    return vetted
+    # Drop any model self-talk that slipped past the schema ("Here is the letter:").
+    return strip_leak_lines(vetted)
 
 
 def compose_cover_letter(

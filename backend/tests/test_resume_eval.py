@@ -153,3 +153,24 @@ def test_ats_not_measured_when_only_keyword_was_the_company():
     expected = round(sum(m.score * m.weight for m in scored) / sum(m.weight for m in scored))
     assert card.overall == expected
     assert card.overall > 0
+
+
+def test_verb_variety_penalizes_repeated_openers():
+    from app.services.resume_eval import _verb_strength
+
+    varied, _ = _verb_strength(["Built A", "Led B", "Designed C", "Automated D"])
+    repeated, detail = _verb_strength(["Built A", "Built B", "Built C", "Built D"])
+    assert varied == 100
+    assert repeated < varied and "repeated" in detail
+
+
+def test_cliches_surface_as_a_suggestion():
+    from app.services.resume_eval import suggestions_from_report
+
+    r = copy.deepcopy(MASTER_RESUME_FIXTURE)
+    r["basics"]["summary"] = "Passionate, detail-oriented engineer with a proven track record."
+    resume = MasterResume.model_validate(r)
+    tips = suggestions_from_report(resume, _report(["Python"], ["Python"]), company="Acme")
+    diction = next((t for t in tips if t.metric_key == "diction"), None)
+    assert diction is not None
+    assert "passionate" in diction.keywords or "passionate" in diction.detail.lower()

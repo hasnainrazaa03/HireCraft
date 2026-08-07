@@ -995,6 +995,8 @@ function MetricGlyph({ k }: { k: string }) {
     return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></svg>);
   if (k === "grounding")
     return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z" /><path d="m9 12 2 2 4-4" /></svg>);
+  if (k === "diction")
+    return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V5h16v2M9 19h6M12 5v14" /></svg>);
   // ats / keywords — briefcase + lens
   return (<svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="12" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><circle cx="12" cy="12" r="1.6" /></svg>);
 }
@@ -1006,6 +1008,7 @@ const METRIC_TINT: Record<string, string> = {
   verbs: "bg-emerald/15 text-emerald",
   conciseness: "bg-emerald/15 text-emerald",
   grounding: "bg-emerald/15 text-emerald",
+  diction: "bg-coral/15 text-coral",
 };
 
 /** Same hue as the tile, as a raw hex — for the "Improve with AI" link. */
@@ -1015,6 +1018,7 @@ const METRIC_COLOR: Record<string, string> = {
   verbs: "#2DD4BF",
   conciseness: "#2DD4BF",
   grounding: "#2DD4BF",
+  diction: "#FF9F43",
 };
 
 /** Fallback grounded instruction per metric, when the metric has no open

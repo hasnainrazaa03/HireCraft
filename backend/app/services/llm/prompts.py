@@ -14,6 +14,7 @@ import json
 from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.schemas.writing import VoiceProfile
+from app.services.writing_quality import house_style_block
 
 COVERAGE_SYSTEM = """\
 You map a job's requirements to a candidate's real evidence — the analysis a \
@@ -140,6 +141,8 @@ short of that - stronger verbs, sharper framing, the job's vocabulary, surfaced 
 impact - is your job. Honest, specific, confident writing beats both timid \
 transcription and keyword stuffing.
 """
+
+OPTIMIZER_SYSTEM += house_style_block()
 
 
 def _entry_payload(resume: MasterResume) -> dict:
@@ -323,6 +326,8 @@ HOW TO IMPROVE:
 
 You will be given specific weaknesses detected in this resume; address them directly. \
 Return every entry's `highlights` rewritten (one per existing bullet)."""
+
+REWRITE_SYSTEM += house_style_block()
 
 
 def build_rewrite_prompt(
@@ -547,7 +552,7 @@ Candidate skills: {skills or "(none listed)"}
 {evidence_block}
 Job posting excerpt:
 {job_text[:max_job_chars]}
-
+{house_style_block(cover_letter=True)}
 Return JSON with a `paragraphs` array."""
 
 

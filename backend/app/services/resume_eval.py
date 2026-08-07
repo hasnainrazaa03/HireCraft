@@ -20,6 +20,7 @@ from app.schemas.resume import MasterResume
 from app.schemas.tailoring import GuardrailReport
 from app.services.llm.guardrails import _numbers_in
 from app.services.matching import _claims, _skill_index, match_resume_to_job
+from app.services.writing_quality import cliches_in
 
 # Openers that signal a duty, not an accomplishment. A strong bullet leads with a
 # real action verb instead.
@@ -96,13 +97,29 @@ def _impact_density(bullets: list[str]) -> tuple[int, str]:
 
 
 def _verb_strength(bullets: list[str]) -> tuple[int, str]:
+    """Reward strong AND varied openers: a bullet is 'good' when it leads with a
+    real action verb the résumé hasn't already used to open another bullet."""
     weak = 0
+    good = 0
+    seen: dict[str, int] = {}
     for b in bullets:
         m = _WORD.search(b)
-        if m and m.group().lower() in _WEAK_OPENERS:
+        opener = m.group().lower() if m else ""
+        seen[opener] = seen.get(opener, 0) + 1
+        is_weak = opener in _WEAK_OPENERS
+        is_repeat = bool(opener) and not is_weak and seen[opener] > 1
+        if is_weak:
             weak += 1
-    strong = len(bullets) - weak
-    return _pct(strong, len(bullets)), f"{weak} bullet(s) open with a weak/duty verb"
+        elif not is_repeat:
+            good += 1
+    repeats = sum(n - 1 for v, n in seen.items() if v and v not in _WEAK_OPENERS and n > 1)
+    bits = []
+    if weak:
+        bits.append(f"{weak} weak/duty opener(s)")
+    if repeats:
+        bits.append(f"{repeats} repeated verb(s)")
+    detail = ", ".join(bits) if bits else "strong, varied action verbs"
+    return _pct(good, len(bullets)), detail
 
 
 def _conciseness(bullets: list[str]) -> tuple[int, str]:
@@ -308,6 +325,23 @@ def suggestions_from_report(
             instruction=(
                 "Review the claims guardrails flagged as unsupported and rewrite them "
                 "so every statement is backed by my résumé or brag bank."
+            ),
+        )))
+
+    resume_text = " ".join(bullets + [tailored.basics.summary or "", tailored.basics.headline or ""])
+    found_cliches = cliches_in(resume_text)
+    if found_cliches:
+        priority = 95 - min(len(found_cliches), 5) * 7
+        candidates.append((priority, ImprovementTip(
+            key="diction",
+            title="Cut résumé clichés",
+            detail="Replace tired filler: " + ", ".join(found_cliches[:5]) + ".",
+            metric_key="diction",
+            keywords=found_cliches[:10],
+            instruction=(
+                "Remove these clichés/filler phrases from my résumé and rephrase with "
+                "plain, specific language — keep every fact identical: "
+                + ", ".join(found_cliches[:10]) + "."
             ),
         )))
 
