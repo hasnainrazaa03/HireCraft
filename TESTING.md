@@ -291,6 +291,10 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-WS-02e (P0 check)** **Panel stays truthful:** try **Insert** on a keyword you have no experience for → the AI returns **"no truthful change"** (or the claim is listed **blocked**), never a fabricated bullet. "Add metric" never invents a number.
   - Notes:
+- ⬜ **T-WS-02f** **Keyword honesty:** the header **"Keyword match"** and the **Job-fit keywords** tile never treat the **company name** as a missing keyword. If a posting yields no real ATS keywords, keyword fit shows **"Not measured"** (grey, not a red 0) and is **excluded from the overall** — and the AI chat doesn't claim you're "missing" the employer's name.
+  - Notes:
+- ⬜ **T-WS-02g** **Panel close animation:** the fix panel **slides out** to the right on close (Esc / backdrop / ✕), not an instant disappear. With OS "reduce motion" on, it closes instantly.
+  - Notes:
 - ⬜ **T-WS-03** **AI Assistant** (chat at bottom): ask a question about the résumé → reply is **grounded** (a "grounded in" line cites your résumé / brag bank / this application), not generic web advice. Off-topic asks stay grounded to your material.
   - Notes:
 - ⬜ **T-WS-04** **Rewrite** (assistant): give an instruction (e.g. "make the summary more ML-focused") → returns a **proposal** with a before→after **diff**; any claims it wanted to add but couldn't support are listed as **blocked** (guardrails still apply).
