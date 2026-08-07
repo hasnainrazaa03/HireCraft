@@ -572,9 +572,10 @@ function GuardrailView({
   );
 }
 
-/** Inline PDF of the finished, tailored résumé — review the actual output
- * without downloading. Fetched as a blob, shown fit-to-width, chrome hidden. */
-function ResumePreview({ id }: { id: string }) {
+/** Inline PDF of a stored application artifact (résumé / cover letter), fetched
+ *  as an authed blob and shown fit-to-width with viewer chrome hidden. Fills its
+ *  container; the caller sizes and frames it. */
+function PdfBlobFrame({ id, kind, title }: { id: string; kind: string; title: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -583,7 +584,7 @@ function ResumePreview({ id }: { id: string }) {
     setError(false);
     setUrl(null);
     api
-      .blob(`/applications/${id}/download/resume_pdf`)
+      .blob(`/applications/${id}/download/${kind}`)
       .then((b) => {
         if (cancelled) return;
         obj = URL.createObjectURL(b);
@@ -596,22 +597,65 @@ function ResumePreview({ id }: { id: string }) {
       cancelled = true;
       if (obj) URL.revokeObjectURL(obj);
     };
-  }, [id]);
+  }, [id, kind]);
 
+  if (error)
+    return <div className="flex h-full items-center justify-center text-sm text-danger">Couldn't render this document.</div>;
+  if (!url)
+    return <div className="flex h-full items-center justify-center"><Spinner className="h-6 w-6" /></div>;
+  return <iframe title={title} src={`${url}#navpanes=0&zoom=page-width`} className="h-full w-full" />;
+}
+
+/** Inline PDF of the finished, tailored résumé — review the output without downloading. */
+function ResumePreview({ id }: { id: string }) {
   return (
     <div className="h-[78vh] max-h-[calc(100dvh-14rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
-      {error ? (
-        <div className="flex h-full items-center justify-center text-sm text-danger">
-          Couldn't render the résumé.
-        </div>
-      ) : !url ? (
-        <div className="flex h-full items-center justify-center">
-          <Spinner className="h-6 w-6" />
-        </div>
-      ) : (
-        <iframe title="Final résumé" src={`${url}#navpanes=0&zoom=page-width`} className="h-full w-full" />
-      )}
+      <PdfBlobFrame id={id} kind="resume_pdf" title="Final résumé" />
     </div>
+  );
+}
+
+/** Lightbox to read the cover letter inline, with a Download shortcut. */
+function CoverLetterModal({ id, onClose, onDownload }: { id: string; onClose: () => void; onDownload: () => void }) {
+  const shown = useMountReveal();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${shown ? "opacity-100" : "opacity-0"}`}
+        onClick={onClose}
+      />
+      <div
+        className={`relative z-10 flex h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl transition-all duration-200 ${shown ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}
+      >
+        <header className="flex items-center gap-3 border-b border-white/10 p-4">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-electric/15 text-electric">
+            <IconLetter className="h-4 w-4" />
+          </span>
+          <h3 className="flex-1 text-base font-semibold">Cover Letter</h3>
+          <button onClick={onDownload} className="btn-secondary btn-sm shrink-0">Download</button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-subtle transition hover:bg-white/5 hover:text-content" aria-label="Close">
+            <IconClose className="h-5 w-5" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 bg-white">
+          <PdfBlobFrame id={id} kind="cover_letter_pdf" title="Cover letter" />
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -747,6 +791,7 @@ function DocCard({
   action,
   onAction,
   disabled,
+  secondary,
 }: {
   icon: React.ReactNode;
   tint: string;
@@ -755,6 +800,7 @@ function DocCard({
   action: string;
   onAction: () => void;
   disabled?: boolean;
+  secondary?: { label: string; onClick: () => void };
 }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-surface-2 p-3.5">
@@ -763,13 +809,20 @@ function DocCard({
         <div className="truncate text-sm font-medium text-content">{title}</div>
         <div className="truncate text-xs text-subtle">{subtitle}</div>
       </div>
-      <button
-        onClick={onAction}
-        disabled={disabled}
-        className="btn-secondary btn-sm shrink-0 disabled:opacity-40"
-      >
-        {action}
-      </button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button onClick={onAction} disabled={disabled} className="btn-secondary btn-sm disabled:opacity-40">
+          {action}
+        </button>
+        {secondary && (
+          <button
+            onClick={secondary.onClick}
+            disabled={disabled}
+            className="btn-ghost btn-sm text-subtle hover:text-content disabled:opacity-40"
+          >
+            {secondary.label}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -904,8 +957,13 @@ function MetricTile({ m, onFix }: { m: Scorecard["metrics"][number]; onFix: () =
           <span className="shrink-0 text-sm tabular-nums text-subtle">—</span>
         </div>
         <div className="mt-3 h-1.5 rounded-full bg-white/[0.05]" />
-        <div className="mt-2.5 flex items-center justify-between gap-2">
-          <span className="min-w-0 truncate text-xs text-subtle" title={m.detail}>{m.detail}</span>
+        <div className="mt-2.5 flex items-start justify-between gap-2">
+          <span
+            className="min-w-0 text-xs leading-snug text-subtle"
+            title="This posting didn't yield usable ATS keywords (only the company name), so keyword fit couldn't be scored. Re-tailor on the full job description to measure it."
+          >
+            {m.detail}
+          </span>
           <span className="shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[11px] font-medium text-subtle">Not measured</span>
         </div>
       </div>
@@ -1036,21 +1094,15 @@ function QualityCard({
       </div>
 
       {card.suggestions.length > 0 ? (
-        <div className="mt-5 overflow-hidden rounded-xl border border-brand-500/25 bg-brand-500/[0.05]">
-          <div className="flex flex-col divide-y divide-white/[0.06] md:flex-row md:divide-x md:divide-y-0">
-            <div className="flex items-start gap-3 p-5 md:w-[27%] md:shrink-0">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/20 text-brand-300">
-                <IconSparkles className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold leading-tight">Improve your score</h3>
-                <p className="mt-1 text-xs leading-relaxed text-subtle">
-                  Real gaps from this résumé — hand any to the grounded AI to fix.
-                </p>
-              </div>
-            </div>
+        <div className="mt-5 rounded-xl border border-brand-500/20 bg-brand-500/[0.04] p-4">
+          <div className="mb-2.5 flex items-center gap-2">
+            <IconSparkles className="h-4 w-4 text-brand-300" />
+            <h3 className="text-sm font-semibold">Improve your score</h3>
+            <span className="hidden text-xs text-subtle sm:inline">— real gaps, one click to fix with AI</span>
+          </div>
+          <div className="space-y-2">
             {card.suggestions.map((s) => (
-              <SuggestionColumn key={s.key} s={s} onClick={() => improve(s.metric_key, s.instruction)} />
+              <SuggestionRow key={s.key} s={s} onClick={() => improve(s.metric_key, s.instruction)} />
             ))}
           </div>
         </div>
@@ -1071,27 +1123,27 @@ function QualityCard({
   );
 }
 
-/** One borderless improvement column (icon + title · detail · AI link). */
-function SuggestionColumn({ s, onClick }: { s: ScorecardSuggestion; onClick: () => void }) {
+/** One compact improvement row — whole row opens the fix for that metric. */
+function SuggestionRow({ s, onClick }: { s: ScorecardSuggestion; onClick: () => void }) {
   const tint = METRIC_TINT[s.metric_key] ?? "bg-brand-500/15 text-brand-300";
   const color = METRIC_COLOR[s.metric_key] ?? "#AC8CFF";
   return (
-    <div className="flex min-w-0 flex-1 flex-col p-5 transition-colors duration-200 hover:bg-white/[0.02]">
-      <div className="flex items-start gap-2.5">
-        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
-          <MetricGlyph k={s.metric_key} />
-        </span>
-        <h4 className="pt-1 text-sm font-semibold leading-snug text-content">{s.title}</h4>
-      </div>
-      <p className="mt-2.5 flex-1 text-xs leading-relaxed text-subtle">{s.detail}</p>
-      <button
-        onClick={onClick}
-        className="mt-3 flex items-center gap-1 self-start text-xs font-semibold transition hover:opacity-80"
-        style={{ color }}
-      >
-        Improve with AI <IconArrowRight className="h-3.5 w-3.5" />
-      </button>
-    </div>
+    <button
+      onClick={onClick}
+      className="group flex w-full items-center gap-3 rounded-lg border border-white/[0.06] bg-surface px-3 py-2.5 text-left transition hover:border-white/[0.12] hover:bg-surface-2"
+    >
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tint}`}>
+        <MetricGlyph k={s.metric_key} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-content">{s.title}</span>
+        <span className="block truncate text-xs text-subtle">{s.detail}</span>
+      </span>
+      <span className="hidden shrink-0 items-center gap-1 text-xs font-semibold sm:flex" style={{ color }}>
+        Improve with AI <IconArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+      </span>
+      <IconArrowRight className="h-4 w-4 shrink-0 text-subtle sm:hidden" />
+    </button>
   );
 }
 
@@ -1726,6 +1778,7 @@ function OverviewTab({
   const toast = useToast();
   const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
   const [assist, setAssist] = useState<{ instruction: string; nonce: number }>({ instruction: "", nonce: 0 });
+  const [coverPreview, setCoverPreview] = useState(false);
   const handleSuggest = (instruction: string) => setAssist((p) => ({ instruction, nonce: p.nonce + 1 }));
 
   const coverLetter = useMutation({
@@ -1776,9 +1829,10 @@ function OverviewTab({
               icon={<IconLetter className="h-4 w-4" />} tint="bg-electric/15 text-electric"
               title="Cover Letter"
               subtitle={coverLetter.isPending ? "Drafting…" : hasCover ? `Updated ${fmtDate(application.updated_at)}` : "Not generated yet"}
-              action={coverLetter.isPending ? "…" : hasCover ? "Download" : "Generate"}
+              action={coverLetter.isPending ? "…" : hasCover ? "View" : "Generate"}
               disabled={coverLetter.isPending}
-              onAction={() => (hasCover ? download("cover_letter_pdf", "cover_letter.pdf") : coverLetter.mutate())}
+              onAction={() => (hasCover ? setCoverPreview(true) : coverLetter.mutate())}
+              secondary={hasCover && !coverLetter.isPending ? { label: "Download", onClick: () => download("cover_letter_pdf", "cover_letter.pdf") } : undefined}
             />
             <DocCard
               icon={<IconUpload className="h-4 w-4" />} tint="bg-emerald/15 text-emerald"
@@ -1803,6 +1857,14 @@ function OverviewTab({
         <NotesCard application={application} onSave={onSaveNotes} />
         <JobDetailsCard job={application.job} />
       </div>
+
+      {coverPreview && (
+        <CoverLetterModal
+          id={application.id}
+          onClose={() => setCoverPreview(false)}
+          onDownload={() => download("cover_letter_pdf", "cover_letter.pdf")}
+        />
+      )}
     </div>
   );
 }

@@ -178,7 +178,7 @@ def score_from_report(
         ats_d = f"{len(verified)}/{len(requested)} job keywords surfaced"
     else:
         ats = 0
-        ats_d = "couldn't read keywords from this posting"
+        ats_d = "No job keywords found in this posting"
     impact, impact_d = _impact_density(bullets)
     verb, verb_d = _verb_strength(bullets)
     concise, concise_d = _conciseness(bullets)
