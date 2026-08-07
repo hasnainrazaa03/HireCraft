@@ -265,3 +265,31 @@ class TestAtsApi:
         payload = {"jobs": [{"id": pid, "title": "T", "descriptionPlain": "short"}]}
         monkeypatch.setattr(scraper.httpx, "get", lambda *a, **k: _JsonResp(payload))
         assert _ats_api_result(f"https://jobs.ashbyhq.com/o/{pid}", timeout=5) is None
+
+
+class TestRejectReason:
+    """The dead-link / JS-shell / thin-page guard (T-TLR-03)."""
+
+    def test_javascript_shell_rejected(self):
+        from app.services.scraper import _reject_reason
+
+        assert _reject_reason("Careers. Please enable JavaScript to run this app. Home Jobs") is not None
+
+    def test_expired_or_thin_page_rejected(self):
+        from app.services.scraper import _reject_reason
+
+        assert _reject_reason("The job you are looking for is no longer available. Browse openings.") is not None
+        assert _reject_reason("Software Engineer. Apply. Login.") is not None
+
+    def test_real_job_description_passes(self):
+        from app.services.scraper import _reject_reason
+
+        jd = (
+            "Machine Learning Engineer. Build recommendation systems in PyTorch, deploy to "
+            "production, collaborate with product. Requirements: 3+ years Python, deep "
+            "learning, distributed training, MLOps. Design scalable pipelines and run "
+            "experiments to improve ranking quality across the stack. " * 3
+        )
+        assert _reject_reason(jd) is None
+        # A long, real JD that merely mentions "no longer" is NOT falsely rejected
+        assert _reject_reason(jd + " Legacy code is no longer supported.") is None

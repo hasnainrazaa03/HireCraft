@@ -373,6 +373,39 @@ def _ats_result(
     )
 
 
+# A posting that no longer exists / a JS shell often still returns a 200 page with
+# enough chrome text to clear a naive length check. Catch those so we never tailor
+# against a dead link or a "please enable JavaScript" stub.
+_CLOSED_MARKERS: tuple[str, ...] = (
+    "no longer available", "no longer accepting", "no longer active",
+    "position has been filled", "this position is closed", "this job is closed",
+    "posting has expired", "posting is closed", "job not found", "page not found",
+    "has been removed", "we couldn't find", "we could not find",
+    "job you are looking for", "this role is no longer",
+)
+_JS_MARKERS: tuple[str, ...] = (
+    "enable javascript", "requires javascript", "please enable javascript",
+    "javascript is required", "javascript to run this app",
+)
+
+
+def _reject_reason(text: str) -> str | None:
+    """Return why ``text`` isn't a usable job description, or None if it looks real.
+
+    A real posting is a few hundred words; a dead/expired link or a JS shell is a
+    short page dominated by navigation and a "not found"/"closed" notice.
+    """
+    low = text.lower()
+    words = len(text.split())
+    if any(m in low for m in _JS_MARKERS):
+        return "the page needs JavaScript to load its content"
+    if words < 50:
+        return "the page didn't contain a readable job description"
+    if words < 250 and any(m in low for m in _CLOSED_MARKERS):
+        return "this posting appears to be closed or expired"
+    return None
+
+
 def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
     """Fetch ``url`` and return the cleaned posting text plus any metadata."""
     safe_url = validate_url(url)
@@ -459,15 +492,16 @@ def scrape_job(url: str, *, timeout: int | None = None) -> ScrapeResult:
     extracted = _extract_with_trafilatura(html, final_url) or _extract_with_soup(html)
     text = clean_text(extracted or "")
 
-    if len(text) < 120:
+    reject = _reject_reason(text)
+    if reject:
         # A redirect may have landed on an ATS (e.g. a Simplify link resolving to
         # jobs.ashbyhq.com) whose HTML is an empty shell — try its API first.
         if final_url != safe_url and (ats := _ats_api_result(final_url, timeout=timeout)):
             return ats
         raise ScrapeError(
-            "Could not extract a usable job description from that page - it is "
-            "likely rendered by JavaScript or behind a login. Paste the text "
-            "directly instead."
+            f"We couldn't read a usable job description from that link — {reject}. "
+            "Open the posting to check it's still live, or paste the job description "
+            "text here instead."
         )
 
     truncated = len(text) > MAX_TEXT_CHARS

@@ -249,8 +249,8 @@ Confirms the app is up before deep testing.
   - Notes:
 - ✅ **T-TLR-02** Paste an **Ashby/Greenhouse/Lever** job URL (e.g. `jobs.ashbyhq.com/…`) → **Tailor my résumé** → it fetches via the ATS API (no "couldn't read" error) and starts the run.
   - Notes: PASS. Ashby/Quora job URL fetched via the ATS API (no "couldn't read" error); tailoring run started.
-- ⬜ **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
-  - Notes:
+- 🔧 **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
+  - Notes: **FAIL → fixed (P2).** A ByteDance URL to an unavailable posting still created an application + tailored — the scraper only rejected pages under 120 chars, and the expired/JS-shell stub cleared that. **Fix:** `scraper._reject_reason` now blocks a fetched page **before** any Job/Application is created when it (a) says "enable JavaScript", (b) is under ~50 words, or (c) is a short page carrying a closed/expired/"no longer available"/404 notice — returning *"We couldn't read a usable job description from that link — … Open the posting to check it's still live, or paste the text here instead."* A full, real JD that merely mentions "no longer" is not falsely rejected. Pending re-test with the ByteDance link.
 - ⬜ **T-TLR-04** **Paste text** mode with a real JD → run.
   - Notes:
 - ⬜ **T-TLR-05** No default résumé on the account → the form tells you to add a master résumé first.
