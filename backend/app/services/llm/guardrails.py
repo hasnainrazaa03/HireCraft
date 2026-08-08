@@ -228,6 +228,22 @@ def _suspicious_tokens(
     return flagged
 
 
+def _strip_terms(text: str, terms: set[str]) -> str:
+    """Remove flagged whole-word terms from free text and tidy the seams — the
+    dangling '&', '|', ',' separators and doubled spaces a removal leaves behind."""
+    low = {t.lower() for t in terms}
+    cleaned = TOKEN_RE.sub(lambda m: "" if m.group().lower() in low else m.group(), text)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s*([|,&/])(?:\s*[|,&/])+\s*", r" \1 ", cleaned)  # collapse runs of separators
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)  # no space before punctuation
+    cleaned = re.sub(r"[|,&/]\s*$", "", cleaned)  # drop a trailing separator
+    cleaned = re.sub(r"^\s*[|,&/]\s*", "", cleaned)  # …or a leading one
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" |,&/-–—")
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned.strip()
+
+
 class GuardrailEngine:
     """Merges a tailoring result onto a master resume, enforcing truthfulness."""
 
@@ -636,11 +652,35 @@ class GuardrailEngine:
             return None
         unknown = _suspicious_tokens(text, self.vocab, self.stem_vocab)
         if unknown:
+            terms = sorted(set(unknown))
+            # The headline and summary are the most-exposed lines, so an
+            # unsupported term there is worth removing outright rather than merely
+            # flagging (option b). Everywhere else, flag-and-keep for review.
+            if field in ("headline", "summary"):
+                cleaned = _strip_terms(text, set(terms))
+                if not cleaned:
+                    self._flag(
+                        "fabricated_proper_noun",
+                        "error",
+                        f"{field}: only unsupported terms remained after removing "
+                        f"{', '.join(terms)}. Reverted to your master {field}.",
+                        field=field,
+                        action="reverted_to_master",
+                    )
+                    return None
+                self._flag(
+                    "fabricated_proper_noun",
+                    "warning",
+                    f"{field}: removed {', '.join(terms)} (absent from your master "
+                    f"resume) so the line stays fully supported.",
+                    field=field,
+                    action="softened",
+                )
+                return cleaned
             self._flag(
                 "fabricated_proper_noun",
                 "warning",
-                f"{field}: mentions {', '.join(sorted(set(unknown)))}, absent from your "
-                f"master resume.",
+                f"{field}: mentions {', '.join(terms)}, absent from your master resume.",
                 field=field,
                 action="flagged",
             )
