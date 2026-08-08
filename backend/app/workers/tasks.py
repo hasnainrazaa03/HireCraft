@@ -167,6 +167,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
 
         user_id = application.user_id
         include_cover_letter = application.include_cover_letter
+        reach_mode = application.reach_mode
         master = MasterResume.model_validate(application.resume_profile.content)
         template = application.resume_profile.template
         one_page = application.resume_profile.one_page
@@ -222,6 +223,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
             evidence=evidence,
             template=template,
             one_page=one_page,
+            reach=reach_mode,
             on_progress=on_progress,
             client=client,
         )

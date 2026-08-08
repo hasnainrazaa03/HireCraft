@@ -183,6 +183,7 @@ def optimize_resume(
     *,
     evidence: list[str] | None = None,
     two_stage: bool = True,
+    reach: bool = False,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
@@ -194,7 +195,7 @@ def optimize_resume(
     the candidate's real evidence, and that plan steers the rewrite to surface
     genuine strengths (raising keyword coverage without inventing anything)."""
     client = client or get_client()
-    prompt = build_optimizer_prompt(master, requirements, job_text, evidence=evidence)
+    prompt = build_optimizer_prompt(master, requirements, job_text, evidence=evidence, reach=reach)
     if two_stage:
         try:
             plan = plan_coverage(
@@ -216,7 +217,7 @@ def optimize_resume(
         ledger.record("optimize_resume", result.usage)
 
     tailored, report = GuardrailEngine(
-        master, requirements, evidence=evidence
+        master, requirements, evidence=evidence, reach=reach
     ).apply(result.data)
     diff = build_diff(master, tailored)
 
@@ -526,6 +527,7 @@ def run_pipeline(
     templates_dir: str | None = None,
     template: str | None = None,
     one_page: bool = False,
+    reach: bool = False,
     client: LlmClient | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> TailoringOutcome:
@@ -546,7 +548,7 @@ def run_pipeline(
 
     progress("optimizing", "Tailoring your experience to the role")
     tailored, report, diff = optimize_resume(
-        master, requirements, scrape.text, evidence=evidence, client=client, ledger=ledger
+        master, requirements, scrape.text, evidence=evidence, reach=reach, client=client, ledger=ledger
     )
 
     cover_tex: str | None = None

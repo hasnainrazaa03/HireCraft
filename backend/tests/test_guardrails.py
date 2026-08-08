@@ -538,3 +538,51 @@ class TestSkillsDiff:
 
     def test_untouched_skills_produce_no_entries(self, master):
         assert self._skills_diff(master, master.model_copy(deep=True)) == []
+
+
+class TestReachMode:
+    """Reach mode relaxes the soft line (keep+flag) but holds the hard line."""
+
+    def _result(self, master, bullet):
+        from app.schemas.tailoring import TailoredEntry, TailoringResult
+
+        exp0 = master.experience[0]
+        return TailoringResult(
+            headline="Backend Engineer", summary=master.basics.summary or "Engineer.",
+            experience=[TailoredEntry(id=exp0.id, include=True, relevance_rank=0, highlights=[bullet])],
+            projects=[], education=[], skills=[], keywords_used=[],
+        )
+
+    def _reqs(self):
+        from app.schemas.job import JobRequirements
+
+        return JobRequirements(title="Backend Engineer", ats_keywords=["Kubernetes"],
+                               required_skills=[{"name": "Kubernetes", "importance": 5}])
+
+    def test_injected_keyword_dropped_in_strict_kept_in_reach(self):
+        from app.schemas.resume import MasterResume
+        from app.services.llm.guardrails import GuardrailEngine
+        from tests.conftest import MASTER_RESUME_FIXTURE
+
+        master = MasterResume.model_validate(MASTER_RESUME_FIXTURE)
+        bullet = "Deployed services on Kubernetes across regions"
+        strict, _ = GuardrailEngine(master, self._reqs()).apply(self._result(master, bullet))
+        reach, rep = GuardrailEngine(master, self._reqs(), reach=True).apply(self._result(master, bullet))
+
+        def kept(res):
+            return any("Kubernetes" in h for e in res.experience for h in e.highlights)
+
+        assert not kept(strict)  # strict drops the unearned keyword
+        assert kept(reach)  # reach keeps it…
+        assert any(v.action == "reach_kept" for v in rep.violations)  # …and flags it
+
+    def test_reach_still_blocks_invented_numbers(self):
+        from app.schemas.resume import MasterResume
+        from app.services.llm.guardrails import GuardrailEngine
+        from tests.conftest import MASTER_RESUME_FIXTURE
+
+        master = MasterResume.model_validate(MASTER_RESUME_FIXTURE)
+        _, rep = GuardrailEngine(master, self._reqs(), reach=True).apply(
+            self._result(master, "Cut latency 999% on Kubernetes")
+        )
+        assert any(v.kind == "fabricated_number" and v.severity == "error" for v in rep.violations)

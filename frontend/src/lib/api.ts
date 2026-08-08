@@ -686,6 +686,7 @@ export interface ApplicationDetail {
   tracker_status: TrackerStatus;
   error_message: string | null;
   include_cover_letter: boolean;
+  reach_mode: boolean;
   notes: string | null;
   interview_at: string | null;
   reminder_at: string | null;

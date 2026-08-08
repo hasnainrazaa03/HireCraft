@@ -253,9 +253,16 @@ class GuardrailEngine:
         requirements: JobRequirements | None = None,
         *,
         evidence: list[str] | None = None,
+        reach: bool = False,
     ):
         self.master = master
         self.requirements = requirements
+        # Reach mode (candidate opt-in): tailor more aggressively toward the role.
+        # It relaxes the *soft* line — a job keyword the résumé doesn't yet back is
+        # kept and flagged for the user to confirm, instead of dropped — but never
+        # the *hard* line: invented numbers and immutable facts (employers, titles,
+        # dates, degrees) are blocked exactly as in strict mode.
+        self.reach = reach
         # The brag bank is attested provenance: a number or proper noun the
         # candidate vouched for there is as real as one on the résumé, so it is
         # folded into the corpus and number set the checks validate against. This
@@ -402,7 +409,7 @@ class GuardrailEngine:
             # from the job description that the candidate has never claimed. This
             # is ATS keyword stuffing turning into a lie, so it is a hard drop.
             injected = self._injected_job_terms(bullet)
-            if injected:
+            if injected and not self.reach:
                 self._flag(
                     "unverified_keyword_claim",
                     "error",
@@ -419,6 +426,19 @@ class GuardrailEngine:
                     f"Claimed {', '.join(sorted(injected))} from the job posting, not your résumé.",
                 )
                 continue
+            if injected:  # reach mode: keep it, but flag it for the user to confirm
+                self._flag(
+                    "unverified_keyword_claim",
+                    "warning",
+                    f"{label}: reach mode surfaced {', '.join(sorted(injected))} from the "
+                    f"job posting — confirm you can speak to it in an interview before "
+                    f"applying. Bullet: {bullet!r}",
+                    entry_id=entry_id,
+                    field="highlights",
+                    action="reach_kept",
+                )
+                note = f"Reach: claims {', '.join(sorted(injected))} from the posting — make sure you can back it up."
+                caution = f"{caution} {note}".strip() if caution else note
 
             unknown_terms = _suspicious_tokens(bullet, self.vocab, self.stem_vocab)
             if unknown_terms:
@@ -640,7 +660,7 @@ class GuardrailEngine:
             )
             return None
         injected = self._injected_job_terms(text)
-        if injected:
+        if injected and not self.reach:
             self._flag(
                 "unverified_keyword_claim",
                 "error",
@@ -650,13 +670,23 @@ class GuardrailEngine:
                 action="reverted_to_master",
             )
             return None
+        if injected:  # reach mode: keep the keyword in the line, but flag it
+            self._flag(
+                "unverified_keyword_claim",
+                "warning",
+                f"{field}: reach mode kept {', '.join(sorted(injected))} from the job "
+                f"posting — verify you can back it up before sending.",
+                field=field,
+                action="reach_kept",
+            )
         unknown = _suspicious_tokens(text, self.vocab, self.stem_vocab)
         if unknown:
             terms = sorted(set(unknown))
             # The headline and summary are the most-exposed lines, so an
             # unsupported term there is worth removing outright rather than merely
-            # flagging (option b). Everywhere else, flag-and-keep for review.
-            if field in ("headline", "summary"):
+            # flagging (option b). Reach mode keeps it (flag only); everywhere else
+            # flags-and-keeps for review.
+            if field in ("headline", "summary") and not self.reach:
                 cleaned = _strip_terms(text, set(terms))
                 if not cleaned:
                     self._flag(

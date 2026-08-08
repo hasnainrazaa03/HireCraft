@@ -214,6 +214,11 @@ export default function ApplicationPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {application.reach_mode && (
+            <span className="badge inline-flex items-center gap-1 border-brand-500/40 bg-brand-500/15 text-brand-200" title="Tailored in Reach mode — aggressive framing; stretched claims are flagged in Guardrails">
+              <IconSparkles className="h-3 w-3" /> Reach
+            </span>
+          )}
           <PipelineBadge status={pipeline} />
           <span className={`badge ${TRACKER_STYLES[application.tracker_status]}`}>
             {trackerLabel(application.tracker_status)}

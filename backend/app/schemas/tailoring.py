@@ -66,7 +66,9 @@ class GuardrailViolation(TailoringModel):
     field: str | None = None
     detail: str
     # What the guardrail did about it.
-    action: Literal["rejected", "reverted_to_master", "dropped", "flagged"] = "flagged"
+    action: Literal[
+        "rejected", "reverted_to_master", "dropped", "flagged", "softened", "reach_kept"
+    ] = "flagged"
 
 
 Confidence = Literal["verified", "likely", "needs_review", "blocked"]

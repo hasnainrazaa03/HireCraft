@@ -120,6 +120,9 @@ class Application(Base, TimestampMixin):
     guardrail_report: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
 
     include_cover_letter: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # Reach mode: aggressive tailoring the candidate opted into (soft guardrails
+    # relaxed to keep-and-flag; the hard anti-fabrication line is unchanged).
+    reach_mode: Mapped[bool] = mapped_column(default=False, nullable=False)
     # The current cover letter body as an ordered list of paragraphs. Persisted so
     # the Cover Letter tab can render it and feed it back for feedback-driven edits.
     cover_letter: Mapped[list[str] | None] = mapped_column(JsonB)

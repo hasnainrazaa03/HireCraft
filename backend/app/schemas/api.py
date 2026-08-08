@@ -281,6 +281,7 @@ class ApplicationCreate(ApiModel):
     job_id: uuid.UUID | None = None
     job: JobCreate | None = None
     include_cover_letter: bool = False
+    reach_mode: bool = False
     notes: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
@@ -375,6 +376,7 @@ class ApplicationDetail(ApiModel):
     celery_task_id: str | None
     error_message: str | None
     include_cover_letter: bool
+    reach_mode: bool = False
     notes: str | None
     interview_at: datetime | None = None
     reminder_at: datetime | None = None

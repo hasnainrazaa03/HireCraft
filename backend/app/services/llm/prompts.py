@@ -193,12 +193,30 @@ def _entry_payload(resume: MasterResume) -> dict:
     }
 
 
+REACH_BLOCK = """
+=== REACH MODE (the candidate has opted into aggressive tailoring) ===
+Tailor harder toward THIS specific role — same real work, maximally assertive angle:
+- Reframe every bullet in the exact language and emphasis the job wants. For a
+  backend / distributed-systems role, foreground the API, data-pipeline, concurrency,
+  scale, and reliability facets of what the candidate actually built.
+- Weave in the job's keywords wherever the candidate has ANY genuine or closely
+  adjacent basis (containers→orchestration, SQL→data modeling, REST→distributed
+  systems). Prefer surfacing a real adjacent strength over leaving a keyword uncovered.
+- State the impact of real work as confidently and concretely as the facts allow;
+  pull existing numbers to the front and make outcomes explicit.
+Even in reach mode these remain ABSOLUTE — crossing them gets the line dropped:
+- Do NOT invent numbers, metrics, employers, titles, dates, degrees, or certifications.
+- Do NOT claim a technology the candidate has no genuine or adjacent basis for.
+"""
+
+
 def build_optimizer_prompt(
     resume: MasterResume,
     requirements: JobRequirements,
     job_text: str,
     *,
     evidence: list[str] | None = None,
+    reach: bool = False,
     max_job_chars: int = 6000,
 ) -> str:
     resume_json = json.dumps(_entry_payload(resume), indent=2, ensure_ascii=False)
@@ -250,7 +268,7 @@ verifier:
 
 === ORIGINAL JOB POSTING (excerpt) ===
 {job_text[:max_job_chars]}
-
+{REACH_BLOCK if reach else ""}
 Return JSON matching the schema. Reference every entry by its exact `id`. Rewrite \
 wording, ordering, and emphasis — and surface attested evidence where it sharpens \
 the fit."""

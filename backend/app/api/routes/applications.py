@@ -178,6 +178,7 @@ def create_application(
         resume_profile_id=profile.id,
         pipeline_status=PipelineStatus.PENDING,
         include_cover_letter=payload.include_cover_letter,
+        reach_mode=payload.reach_mode,
         notes=payload.notes,
     )
     db.add(application)

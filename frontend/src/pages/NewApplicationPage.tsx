@@ -2,6 +2,7 @@ import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api, ApiError, type ApplicationDetail, type ResumeProfileSummary } from "../lib/api";
+import { IconSparkles } from "../components/icons";
 
 interface PrefillState {
   url?: string;
@@ -30,6 +31,7 @@ export default function NewApplicationPage() {
   );
   const [profileId, setProfileId] = useState("");
   const [coverLetter, setCoverLetter] = useState(false);
+  const [reachMode, setReachMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clipBlocked, setClipBlocked] = useState(false);
 
@@ -56,6 +58,7 @@ export default function NewApplicationPage() {
       api.post<ApplicationDetail>("/applications", {
         resume_profile_id: profileId || profiles.find((p) => p.is_default)?.id || null,
         include_cover_letter: coverLetter,
+        reach_mode: reachMode,
         job:
           mode === "url"
             ? { url }
@@ -195,6 +198,24 @@ export default function NewApplicationPage() {
             Also draft a cover letter
             <span className="block text-xs text-subtle">
               Adds one more LLM call to the cost.
+            </span>
+          </span>
+        </label>
+
+        <label className={`flex items-start gap-2.5 rounded-xl border p-3 text-sm transition ${reachMode ? "border-brand-500/40 bg-brand-500/[0.06]" : "border-white/[0.08]"}`}>
+          <input
+            type="checkbox"
+            checked={reachMode}
+            onChange={(e) => setReachMode(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-white/[0.12] text-content focus:ring-brand-500"
+          />
+          <span>
+            <span className="flex items-center gap-1.5 font-medium text-content">
+              <IconSparkles className="h-3.5 w-3.5 text-brand-300" /> Reach mode
+              <span className="rounded bg-brand-500/15 px-1.5 py-0.5 text-[10px] text-brand-200">aggressive</span>
+            </span>
+            <span className="mt-0.5 block text-xs text-subtle">
+              Tailors your <span className="text-muted">real</span> experience harder toward this exact role — reframes it in the job's language and surfaces adjacent skills &amp; keywords you have a basis for. Anything stretched is flagged for you to confirm. It still never invents numbers, employers, titles, or credentials.
             </span>
           </span>
         </label>
