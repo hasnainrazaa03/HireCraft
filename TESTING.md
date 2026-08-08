@@ -249,8 +249,8 @@ Confirms the app is up before deep testing.
   - Notes:
 - ✅ **T-TLR-02** Paste an **Ashby/Greenhouse/Lever** job URL (e.g. `jobs.ashbyhq.com/…`) → **Tailor my résumé** → it fetches via the ATS API (no "couldn't read" error) and starts the run.
   - Notes: PASS. Ashby/Quora job URL fetched via the ATS API (no "couldn't read" error); tailoring run started.
-- 🔧 **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
-  - Notes: **FAIL → fixed (P2).** A ByteDance URL to an unavailable posting still created an application + tailored — the scraper only rejected pages under 120 chars, and the expired/JS-shell stub cleared that. **Fix:** `scraper._reject_reason` now blocks a fetched page **before** any Job/Application is created when it (a) says "enable JavaScript", (b) is under ~50 words, or (c) is a short page carrying a closed/expired/"no longer available"/404 notice — returning *"We couldn't read a usable job description from that link — … Open the posting to check it's still live, or paste the text here instead."* A full, real JD that merely mentions "no longer" is not falsely rejected. Pending re-test with the ByteDance link.
+- ✅ **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
+  - Notes: **PASS (re-tested after fix).** Unavailable/unsupported postings now hit the graceful failure path — no misleading application is created. **Was FAIL (P2):** A ByteDance URL to an unavailable posting still created an application + tailored — the scraper only rejected pages under 120 chars, and the expired/JS-shell stub cleared that. **Fix:** `scraper._reject_reason` now blocks a fetched page **before** any Job/Application is created when it (a) says "enable JavaScript", (b) is under ~50 words, or (c) is a short page carrying a closed/expired/"no longer available"/404 notice — returning *"We couldn't read a usable job description from that link — … Open the posting to check it's still live, or paste the text here instead."* A full, real JD that merely mentions "no longer" is not falsely rejected. Pending re-test with the ByteDance link.
 - ⬜ **T-TLR-04** **Paste text** mode with a real JD → run.
   - Notes:
 - ⬜ **T-TLR-05** No default résumé on the account → the form tells you to add a master résumé first.
@@ -259,22 +259,22 @@ Confirms the app is up before deep testing.
 ### 7.2 Run & progress
 - ✅ **T-TLR-06** After submit → redirect to the Application page showing **live progress** (Reading job → Tailoring → Typesetting). Completes in ~30–60s.
   - Notes: PASS. Submit → redirect to Application page; tailoring completed; result shows tailored résumé, match score, guardrails, keyword analysis, quality breakdown, change diff, and downloads (PDF/LaTeX/package) + regenerate.
-- ⬜ **T-TLR-07** During the run the page doesn't flash blank "Loading…" repeatedly.
-  - Notes:
+- ✅ **T-TLR-07** During the run the page doesn't flash blank "Loading…" repeatedly.
+  - Notes: PASS. Progress transitioned smoothly through the stages; no blank loading screen, no page flashes/navigation glitches; landed directly in the completed workspace.
 
 ### 7.3 Result & review
 - ✅ **T-TLR-08** **Résumé quality scorecard** appears: overall /100 + bars (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness · Truthfulness). Numbers make sense for the role's fit.
   - Notes: PASS. Scorecard shown (overall 58, keyword match 53%, per-metric bars). **Keyword match is honest, not a bug**: guardrails block any keyword the résumé doesn't support, so 53% = ~half the job's ATS keywords genuinely in your background; the rest are real gaps (listed in Match/Requirements). It can't be inflated by stuffing.
 - ✅ **T-TLR-09** **Changes** tab: before→after diff is accurate; a harmless skill *regroup* is not reported as "deleted everything".
   - Notes: PASS. Changes tab is strong — original vs tailored, **word-level highlighting**, experience reordering, skills added/removed, guardrail transparency. **New:** added a **"Final résumé"** 5th tab so you can review the finished PDF inline without downloading (user request).
-- ⬜ **T-TLR-10 (P0 check)** **Guardrails** tab: locks shown; any flagged/removed claims are genuinely unsupported. **Read the tailored bullets** — every claim traces to your résumé or brag bank. If a brag-bank fact (e.g. **$50K pre-seed**, leadership, containerized deployment) is surfaced, confirm it's *yours* and not invented.
-  - Notes:
+- ✅ **T-TLR-10 (P0 check)** **Guardrails** tab: locks shown; any flagged/removed claims are genuinely unsupported. **Read the tailored bullets** — every claim traces to your résumé or brag bank. If a brag-bank fact (e.g. **$50K pre-seed**, leadership, containerized deployment) is surfaced, confirm it's *yours* and not invented.
+  - Notes: PASS (P0). Confidence: 14 Likely / 1 Review; each bullet carries level + explanation + source role. The one flagged bullet ("LLM-driven categorization…") was correctly surfaced (not in master). Locks enforced (employers/titles/dates/schools/GPA/project names/contacts/awards). No fabricated employers/dates/metrics/credentials/tech. **UX backlog (P3):** the "Likely" label is overloaded — covers both stylistic rewording ("Built"→"Engineered") and semantic rewrites. Consider splitting into **Verified** (unchanged/directly traceable) · **Reworded** (style only) · **Review** (semantic addition).
 - ✅ **T-TLR-11** **Match / Requirements** tabs render coverage sensibly.
   - Notes: PASS. Match/Requirements render coverage sensibly; keyword 53% is honest coverage (see T-TLR-08).
-- ⬜ **T-TLR-12** **Download** the tailored **PDF** and the **package** (zip) — open the PDF, it's clean and reflects the changes.
-  - Notes:
-- ⬜ **T-TLR-13** **Two-stage lift:** tailor to a role slightly outside your core (e.g. a backend/distributed-systems JD). The engine should surface your genuinely-relevant backend evidence (REST, distributed, Postgres) — relevance/keywords higher than a naive pass, still truthful.
-  - Notes:
+- ✅ **T-TLR-12** **Download** the tailored **PDF** and the **package** (zip) — open the PDF, it's clean and reflects the changes.
+  - Notes: PASS. PDF + zip download cleanly; PDF reflects the tailoring. **Enhanced (per suggestion):** the package is now a **true session export** — `resume.pdf`, `resume.tex`, `cover_letter.{pdf,tex}` (when present), `resume.json`, `job_description.txt`, `report.txt`, `guardrails.json`, `changes.diff`, and `match_analysis.json` (scorecard + job signals). Structured files are best-effort so a bad blob never breaks the download.
+- ✅ **T-TLR-13** **Two-stage lift:** tailor to a role slightly outside your core (e.g. a backend/distributed-systems JD). The engine should surface your genuinely-relevant backend evidence (REST, distributed, Postgres) — relevance/keywords higher than a naive pass, still truthful.
+  - Notes: PASS (★★★★★ truthfulness/alignment/guardrails). Backend JD → headline + Deloitte/DRDO/USC bullets re-emphasized to REST APIs, distributed systems, ETL/pipelines, Node.js/MongoDB — all genuinely present. Guardrails **blocked** invented AWS/NoSQL/new entries and reverted unsupported summary adds; **flagged** "Cloud Infrastructure"/"LLM-driven"/skill renames for review. **Observation:** the flagged **headline** term "Cloud Infrastructure" is unsupported — flag-for-review is by design (it's a warning, not blocked), but an unsupported term is more exposed in the *headline*; consider auto-softening flagged headline/summary terms (needs a product call — see below).
 - ⬜ **T-TLR-14** **Retry** on a failed/blocked run re-runs; **Delete** an application removes it (and it disappears from the board + dashboard funnel).
   - Notes:
 

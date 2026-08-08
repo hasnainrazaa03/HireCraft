@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import uuid
 import zipfile
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
@@ -493,25 +495,71 @@ def _build_report(application: Application) -> str:
     return "\n".join(lines)
 
 
+def _diff_text(diff: list[dict]) -> str:
+    """A readable before→after of the tailoring, for the package export."""
+    out = ["Changes vs. your master résumé", "=" * 40, ""]
+
+    def fmt(value: object) -> list[str]:
+        if isinstance(value, list):
+            return [f"    {v}" for v in value]
+        return [f"    {value}"] if value else []
+
+    any_change = False
+    for d in diff:
+        change = d.get("change")
+        if change in (None, "unchanged"):
+            continue
+        any_change = True
+        head = f"[{d.get('section', '')}] {d.get('label') or d.get('field') or ''}".strip()
+        out.append(f"{head} — {change}")
+        if d.get("before"):
+            out += ["  - before:", *fmt(d["before"])]
+        if d.get("after"):
+            out += ["  + after:", *fmt(d["after"])]
+        out.append("")
+    if not any_change:
+        return "No changes were recorded for this tailoring.\n"
+    return "\n".join(out)
+
+
+def _match_analysis(application: Application) -> dict[str, Any] | None:
+    """Structured quality + posting signals, for offline review/versioning."""
+    data: dict[str, Any] = {}
+    card = _scorecard_for(application)
+    if card is not None:
+        data["scorecard"] = card.model_dump(mode="json")
+    if application.job is not None:
+        sig = analyze_job(application.job.title, application.job.location, application.job.raw_text)
+        data["job_signals"] = {
+            "red_flags": sig.red_flags,
+            "geo_mismatch": sig.geo_mismatch,
+            "injection": sig.injection,
+            "thin": sig.thin,
+            "word_count": sig.word_count,
+        }
+    return data or None
+
+
 @router.get("/{application_id}/download/package")
 def download_package(
     application_id: uuid.UUID, user: CurrentUser, db: DbSession
 ) -> Response:
-    """Bundle the tailored résumé, cover letter, and a report into one zip.
+    """Bundle the full tailoring session into one zip — a true export.
 
-    Only the PDFs are included (the artifacts a human actually sends); the report
-    explains what was tailored and what the guardrails verified, so the download
-    is self-documenting.
+    Documents you send (résumé + cover letter, PDF and LaTeX) plus the structured
+    session data (résumé JSON, the job description, guardrail findings, the
+    change diff, and the quality/match analysis), so the download stands alone
+    for offline review, debugging, and version control.
     """
     application = _get_owned(db, user.id, application_id)
 
-    pdfs = {
+    artifact_names = {
         "resume_pdf": "resume.pdf",
+        "resume_tex": "resume.tex",
         "cover_letter_pdf": "cover_letter.pdf",
+        "cover_letter_tex": "cover_letter.tex",
     }
-    available = {
-        a.kind.value: a for a in application.artifacts if a.kind.value in pdfs
-    }
+    available = {a.kind.value: a for a in application.artifacts if a.kind.value in artifact_names}
     if not available:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -523,21 +571,38 @@ def download_package(
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for kind, filename in pdfs.items():
+        def add(name: str, data: bytes | str) -> None:
+            archive.writestr(f"{base}/{name}", data)
+
+        # Sendable documents (résumé + cover letter, PDF + LaTeX).
+        for kind, filename in artifact_names.items():
             artifact = available.get(kind)
             if artifact is None:
                 continue
             try:
-                data = storage.read_bytes(artifact.storage_path)
+                add(filename, storage.read_bytes(artifact.storage_path))
             except storage.StorageError:
                 logger.warning(
                     "application.package_artifact_missing",
                     application_id=str(application.id),
                     kind=kind,
                 )
-                continue
-            archive.writestr(f"{base}/{filename}", data)
-        archive.writestr(f"{base}/report.txt", _build_report(application))
+
+        # Self-documenting report + structured session data (best-effort: a bad
+        # stored blob must never 500 the export).
+        add("report.txt", _build_report(application))
+        with contextlib.suppress(Exception):
+            if application.tailored_resume:
+                add("resume.json", json.dumps(application.tailored_resume, indent=2, ensure_ascii=False))
+            if application.job and application.job.raw_text:
+                add("job_description.txt", application.job.raw_text)
+            if application.guardrail_report:
+                add("guardrails.json", json.dumps(application.guardrail_report, indent=2, ensure_ascii=False))
+            if application.diff:
+                add("changes.diff", _diff_text(application.diff))
+            match = _match_analysis(application)
+            if match:
+                add("match_analysis.json", json.dumps(match, indent=2, ensure_ascii=False))
 
     buffer.seek(0)
     return Response(
