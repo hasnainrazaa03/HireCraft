@@ -95,6 +95,8 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Clear empty state — "No applications yet" + "Add your master résumé, then paste a job posting…" with **Add résumé** / **New application** CTAs. No confusing zero-stats or broken UI.
 - ✅ **T-DASH-06** "Good morning/afternoon/evening" greeting matches the time of day.
   - Notes: PASS. "Good morning, Hasnain 👋" — matches the time and is personalized.
+- ⬜ **T-DASH-07** **Stat-card styling** (polish): each card has a **prominent glowing icon tile** (tone-colored — purple/orange/pink/teal), an ambient glow, and a large bold value. (An animated sparkline was trialled and **removed** — it rendered unevenly; cards should show **no** trend line.)
+  - Notes:
 
 ---
 
@@ -255,6 +257,8 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-TLR-05** No default résumé on the account → the form tells you to add a master résumé first.
   - Notes:
+- ⬜ **T-TLR-15** **Reach mode toggle** (new): the New Application form shows a **"Reach mode · aggressive"** checkbox below "Also draft a cover letter", with copy explaining it tailors your *real* experience harder (never invents numbers/employers/credentials). Ticking it highlights the card. It's per-application (off by default).
+  - Notes:
 
 ### 7.2 Run & progress
 - ✅ **T-TLR-06** After submit → redirect to the Application page showing **live progress** (Reading job → Tailoring → Typesetting). Completes in ~30–60s.
@@ -274,8 +278,14 @@ Confirms the app is up before deep testing.
 - ✅ **T-TLR-12** **Download** the tailored **PDF** and the **package** (zip) — open the PDF, it's clean and reflects the changes.
   - Notes: PASS. PDF + zip download cleanly; PDF reflects the tailoring. **Enhanced (per suggestion):** the package is now a **true session export** — `resume.pdf`, `resume.tex`, `cover_letter.{pdf,tex}` (when present), `resume.json`, `job_description.txt`, `report.txt`, `guardrails.json`, `changes.diff`, and `match_analysis.json` (scorecard + job signals). Structured files are best-effort so a bad blob never breaks the download.
 - ✅ **T-TLR-13** **Two-stage lift:** tailor to a role slightly outside your core (e.g. a backend/distributed-systems JD). The engine should surface your genuinely-relevant backend evidence (REST, distributed, Postgres) — relevance/keywords higher than a naive pass, still truthful.
-  - Notes: PASS (★★★★★ truthfulness/alignment/guardrails). Backend JD → headline + Deloitte/DRDO/USC bullets re-emphasized to REST APIs, distributed systems, ETL/pipelines, Node.js/MongoDB — all genuinely present. Guardrails **blocked** invented AWS/NoSQL/new entries and reverted unsupported summary adds; **flagged** "Cloud Infrastructure"/"LLM-driven"/skill renames for review. **Observation:** the flagged **headline** term "Cloud Infrastructure" is unsupported — flag-for-review is by design (it's a warning, not blocked), but an unsupported term is more exposed in the *headline*; consider auto-softening flagged headline/summary terms (needs a product call — see below).
-- ⬜ **T-TLR-14** **Retry** on a failed/blocked run re-runs; **Delete** an application removes it (and it disappears from the board + dashboard funnel).
+  - Notes: PASS (★★★★★ truthfulness/alignment/guardrails). Backend JD → headline + Deloitte/DRDO/USC bullets re-emphasized to REST APIs, distributed systems, ETL/pipelines, Node.js/MongoDB — all genuinely present. Guardrails **blocked** invented AWS/NoSQL/new entries and reverted unsupported summary adds; **flagged** "Cloud Infrastructure"/"LLM-driven"/skill renames for review. **Observation → RESOLVED (option b, see T-TLR-18):** the flagged **headline/summary** now **strips** unsupported terms outright (in strict mode) instead of surfacing them — so "Cloud Infrastructure" is removed and the line stays fully supported.
+- ✅ **T-TLR-14** **Retry** on a failed/blocked run re-runs; **Delete** an application removes it (and it disappears from the board + dashboard funnel).
+  - Notes: PASS. "Regenerate this tailoring" re-ran the pipeline cleanly; deleting the disposable app removed it from the list with no orphaned entries. No UI/persistence/sync issues.
+- ⬜ **T-TLR-18** **Headline/summary term-strip** (strict mode, option b): tailor to a JD that tempts an unsupported buzzword (e.g. "Cloud Infrastructure") → the **headline and summary come out with that term removed** and the separators tidied (no dangling "&"/"|"), rather than showing it with a review flag. A term you *do* support stays. (Bullets and cover letters keep the softer flag-and-keep.)
+  - Notes:
+- ⬜ **T-TLR-16** **Reach mode result** (new): tailor the **same backend JD with Reach mode ON**. The result should be **more keyword-dense and assertive** than the strict pass — job keywords you have an *adjacent* basis for (e.g. "distributed systems" from REST/concurrency work) are **kept**, not dropped. A **"Reach" badge** shows on the application header. In **Résumé → Guardrails/Confidence**, the stretched claims appear as **needs-review** (`reach_kept`) so you can confirm you can speak to each in an interview.
+  - Notes:
+- ⬜ **T-TLR-17 (P0 check)** **Reach mode still holds the hard line:** even with Reach ON, the résumé contains **no invented numbers/metrics**, and **employers, titles, dates, degrees stay locked/unchanged**. Reach only relaxes the *soft* keyword line (keep-and-flag) — it never fabricates a fact. Read the bullets: every number still traces to your résumé or brag bank.
   - Notes:
 
 ### 7.4 Application workspace  (Application detail → tabs: Overview · Documents · Activity · Notes · Emails · Analytics)  ⭐ new engine
@@ -337,6 +347,8 @@ Confirms the app is up before deep testing.
 - ⬜ **T-APP-06** Total count is accurate (if you had many apps, the count matches, not capped at a page size).
   - Notes:
 - ⬜ **T-APP-07** Open an application → set **Interview date** and **Follow-up reminder** (they save on blur, not per keystroke).
+  - Notes:
+- ⬜ **T-APP-08** **Board fits the window** (fixed): the **"New application"** button is always visible top-right and the **page never scrolls sideways** — only the board's own column strip scrolls horizontally (the columns scroll *inside* their row, header stays put). Was a bug: a wide board pushed the whole page past the viewport and hid the button.
   - Notes:
 
 ---
@@ -414,6 +426,8 @@ Confirms the app is up before deep testing.
 - ⬜ **T-COP-04** **Model/provider switcher** (if shown) changes which model answers; dropdown renders cleanly (native to the theme, text not clipped).
   - Notes:
 - ⬜ **T-COP-05 (P0 check)** Copilot only states things backed by your data — if it invents a fact about you, note it.
+  - Notes:
+- ⬜ **T-COP-06** **Two-column layout** (redesigned): on desktop the empty side space is now a **left context rail** — a **"Grounded in"** card with the résumé / application-focus / model selectors, plus **categorized starter prompts** (Résumé · Applications · Career) and a soft glow. The **chat fills the rest** with a glowing empty state. On a narrow window the rail collapses and the controls + starter chips move above the chat. Clicking a starter prompt sends it.
   - Notes:
 
 ---
