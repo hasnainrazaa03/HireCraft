@@ -325,15 +325,19 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-WS-06 (P0 check)** Apply only ever writes **truthful** content: the applied résumé contains nothing the guardrails would block — every surviving claim traces to your résumé or brag bank.
   - Notes:
-- ⬜ **T-WS-07** **Cover letter** (Overview/Documents): **Generate** inline → a letter artifact is produced and **Download** works; regenerating replaces it. Reads as a real letter (greeting → body → sign-off).
-  - Notes:
+- ✅ **T-WS-07** **Cover letter** card (Overview): shows **Open** + **Download**; **Open** goes to the Cover Letter tab (stays on this application). Generate/regenerate works; reads as a real letter.
+  - Notes: PASS. Open → Cover Letter tab; Download works; stays associated with the application. **P3 (UX):** like the résumé Preview, "Open" changes tabs — consider opening in a modal, or renaming to "Go to Cover Letter" so it reads as navigation. *(Same P3 tracked for the résumé Preview tab-hop.)*
 - ⬜ **T-WS-08** **Emails** tab: pick an outreach **kind** (recruiter email / LinkedIn note / follow-up / thank-you / interview check-in / referral / negotiation) → **Generate** → short, specific, truthful message; **copy** works.
   - Notes:
 - ⬜ **T-WS-09** **Analytics** tab: **Total cost**, **Total tokens**, and **Input / Output** stat cards. Below, a **Cost breakdown** by category (Résumé tailoring & edits · Cover letter · Outreach), each with `$cost · tokens` and a **proportional colored bar** (share of total spend). Pre-existing apps show their prior spend under **Résumé**.
   - Notes:
 - ⬜ **T-WS-10** **Analytics is additive & categorized:** note the total, then run an action — generate outreach (T-WS-08) or a cover letter (T-WS-07). Re-open Analytics → the **total grew** *and* the **matching category** (Outreach / Cover letter) increased by that action's cost; other categories unchanged. Re-tailoring the résumé **resets** the Résumé category (fresh run), not the others.
   - Notes:
-- ⬜ **T-WS-11** **Activity** and **Notes** tabs: activity log reflects the actions above; notes save (on blur) and persist on reload.
+- ✅ **T-WS-11** **Activity** tab (FIXED, was FAIL): a **real event log**, newest-first with an icon + timestamp per event — **Application created**, **Résumé tailored / regenerated**, **Résumé improved** (with a ▲/▼ overall-score delta), **Cover letter generated/updated**, and **Status changed** (from→to). Not just "created / last updated".
+  - Notes: **Was ❌ FAIL** (only showed created + last-updated). Now records the real history. *(Apps tailored before the log fall back to their created timestamp.)*
+- ✅ **T-WS-12** **Notes** tab (FIXED, was PARTIAL): a **timestamped notes log**, not one overwrite-everything textarea. **Add** a note → it appears with a date/time; each note has **Edit** and **Delete**; multiple notes accumulate newest-first and persist on reload. Any pre-existing single note was **migrated** into the first entry.
+  - Notes: **Was ⚠️ partial** (single textarea, no history). Now add/edit/delete individual timestamped entries.
+- ✅ **T-WS-13** **Provenance badge** (backlog, done): in **Résumé → Guardrails**, each kept bullet shows its **source entry** label + a grounding badge — **✓ Résumé** or **✦ Brag bank** (the latter when it surfaces a number you attested in the brag bank) — so the origin of every line is explicit.
   - Notes:
 
 ---
