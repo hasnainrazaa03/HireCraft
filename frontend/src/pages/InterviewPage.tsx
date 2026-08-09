@@ -12,6 +12,7 @@ import {
   type SkillGapReport,
   type ApplicationSummary,
   type ApplicationDetail,
+  type JobMatch,
 } from "../lib/api";
 import { PageLoader, EmptyState } from "../components/ui";
 import { IconSparkles, IconResume } from "../components/icons";
@@ -80,6 +81,7 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [selected, setSelected] = useState<Set<QuestionCategory>>(new Set());
+  const [useVoice, setUseVoice] = useState(true);
   const [questions, setQuestions] = useState<InterviewQuestion[] | null>(null);
 
   // Applications to "prepare for" — picking one grounds the questions in that
@@ -192,16 +194,28 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
             ))}
           </div>
         </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            checked={useVoice}
+            onChange={(e) => setUseVoice(e.target.checked)}
+            className="h-4 w-4 rounded border-white/[0.14] bg-surface-3 text-brand-600 focus:ring-brand-500"
+          />
+          Answer in my <Link to="/writing" className="text-brand-300 hover:underline">writing voice</Link>
+          <span className="text-xs text-subtle">— adapts wording &amp; tone of drafted answers, not the facts.</span>
+        </label>
         <button onClick={() => generate.mutate()} disabled={generate.isPending} className="btn-primary">
           <IconSparkles className="h-4 w-4" />
           {generate.isPending ? "Generating…" : "Generate questions"}
         </button>
       </div>
 
+      {applicationId && <ApplicationSkillFit applicationId={applicationId} />}
+
       {questions && (
         <div className="space-y-3">
           {questions.map((q, i) => (
-            <QuestionCard key={i} question={q} resumeId={resumeId} catLabel={CAT_LABEL[q.category]} />
+            <QuestionCard key={i} question={q} resumeId={resumeId} useVoice={useVoice} catLabel={CAT_LABEL[q.category]} />
           ))}
         </div>
       )}
@@ -209,13 +223,96 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
   );
 }
 
+/** When preparing for a specific application, show how the résumé stacks up against
+ *  that job — strengths and the gaps worth prepping, ranked by importance. Reuses
+ *  the deterministic match endpoint (now with semantic skill resolution). */
+function ApplicationSkillFit({ applicationId }: { applicationId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["insights-match", applicationId],
+    queryFn: () => api.get<JobMatch>(`/insights/applications/${applicationId}/match`),
+  });
+
+  if (isLoading) return <div className="card p-5 text-sm text-subtle">Analysing this application…</div>;
+  if (!data) return null;
+
+  const have = data.matched_skills.slice().sort((a, b) => b.importance - a.importance);
+  const gaps = data.missing_skills.slice().sort((a, b) => b.importance - a.importance);
+
+  // A thinly-extracted posting can list no structured skills — don't show an empty
+  // two-column card; point to the cross-job view instead.
+  if (have.length === 0 && gaps.length === 0) {
+    return (
+      <div className="card p-5">
+        <h2 className="section-title">How you fit this role</h2>
+        <p className="mt-1 text-sm text-subtle">
+          This posting didn't list specific skills we could extract, so there's nothing role-specific to compare —
+          the cross-job skill view below still applies.
+        </p>
+      </div>
+    );
+  }
+  const verdictTone =
+    data.overall_score >= 75 ? "text-emerald" : data.overall_score >= 55 ? "text-gradient" : "text-coral";
+
+  return (
+    <div className="card space-y-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="section-title">How you fit this role</h2>
+        <span className="flex items-center gap-2 text-sm">
+          <span className={`text-2xl font-semibold tabular-nums ${verdictTone}`}>{data.overall_score}</span>
+          <span className="text-xs text-subtle">match · {data.verdict}</span>
+        </span>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <h3 className="text-sm font-medium text-emerald">Strengths to lead with</h3>
+          {have.length === 0 ? (
+            <p className="mt-2 text-xs text-subtle">No direct skill overlap detected.</p>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {have.map((s) => (
+                <span key={s.name} className="badge-emerald" title={`Importance ${s.importance}/5`}>{s.name}</span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <h3 className="text-sm font-medium text-coral">Gaps worth prepping</h3>
+          {gaps.length === 0 ? (
+            <p className="mt-2 text-xs text-subtle">You cover this role's stated skills — prep stories, not skills.</p>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {gaps.map((s) => (
+                <span
+                  key={s.name}
+                  className={s.importance >= 4 ? "badge-coral" : "badge-muted"}
+                  title={s.importance >= 4 ? "High priority for this JD" : "Nice to have"}
+                >
+                  {s.name}{s.importance >= 4 ? " ●" : ""}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="text-[11px] text-subtle">
+        Deterministic — from this job's requirements vs. your résumé. Demonstrated skills count even when the exact
+        keyword is absent (e.g. MongoDB → NoSQL). ● marks a high-priority gap.
+      </p>
+    </div>
+  );
+}
+
 function QuestionCard({
   question,
   resumeId,
+  useVoice,
   catLabel,
 }: {
   question: InterviewQuestion;
   resumeId: string;
+  useVoice: boolean;
   catLabel: string;
 }) {
   const toast = useToast();
@@ -226,7 +323,7 @@ function QuestionCard({
       api.post<AnswerResponse>("/interview/answer", {
         resume_profile_id: resumeId,
         question: question.question,
-        use_voice: true,
+        use_voice: useVoice,
       }),
     onSuccess: setAnswer,
     onError: (e) =>

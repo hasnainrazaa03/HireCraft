@@ -362,9 +362,58 @@ def _fit_summary(score: int, strengths: list[str], gaps: list[str]) -> str:
     return base
 
 
+# Semantic skill implications: the umbrella skill on the LEFT is demonstrated by
+# any concrete evidence term on the RIGHT appearing in the résumé. So a résumé that
+# shows MongoDB counts as NoSQL, REST work counts as "REST APIs", and real
+# latency/throughput/quantization work counts as "performance optimization" — even
+# when the exact umbrella keyword is never written. Evidence is matched as a
+# substring (terms are specific), so "optimiz" covers optimize/optimized/optimization.
+_SKILL_IMPLICATIONS: tuple[tuple[frozenset[str], tuple[str, ...]], ...] = (
+    (frozenset({"nosql", "no-sql"}),
+     ("mongodb", "mongo", "dynamodb", "cassandra", "redis", "couchbase", "couchdb", "firestore", "neo4j")),
+    (frozenset({"sql", "relational database", "relational databases", "rdbms"}),
+     ("postgres", "postgresql", "mysql", "sqlite", "mariadb", "sql server", "t-sql", "pl/sql", "bigquery", "redshift", "snowflake")),
+    (frozenset({"rest api", "rest apis", "restful api", "restful apis", "rest services"}),
+     ("rest api", "restful", "rest endpoint", "api orchestration")),
+    (frozenset({"performance optimization", "performance optimisation", "performance tuning", "optimization", "optimisation"}),
+     ("latency", "throughput", "quantiz", "quantis", "profiling", "sub-second", "speedup", "optimiz", "optimis")),
+    (frozenset({"microservices", "microservice", "microservice architecture", "microservices architecture"}),
+     ("microservice",)),
+    (frozenset({"ci/cd", "cicd", "continuous integration", "continuous delivery", "continuous deployment"}),
+     ("ci/cd", "continuous integration", "continuous delivery", "github actions", "gitlab ci", "jenkins", "circleci")),
+    (frozenset({"kubernetes", "k8s", "container orchestration"}),
+     ("kubernetes", "k8s")),
+    (frozenset({"docker", "containerization", "containerisation"}),
+     ("docker", "podman")),
+    (frozenset({"event-driven", "event driven", "event-driven architecture", "messaging", "message queue", "message queues", "pub/sub", "pubsub"}),
+     ("kafka", "rabbitmq", "sqs", "kinesis", "pubsub", "pub/sub", "nats")),
+)
+
+
+def _implied_terms(needle: str) -> tuple[str, ...]:
+    """Concrete résumé evidence that would demonstrate the umbrella skill ``needle``."""
+    for keys, evidence in _SKILL_IMPLICATIONS:
+        if needle in keys:
+            return evidence
+    return ()
+
+
+def _singular(word: str) -> str:
+    """Rough English singular, enough to bridge plural job skills to a singular
+    résumé mention ("REST APIs" ← "REST API", "pipelines" ← "pipeline")."""
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith("es") and word[-3] in "sxzo":
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
 def _claims(term: str, corpus_lower: str, vocab: set[str]) -> bool:
-    """Does the résumé support this skill/keyword? Whole-term phrase match, or
-    token-subset — the same rule the guardrails use for provenance.
+    """Does the résumé support this skill/keyword? Whole-term phrase match, then
+    token-subset (with plural/word-form tolerance), then a semantic implication —
+    so a demonstrated capability counts even when the exact umbrella word is absent.
 
     The phrase match is boundary-anchored, not a bare substring: "R" is inside
     "Resolved", "Go" inside "Google", and "REST" inside "interest", so plain
@@ -376,7 +425,13 @@ def _claims(term: str, corpus_lower: str, vocab: set[str]) -> bool:
     if _term_present(corpus_lower, needle):
         return True
     parts = _tokens(needle)
-    return bool(parts) and parts.issubset(vocab)
+    if parts and parts.issubset(vocab):
+        return True
+    # Plural / word-form tolerance: "REST APIs" ← the résumé's "REST API".
+    if parts and all((t in vocab) or (_singular(t) in vocab) for t in parts):
+        return True
+    # Semantic implication: MongoDB ⇒ NoSQL, latency/throughput work ⇒ perf-opt.
+    return any(evidence in corpus_lower for evidence in _implied_terms(needle))
 
 
 def _estimate_years(resume: MasterResume) -> float:

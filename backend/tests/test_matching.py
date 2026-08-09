@@ -208,3 +208,30 @@ def test_title_alignment_lifts_the_score(resume):
     on = analyze_job_fit(resume, f"Software Engineer. {body}", title="Software Engineer")
     off = analyze_job_fit(resume, f"Warehouse Associate. {body}", title="Warehouse Associate")
     assert on.score > off.score
+
+
+def test_claims_resolves_semantic_and_plural_skills():
+    """Demonstrated skills count even when the exact umbrella keyword is absent:
+    REST work ⇒ 'REST APIs', MongoDB ⇒ 'NoSQL', latency/quantization ⇒
+    'Performance optimization'. Genuine gaps stay gaps."""
+    import copy
+
+    from app.services.matching import _claims, _skill_index
+
+    data = copy.deepcopy(MASTER_RESUME_FIXTURE)
+    exp = data["experience"][0]
+    exp["highlights"] = list(exp.get("highlights", [])) + [
+        "Built a REST API orchestration layer across internal services",
+        "Cut inference latency with INT8 quantization and lifted throughput",
+    ]
+    exp["technologies"] = list(exp.get("technologies", [])) + ["MongoDB"]
+    resume = MasterResume.model_validate(data)
+    corpus, vocab = _skill_index(resume)
+
+    assert _claims("REST APIs", corpus, vocab)  # ← "REST API" (singular) in résumé
+    assert _claims("NoSQL", corpus, vocab)  # ← MongoDB
+    assert _claims("Performance optimization", corpus, vocab)  # ← latency/quantization
+    # Genuine gaps must remain gaps — no over-crediting.
+    assert not _claims("Kubernetes", corpus, vocab)
+    assert not _claims("Kafka", corpus, vocab)
+    assert not _claims("AWS", corpus, vocab)
