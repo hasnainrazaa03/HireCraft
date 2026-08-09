@@ -334,7 +334,6 @@ export default function ApplicationPage() {
             <OverviewTab
               application={application}
               onUpdate={update.mutate}
-              onSaveNotes={(notes) => update.mutate({ notes })}
               download={(kind, name) => void download(kind, name)}
               onOpenDocs={(dt) => {
                 setTab("documents");
@@ -426,7 +425,7 @@ export default function ApplicationPage() {
           {tab === "notes" && (
             <div className="card mt-6 p-6">
               <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2">
-                <NotesCard application={application} onSave={(notes) => update.mutate({ notes })} bare />
+                <NotesCard application={application} bare />
                 <div className="lg:border-l lg:border-white/[0.06] lg:pl-8">
                   <DatesCard application={application} onUpdate={update.mutate} bare />
                 </div>
@@ -1825,24 +1824,85 @@ function QuickActions({ items }: { items: { label: string; icon: React.ReactNode
   );
 }
 
-/** Notes editor (saves via PATCH on button click). `bare` drops the card
- *  wrapper so it can share a card with the dates panel on the Notes tab. */
-function NotesCard({ application, onSave, bare }: { application: ApplicationDetail; onSave: (notes: string) => void; bare?: boolean }) {
-  const [text, setText] = useState(application.notes ?? "");
-  const dirty = text !== (application.notes ?? "");
+/** A timestamped notes log: add, edit, delete individual entries (newest first).
+ *  `bare` drops the card wrapper so it can share the Notes-tab card. */
+function NotesCard({ application, bare }: { application: ApplicationDetail; bare?: boolean }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const id = application.id;
+  const notes = [...(application.note_entries ?? [])].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["application", id] });
+
+  const add = useMutation({
+    mutationFn: (text: string) => api.post(`/applications/${id}/notes`, { text }),
+    onSuccess: () => { setDraft(""); invalidate(); },
+    onError: (e) => toast.error("Couldn't add the note", e instanceof ApiError ? e.message : undefined),
+  });
+  const edit = useMutation({
+    mutationFn: (v: { noteId: string; text: string }) => api.patch(`/applications/${id}/notes/${v.noteId}`, { text: v.text }),
+    onSuccess: () => { setEditingId(null); invalidate(); },
+    onError: (e) => toast.error("Couldn't save the note", e instanceof ApiError ? e.message : undefined),
+  });
+  const del = useMutation({
+    mutationFn: (noteId: string) => api.delete(`/applications/${id}/notes/${noteId}`),
+    onSuccess: invalidate,
+    onError: (e) => toast.error("Couldn't delete the note", e instanceof ApiError ? e.message : undefined),
+  });
+
   const inner = (
     <>
       <h2 className="text-base font-semibold">Application notes</h2>
-      <p className="mt-0.5 text-xs text-subtle">Your thoughts, interview feedback, or anything important.</p>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Write a note…"
-        className={`input mt-3 leading-relaxed ${bare ? "min-h-[150px]" : "min-h-[90px]"}`}
-      />
-      <button onClick={() => onSave(text)} disabled={!dirty} className="btn-primary btn-sm mt-2 disabled:opacity-40">
-        Save note
-      </button>
+      <p className="mt-0.5 text-xs text-subtle">A running log — recruiter chats, interview feedback, follow-ups. Each note is timestamped.</p>
+      <div className="mt-3">
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a note…"
+          className="input min-h-[70px] leading-relaxed"
+        />
+        <button
+          onClick={() => draft.trim() && add.mutate(draft.trim())}
+          disabled={!draft.trim() || add.isPending}
+          className="btn-primary btn-sm mt-2 disabled:opacity-40"
+        >
+          {add.isPending ? "Adding…" : "Add note"}
+        </button>
+      </div>
+
+      {notes.length > 0 && (
+        <div className="mt-4 space-y-2.5">
+          {notes.map((n) => (
+            <div key={n.id} className="rounded-xl border border-white/[0.07] bg-surface-2/50 p-3">
+              {editingId === n.id ? (
+                <>
+                  <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="input min-h-[60px] leading-relaxed" />
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={() => editText.trim() && edit.mutate({ noteId: n.id, text: editText.trim() })} disabled={edit.isPending} className="btn-primary btn-sm disabled:opacity-40">Save</button>
+                    <button onClick={() => setEditingId(null)} className="btn-ghost btn-sm">Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-content">{n.text}</p>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <span className="text-[11px] text-subtle">
+                      {new Date(n.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      {n.updated_at ? " · edited" : ""}
+                    </span>
+                    <div className="flex gap-1">
+                      <button onClick={() => { setEditingId(n.id); setEditText(n.text); }} className="rounded px-1.5 py-0.5 text-[11px] text-subtle transition hover:text-content">Edit</button>
+                      <button onClick={() => del.mutate(n.id)} className="rounded px-1.5 py-0.5 text-[11px] text-subtle transition hover:text-coral">Delete</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
   return bare ? <div>{inner}</div> : <div className="card p-5">{inner}</div>;
@@ -2235,7 +2295,6 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
 function OverviewTab({
   application,
   onUpdate,
-  onSaveNotes,
   download,
   onOpenDocs,
   onOpenNotes,
@@ -2246,7 +2305,6 @@ function OverviewTab({
 }: {
   application: ApplicationDetail;
   onUpdate: (body: { tracker_status: TrackerStatus }) => void;
-  onSaveNotes: (notes: string) => void;
   download: (kind: string, name: string) => void;
   onOpenDocs: (docTab?: DocTab) => void;
   onOpenNotes: () => void;
@@ -2335,7 +2393,7 @@ function OverviewTab({
         <WorkflowCard application={application} onUpdate={onUpdate} />
         {application.job_signals && <JobSignalsCard signals={application.job_signals} />}
         <QuickActions items={quick} />
-        <NotesCard application={application} onSave={onSaveNotes} />
+        <NotesCard application={application} />
         <JobDetailsCard job={application.job} />
       </div>
 

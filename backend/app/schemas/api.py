@@ -394,6 +394,7 @@ class ApplicationDetail(ApiModel):
     cost_breakdown: dict[str, Any] = Field(default_factory=dict)
     cover_letter: list[str] | None = None
     activity: list[dict[str, Any]] = Field(default_factory=list)
+    note_entries: list[NoteEntry] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     job: JobResponse | None = None
@@ -406,6 +407,21 @@ class CoverLetterRequest(ApiModel):
 
     feedback: Annotated[str, Field(min_length=2, max_length=600)] | None = None
     tone: str | None = None
+
+
+class NoteEntry(ApiModel):
+    """One timestamped note on an application."""
+
+    id: str
+    text: str
+    at: str
+    updated_at: str | None = None
+
+
+class NoteRequest(ApiModel):
+    """Add or edit a note."""
+
+    text: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
 class AssistantReviseRequest(ApiModel):

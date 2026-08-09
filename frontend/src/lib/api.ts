@@ -669,6 +669,13 @@ export interface JobSignals {
   word_count: number;
 }
 
+export interface NoteEntry {
+  id: string;
+  text: string;
+  at: string;
+  updated_at: string | null;
+}
+
 export interface QualityBullet {
   id: string;
   where: string;
@@ -701,6 +708,7 @@ export interface ApplicationDetail {
   job_signals: JobSignals | null;
   cover_letter: string[] | null;
   activity: { kind: string; label: string; at: string; meta: Record<string, unknown> }[];
+  note_entries: NoteEntry[];
   total_input_tokens: number;
   total_output_tokens: number;
   total_cost_usd: number;

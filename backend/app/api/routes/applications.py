@@ -39,6 +39,7 @@ from app.schemas.api import (
     AssistantReviseRequest,
     CoverLetterRequest,
     JobSignalsResponse,
+    NoteRequest,
     OutreachDraftResponse,
     OutreachRequest,
     QualityBullet,
@@ -429,6 +430,54 @@ def update_application(
         application.interview_at = payload.interview_at
     if "reminder_at" in fields:
         application.reminder_at = payload.reminder_at
+    db.commit()
+    db.refresh(application)
+    return _to_detail(application)
+
+
+def _now_iso() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+@router.post("/{application_id}/notes", response_model=ApplicationDetail)
+def add_note(
+    application_id: uuid.UUID, payload: NoteRequest, user: CurrentUser, db: DbSession
+) -> ApplicationDetail:
+    application = _get_owned(db, user.id, application_id)
+    entries = list(application.note_entries or [])
+    entries.append({"id": uuid.uuid4().hex, "text": payload.text.strip(), "at": _now_iso(), "updated_at": None})
+    application.note_entries = entries
+    db.commit()
+    db.refresh(application)
+    return _to_detail(application)
+
+
+@router.patch("/{application_id}/notes/{note_id}", response_model=ApplicationDetail)
+def edit_note(
+    application_id: uuid.UUID, note_id: str, payload: NoteRequest, user: CurrentUser, db: DbSession
+) -> ApplicationDetail:
+    application = _get_owned(db, user.id, application_id)
+    entries = list(application.note_entries or [])
+    if not any(n.get("id") == note_id for n in entries):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Note not found.")
+    application.note_entries = [
+        {**n, "text": payload.text.strip(), "updated_at": _now_iso()} if n.get("id") == note_id else n
+        for n in entries
+    ]
+    db.commit()
+    db.refresh(application)
+    return _to_detail(application)
+
+
+@router.delete("/{application_id}/notes/{note_id}", response_model=ApplicationDetail)
+def delete_note(
+    application_id: uuid.UUID, note_id: str, user: CurrentUser, db: DbSession
+) -> ApplicationDetail:
+    application = _get_owned(db, user.id, application_id)
+    entries = [n for n in (application.note_entries or []) if n.get("id") != note_id]
+    application.note_entries = entries
     db.commit()
     db.refresh(application)
     return _to_detail(application)

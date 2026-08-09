@@ -131,7 +131,10 @@ class Application(Base, TimestampMixin):
     # The current cover letter body as an ordered list of paragraphs. Persisted so
     # the Cover Letter tab can render it and feed it back for feedback-driven edits.
     cover_letter: Mapped[list[str] | None] = mapped_column(JsonB)
+    # Legacy single note (kept for back-compat); the notes UI now uses note_entries.
     notes: Mapped[str | None] = mapped_column(Text)
+    # Timestamped note entries: [{id, text, at, updated_at}]. A real notes log.
+    note_entries: Mapped[list[dict[str, Any]]] = mapped_column(JsonB, default=list, nullable=False)
     # Tracker v2: a scheduled interview and an optional follow-up reminder.
     interview_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
