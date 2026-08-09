@@ -397,7 +397,30 @@ Confirms the app is up before deep testing.
 - ✅ **T-CLW-04** **Refine with feedback** (was **FAIL** ×2): typing feedback rewrites the letter, grounded, and the preview now **actually refreshes** to show it.
   - Notes: **FIXED — real root cause was a stale PDF cache, not the model.** Verified server-side on the real Qualcomm app: refinement genuinely reworks the letter (the reworked intro was **0/4 paragraphs identical**, reframed to "Qualcomm's Machine Learning team requires…"). But artifacts are regenerated **in place** at a fixed path and `FileResponse` sent ETag/Last-Modified with **no `Cache-Control`**, so the browser served the **old cached PDF** after every regenerate/refine — it only *looked* unchanged. Fix: `Cache-Control: no-store` on downloads + `fetch(cache:'no-store')` + cache-bust the preview URL per refresh. Also made the revision prompt **fully rewrite** the targeted paragraph so the change is unmistakable, and kept the honest no-op message for genuine "nothing to change" cases. **One-time:** hard-refresh (⌘⇧R) once to drop any already-cached PDF; fresh headers keep it current after that.
 
-### 9.2 Outreach
+- ✅ **T-CL-VERIFY** **Truthfulness audit** of the flagged phrases (user asked): checked each against the master résumé **+ brag bank**.
+  - **Grounded (correctly kept):** `Docker` ✓, `Welch's two-sample t-tests` ✓, `44%` ✓, `2,500 samples` ✓, `chain-of-thought` ✓, `few-shot` ✓ — all present in the docs, so the letter is standing on real evidence (the 44% / t-test / 2,500 claim traces straight to the brag bank).
+  - **One interpretive phrase:** `hardware-aware optimizations` is **not** in the docs verbatim. It's framing of real work (INT8 quantization, low-latency inference), not a fabricated fact — no invented number/tool/employer — so the guardrails (which deliberately allow cover-letter *reframing*) keep it. Fair characterization; the user's call before sending.
+  - **Gap found + closed:** cover-letter guardrail flags weren't surfaced anywhere (the Guardrails panel shows the *résumé* report). Saved letters now **store + show** the cover-letter guardrail report, so kept-as-context terms are visible.
+
+### 9.3 Saved cover letters  (Writing Studio → **Saved letters**)
+- ⬜ **T-SCL-01** **Save**: generate a letter on the Cover letter tab → **Save** → it appears under **Saved letters** (studio letters were previously ephemeral).
+  - Notes:
+- ⬜ **T-SCL-02** **List & view**: each card shows **company · role · date**, a **voice** marker, and a **Linked** badge if attached; selecting one shows the full letter (greeting → body → sign-off).
+  - Notes:
+- ⬜ **T-SCL-03** **Refine**: natural-language feedback rewrites the saved letter, grounded; an honest **"no change made"** message shows if the request can't be satisfied truthfully.
+  - Notes:
+- ⬜ **T-SCL-04** **Regenerate**: a fresh letter from the stored résumé + job text (tone/voice preserved).
+  - Notes:
+- ⬜ **T-SCL-05** **Download**: **PDF / DOCX / LaTeX** of the saved letter (deterministic, no LLM).
+  - Notes:
+- ⬜ **T-SCL-06** **Attach to application** ("generate first, link later"): pick an application → the letter is **copied onto that app's Cover Letter tab** (PDF rendered), the card shows **Linked**, and an **Open linked application →** link appears. A later refine/regenerate **keeps the linked app in sync**.
+  - Notes:
+- ⬜ **T-SCL-07** **Delete**: removes the saved letter; selection falls back to the next one.
+  - Notes:
+- ⬜ **T-SCL-08** **Guardrail transparency**: a saved letter surfaces any **flagged-to-verify** items (e.g. posting terms kept as context), so nothing unsupported hides.
+  - Notes:
+
+### 9.4 Outreach
 - ⬜ **T-OUT-01** Switch to **Outreach**: pick a **message type** (Recruiter email / LinkedIn note / Follow-up / Thank-you / Interview check-in / Referral request / Offer negotiation) — description updates.
   - Notes:
 - ⬜ **T-OUT-02** **Generate message** is disabled until **Company** is entered; add company/role/recipient/context → generate.
