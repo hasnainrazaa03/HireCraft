@@ -385,7 +385,17 @@ Confirms the app is up before deep testing.
 - ⬜ **T-CL-08** If every sentence gets removed as unsupported → the "nothing to hand you" explanation shows (no empty letter).
   - Notes:
 - ⬜ **T-CL-09** **Company-aware hook** (new): the opening paragraph ties something **specific from the posting** (the role/team/problem) to your most relevant real work — not a generic "I am excited to apply". The body addresses the role's **top stated needs**; the close names a **concrete** reason for fit. It never invents company facts (funding, news, product details) that aren't in the JD. *(Also applies in the workspace **Cover Letter** tab.)*
+  - Notes: **Bugfix (was silently broken):** the guardrail ran the *résumé* injected-keyword check on cover-letter paragraphs, and the **company name is itself an ATS keyword** — so every paragraph naming the company (the hook **and** the close, which exist to do exactly that) was **dropped**, leaving only résumé-restating middle paragraphs. Now cover-letter paragraphs **keep + flag** posting terms (invented *numbers* still hard-drop; résumé fields unchanged). Verified on the real Qualcomm app: hook/close now survive.
+
+### 9.2 Cover Letter workspace  (Application → **Cover Letter** tab)
+- ✅ **T-CLW-01** **Generate** a cover letter from the tab: grounded in the tailored résumé + the job, associated with the application, no errors.
+  - Notes: PASS (user run). Grounded in real experience (Prana.ai, Deloitte, 5M+ volumes, 35+ countries, 10×, 92%). **Quality fix shipped:** stronger opening + proper closing + explicit "why this team" connections now come through (they were being stripped — see T-CL-09), and the value paragraphs are prompted to read as narrative, not a résumé restatement.
+- ⬜ **T-CLW-02** **Review**: the preview reads as a real letter (hook → value → close), addressed to the real company.
   - Notes:
+- ✅ **T-CLW-03** **Edit model** (partial → by design): there is no manual rich-text editor; editing is **AI-assisted via natural-language feedback** in the Refine panel. Deliberate product choice, not a defect — the guide's "edit manually" wording is what's stale.
+  - Notes: Accepted as intended. (If we ever want literal inline editing, that's a separate feature — not required for pass.)
+- ✅ **T-CLW-04** **Refine with feedback** (was **FAIL**): typing feedback rewrites the letter, grounded, and the preview refreshes — **and now, if the request genuinely changes nothing, the panel says so** ("I couldn't make a grounded change for that…") instead of falsely claiming "✓ Updated".
+  - Notes: FIXED. The earlier "before == after identical" was the **same guardrail bug** (T-CL-09): a refinement that added a company hook had that paragraph dropped, so the surviving text looked unchanged. With the drop removed, feedback now lands; the no-op signal covers the genuine "nothing to change" case honestly.
 
 ### 9.2 Outreach
 - ⬜ **T-OUT-01** Switch to **Outreach**: pick a **message type** (Recruiter email / LinkedIn note / Follow-up / Thank-you / Interview check-in / Referral request / Offer negotiation) — description updates.
