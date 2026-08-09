@@ -56,6 +56,7 @@ from app.schemas.tailoring import (
     TailoringResult,
 )
 from app.services import storage
+from app.services.activity import log_event
 from app.services.evidence import evidence_lines
 from app.services.job_signals import analyze_job
 from app.services.latex.compiler import LatexCompilationError, compile_latex
@@ -183,6 +184,8 @@ def create_application(
         notes=payload.notes,
     )
     db.add(application)
+    db.flush()
+    log_event(application, "created", "Application created")
     db.commit()
     db.refresh(application)
 
@@ -411,7 +414,12 @@ def update_application(
 ) -> ApplicationDetail:
     application = _get_owned(db, user.id, application_id)
     fields = payload.model_fields_set
-    if payload.tracker_status is not None:
+    if payload.tracker_status is not None and payload.tracker_status != application.tracker_status:
+        log_event(
+            application, "status_changed",
+            f"Status → {payload.tracker_status.value.replace('_', ' ').title()}",
+            {"from": application.tracker_status.value, "to": payload.tracker_status.value},
+        )
         application.tracker_status = payload.tracker_status
     if payload.notes is not None:
         application.notes = payload.notes
@@ -854,6 +862,12 @@ def assistant_apply(
     application.tailored_resume = merged.model_dump(mode="json")
     application.diff = [d.model_dump(mode="json") for d in build_diff(master, merged)]
     application.guardrail_report = report.model_dump(mode="json")
+    new_overall = _score_snapshot(application)
+    delta = (new_overall or {}).get("overall", 0) - (prev_scores or {}).get("overall", 0) if prev_scores else 0
+    log_event(
+        application, "resume_improved", "Résumé improved",
+        {"overall_delta": delta} if delta else {},
+    )
     application.prev_scores = prev_scores
     db.commit()
     db.refresh(application)
@@ -917,6 +931,10 @@ def generate_cover_letter(
     _write_artifact(db, application, user.id, ArtifactKind.COVER_LETTER_TEX, "cover_letter.tex", tex.encode("utf-8"), "application/x-tex")
     application.cover_letter = paragraphs
     application.include_cover_letter = True
+    log_event(
+        application, "cover_letter",
+        "Cover letter updated" if payload.feedback else "Cover letter generated",
+    )
     _charge(db, user.id, application, ledger)
     db.commit()
     db.refresh(application)

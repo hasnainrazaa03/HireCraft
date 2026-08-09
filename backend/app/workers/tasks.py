@@ -24,6 +24,7 @@ from app.schemas.job import ScrapeResult
 from app.schemas.resume import MasterResume
 from app.schemas.tailoring import GuardrailReport
 from app.services import storage
+from app.services.activity import log_event
 from app.services.email.sender import Email, EmailError, send_email
 from app.services.evidence import evidence_lines
 from app.services.latex.compiler import LatexCompilationError
@@ -117,6 +118,7 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
             )
 
         # Snapshot the prior run's scores (if any) so a re-tailor shows the trend.
+        was_retailor = bool(application.tailored_resume)
         application.prev_scores = _prev_score_snapshot(application)
         application.tailored_resume = outcome.tailored_resume.model_dump(mode="json")
         application.diff = [d.model_dump(mode="json") for d in outcome.diff]
@@ -125,6 +127,11 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
         accrue_usage(application, outcome.usage.entries, reset=True)
         application.pipeline_status = PipelineStatus.COMPLETED
         application.error_message = None
+        log_event(
+            application,
+            "regenerated" if was_retailor else "tailored",
+            "Résumé regenerated" if was_retailor else "Résumé tailored",
+        )
 
         for purpose, usage in outcome.usage.entries:
             db.add(

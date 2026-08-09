@@ -2390,27 +2390,52 @@ function DatesCard({
   return bare ? <div>{inner}</div> : <div className="card p-5">{inner}</div>;
 }
 
-/** Simple activity timeline from the application's own timestamps. */
+const ACTIVITY_META: Record<string, { tint: string; icon: React.ReactNode }> = {
+  created: { tint: "bg-brand-500/15 text-brand-300", icon: <IconBriefcase className="h-3.5 w-3.5" /> },
+  tailored: { tint: "bg-emerald/15 text-emerald", icon: <IconSparkles className="h-3.5 w-3.5" /> },
+  regenerated: { tint: "bg-emerald/15 text-emerald", icon: <IconRefresh className="h-3.5 w-3.5" /> },
+  resume_improved: { tint: "bg-electric/15 text-electric", icon: <IconPen className="h-3.5 w-3.5" /> },
+  cover_letter: { tint: "bg-electric/15 text-electric", icon: <IconLetter className="h-3.5 w-3.5" /> },
+  status_changed: { tint: "bg-hotpink/15 text-hotpink", icon: <IconArrowRight className="h-3.5 w-3.5" /> },
+};
+
+/** Activity timeline — the application's real event log, newest first. */
 function ActivityView({ application }: { application: ApplicationDetail }) {
-  const events = [
-    { label: "Application created", at: application.created_at },
-    { label: "Last updated", at: application.updated_at },
-    ...(application.interview_at ? [{ label: "Interview scheduled", at: application.interview_at }] : []),
-    ...(application.reminder_at ? [{ label: "Follow-up reminder set", at: application.reminder_at }] : []),
-  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  // Fall back to the created timestamp for applications tailored before the log existed.
+  const events =
+    application.activity.length > 0
+      ? [...application.activity].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      : [{ kind: "created", label: "Application created", at: application.created_at, meta: {} }];
+
   return (
     <div className="card mt-6 p-5">
       <h2 className="text-base font-semibold">Activity</h2>
-      <ol className="mt-4 space-y-3">
-        {events.map((e, i) => (
-          <li key={i} className="flex items-start gap-3">
-            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-400" />
-            <div>
-              <div className="text-sm text-content">{e.label}</div>
-              <div className="text-xs text-subtle">{new Date(e.at).toLocaleString()}</div>
-            </div>
-          </li>
-        ))}
+      <p className="mt-0.5 text-xs text-subtle">Everything that's happened to this application, newest first.</p>
+      <ol className="mt-4">
+        {events.map((e, i) => {
+          const meta = ACTIVITY_META[e.kind] ?? { tint: "bg-white/[0.06] text-subtle", icon: <IconSparkles className="h-3.5 w-3.5" /> };
+          const isLast = i === events.length - 1;
+          const dlt = e.meta?.overall_delta as number | undefined;
+          return (
+            <li key={i} className="relative flex gap-3 pb-5 last:pb-0">
+              {!isLast && <span className="absolute left-[15px] top-8 h-full w-px bg-white/[0.07]" />}
+              <span className={`relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full ${meta.tint}`}>
+                {meta.icon}
+              </span>
+              <div className="min-w-0 pt-1">
+                <div className="flex items-center gap-2 text-sm text-content">
+                  {e.label}
+                  {typeof dlt === "number" && dlt !== 0 && (
+                    <span className="text-xs font-medium" style={{ color: dlt > 0 ? "#34D399" : "#FF9F43" }}>
+                      {dlt > 0 ? "▲ +" : "▼ "}{dlt} overall
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-subtle">{new Date(e.at).toLocaleString()}</div>
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

@@ -700,6 +700,7 @@ export interface ApplicationDetail {
   scorecard: Scorecard | null;
   job_signals: JobSignals | null;
   cover_letter: string[] | null;
+  activity: { kind: string; label: string; at: string; meta: Record<string, unknown> }[];
   total_input_tokens: number;
   total_output_tokens: number;
   total_cost_usd: number;

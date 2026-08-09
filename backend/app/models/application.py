@@ -126,6 +126,8 @@ class Application(Base, TimestampMixin):
     # Metric scores from just before the latest résumé change, so the scorecard can
     # show a per-metric trend (↑/↓). {"overall": int, "<metric key>": int, …}.
     prev_scores: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
+    # Append-only event log for the Activity timeline: [{kind, label, at, meta}].
+    activity: Mapped[list[dict[str, Any]]] = mapped_column(JsonB, default=list, nullable=False)
     # The current cover letter body as an ordered list of paragraphs. Persisted so
     # the Cover Letter tab can render it and feed it back for feedback-driven edits.
     cover_letter: Mapped[list[str] | None] = mapped_column(JsonB)

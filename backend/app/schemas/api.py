@@ -393,6 +393,7 @@ class ApplicationDetail(ApiModel):
     total_cost_usd: float
     cost_breakdown: dict[str, Any] = Field(default_factory=dict)
     cover_letter: list[str] | None = None
+    activity: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     job: JobResponse | None = None
