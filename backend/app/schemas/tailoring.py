@@ -89,6 +89,9 @@ class BulletConfidence(TailoringModel):
     text: str
     confidence: Confidence
     reason: str
+    # Where the bullet's facts are grounded: the résumé itself, or an attested
+    # brag-bank fact the candidate vouched for. Drives the provenance badge.
+    source: Literal["resume", "brag_bank"] = "resume"
 
 
 # The factual categories the engine guarantees the model cannot alter. Surfaced

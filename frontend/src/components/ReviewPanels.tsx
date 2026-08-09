@@ -213,9 +213,21 @@ export function ConfidencePanel({
             />
             <div className="min-w-0">
               <div className="text-sm text-content">{c.text}</div>
-              <div className="mt-0.5 text-xs text-subtle">
-                {CONFIDENCE_META[c.confidence].label} · {c.reason}{" "}
-                {c.label ? `· ${c.label}` : ""}
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-subtle">
+                <span>{CONFIDENCE_META[c.confidence].label} · {c.reason}</span>
+                {c.label && (
+                  <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-muted" title="Source entry in your résumé">
+                    {c.label}
+                  </span>
+                )}
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    c.source === "brag_bank" ? "bg-brand-500/15 text-brand-200" : "bg-emerald/12 text-emerald"
+                  }`}
+                  title={c.source === "brag_bank" ? "Grounded in a fact you attested in your brag bank" : "Grounded in your résumé"}
+                >
+                  {c.source === "brag_bank" ? "✦ Brag bank" : "✓ Résumé"}
+                </span>
               </div>
             </div>
           </div>

@@ -291,7 +291,8 @@ class GuardrailEngine:
         self.confidence: list[BulletConfidence] = []
 
     def _confidence(
-        self, entry_id: str, label: str, text: str, level: str, reason: str
+        self, entry_id: str, label: str, text: str, level: str, reason: str,
+        *, source: str = "resume",
     ) -> None:
         self.confidence.append(
             BulletConfidence(
@@ -300,6 +301,7 @@ class GuardrailEngine:
                 text=text,
                 confidence=level,  # type: ignore[arg-type]
                 reason=reason,
+                source=source,  # type: ignore[arg-type]
             )
         )
 
@@ -455,17 +457,22 @@ class GuardrailEngine:
                 term_note = f"Mentions {', '.join(sorted(set(unknown_terms)))}, not found in your résumé."
                 caution = f"{caution} {term_note}".strip() if caution else term_note
 
+            # A number in this bullet that the candidate attested in the brag bank
+            # (not on the résumé's own entry) means it's grounded there.
+            source = "brag_bank" if (bullet_numbers & (self.evidence_numbers - entry_numbers)) else "resume"
+
             # Classify the surviving bullet.
             if caution:
-                self._confidence(entry_id, label, bullet, "needs_review", caution)
+                self._confidence(entry_id, label, bullet, "needs_review", caution, source=source)
             elif bullet in original:
                 self._confidence(
-                    entry_id, label, bullet, "verified", "Unchanged from your résumé.",
+                    entry_id, label, bullet, "verified", "Unchanged from your résumé.", source="resume",
                 )
             else:
                 self._confidence(
                     entry_id, label, bullet, "likely",
                     "Reworded; every number and named thing traces to your résumé.",
+                    source=source,
                 )
 
             kept.append(bullet)

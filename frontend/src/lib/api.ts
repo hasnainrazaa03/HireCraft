@@ -536,6 +536,7 @@ export interface BulletConfidence {
   text: string;
   confidence: Confidence;
   reason: string;
+  source: "resume" | "brag_bank";
 }
 
 export interface MasterResume {
