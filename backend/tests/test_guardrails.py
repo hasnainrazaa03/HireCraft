@@ -586,3 +586,40 @@ class TestReachMode:
             self._result(master, "Cut latency 999% on Kubernetes")
         )
         assert any(v.kind == "fabricated_number" and v.severity == "error" for v in rep.violations)
+
+
+class TestCoverLetterParagraphs:
+    """A cover letter names the company's needs, products, and stack by design —
+    the hook and closing exist to do exactly that. The injected-keyword guard
+    must therefore keep (and flag) those references instead of dropping the whole
+    paragraph, which would gut the letter down to a résumé restatement. Invented
+    numbers are still dropped, and the relaxation is cover-letter-specific."""
+
+    def test_keeps_paragraph_referencing_a_job_keyword(self, master, requirements):
+        engine = GuardrailEngine(master, requirements)
+        para = (
+            "Globex's investment in Kubernetes-based platforms is exactly the kind "
+            "of production infrastructure problem I'm eager to help solve."
+        )
+        assert engine.vet_paragraph(para) is not None
+
+    def test_kept_keyword_is_flagged_for_review(self, master, requirements):
+        engine = GuardrailEngine(master, requirements)
+        engine.vet_paragraph(
+            "Globex's Kubernetes platform is the kind of system I want to build."
+        )
+        assert any(
+            v.kind == "unverified_keyword_claim" and v.severity == "warning"
+            for v in engine.violations
+        )
+
+    def test_resume_field_still_reverts_the_same_keyword(self, master, requirements):
+        # The relaxation is scoped to cover letters: a résumé summary that claims
+        # the unbacked keyword is still reverted.
+        engine = GuardrailEngine(master, requirements)
+        assert engine._vet_free_text("summary", "Built Kubernetes clusters at scale") is None
+
+    def test_cover_letter_still_drops_an_invented_number(self, master, requirements):
+        engine = GuardrailEngine(master, requirements)
+        para = "I scaled our platform to 900 million requests per day at Globex."
+        assert engine.vet_paragraph(para) is None

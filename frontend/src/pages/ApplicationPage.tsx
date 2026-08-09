@@ -820,15 +820,34 @@ function CoverLetterTab({ application, download }: { application: ApplicationDet
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  // Snapshot the letter right before a feedback run, so we can tell the user
+  // honestly whether their request actually changed anything.
+  const prevLetterRef = useRef<string[] | null>(null);
 
   const gen = useMutation({
     mutationFn: (body: { feedback?: string; tone?: string }) =>
       api.post<ApplicationDetail>(`/applications/${id}/cover-letter`, body),
-    onSuccess: (_d, body) => {
+    onSuccess: (d, body) => {
       qc.invalidateQueries({ queryKey: ["application", id] });
       setRefreshKey((k) => k + 1);
-      if (body.feedback) setMessages((m) => [...m, { role: "assistant", content: "✓ Updated the letter to your feedback — the preview just refreshed." }]);
-      toast.success(body.feedback ? "Cover letter updated" : "Cover letter generated");
+      if (body.feedback) {
+        const before = (prevLetterRef.current ?? []).join("\n\n").trim();
+        const after = (d.cover_letter ?? []).join("\n\n").trim();
+        const changed = before !== after;
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: changed
+              ? "✓ Updated the letter to your feedback — the preview just refreshed."
+              : "I couldn't make a grounded change for that — the wording already reflects what your résumé supports here. Try a more specific ask (e.g. “open with why this team” or “tighten the second paragraph”), or reword your request.",
+          },
+        ]);
+        if (changed) toast.success("Cover letter updated");
+        else toast.info("No change made", "The letter already reflects your résumé for that request.");
+      } else {
+        toast.success("Cover letter generated");
+      }
     },
     onError: (e) => {
       const msg = e instanceof ApiError ? e.message : "Something went wrong. Try again.";
@@ -846,6 +865,7 @@ function CoverLetterTab({ application, download }: { application: ApplicationDet
     if (!f || gen.isPending) return;
     setMessages((m) => [...m, { role: "user", content: f }]);
     setInput("");
+    prevLetterRef.current = application.cover_letter;
     gen.mutate({ feedback: f });
   }
 

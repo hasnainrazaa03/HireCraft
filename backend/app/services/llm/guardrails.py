@@ -667,24 +667,36 @@ class GuardrailEngine:
             )
             return None
         injected = self._injected_job_terms(text)
-        if injected and not self.reach:
-            self._flag(
-                "unverified_keyword_claim",
-                "error",
-                f"{field}: claims {', '.join(sorted(injected))}, which appears in the "
-                f"job posting but not in your master resume. Reverted.",
-                field=field,
-                action="reverted_to_master",
-            )
-            return None
-        if injected:  # reach mode: keep the keyword in the line, but flag it
+        if injected:
+            # A résumé line naming a job keyword the résumé can't back is a false
+            # skill claim → revert. But a COVER LETTER names the company's needs,
+            # products, and stack by design (the hook and closing exist to do
+            # exactly that), so dropping every posting term would gut precisely
+            # the paragraphs that make it a letter. Keep those and flag instead —
+            # the invented-number check above still hard-drops real fabrication.
+            cover = field == "cover_letter"
+            if not self.reach and not cover:
+                self._flag(
+                    "unverified_keyword_claim",
+                    "error",
+                    f"{field}: claims {', '.join(sorted(injected))}, which appears in the "
+                    f"job posting but not in your master resume. Reverted.",
+                    field=field,
+                    action="reverted_to_master",
+                )
+                return None
             self._flag(
                 "unverified_keyword_claim",
                 "warning",
-                f"{field}: reach mode kept {', '.join(sorted(injected))} from the job "
-                f"posting — verify you can back it up before sending.",
+                (
+                    f"{field}: reach mode kept {', '.join(sorted(injected))} from the job "
+                    f"posting — verify you can back it up before sending."
+                    if self.reach
+                    else f"{field}: references {', '.join(sorted(injected))} from the "
+                    f"posting — fine as context, but don't imply a skill you can't back up."
+                ),
                 field=field,
-                action="reach_kept",
+                action="reach_kept" if self.reach else "flagged",
             )
         unknown = _suspicious_tokens(text, self.vocab, self.stem_vocab)
         if unknown:

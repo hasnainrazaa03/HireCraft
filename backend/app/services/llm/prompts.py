@@ -441,7 +441,10 @@ single most relevant real accomplishment. Name the role and company. Show you re
 posting — never a generic "I am excited to apply".
 - Paragraphs 2-3 (value): address the role's top 2-3 STATED needs directly, each \
 backed by the candidate's actual experience, skills, or projects. Lead with the proof \
-that matters most to THIS role — not a restatement of the resume.
+that matters most to THIS role. For each, make the connection EXPLICIT — say why that \
+experience makes the candidate a strong fit for THIS team's work — instead of \
+restating the resume. Write it as a short narrative a person would tell, not a list of \
+duties.
 - Paragraph 4 (closing): a brief, confident close that names a CONCRETE reason this \
 role/company is a genuine fit — tie it to a real detail from the posting, not vague \
 mission-praise — plus a forward-looking note. Do not include a salutation or sign-off \
