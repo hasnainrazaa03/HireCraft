@@ -619,7 +619,7 @@ function PdfBlobFrame({ id, kind, title, refreshKey = 0 }: { id: string; kind: s
     setError(false);
     setUrl(null);
     api
-      .blob(`/applications/${id}/download/${kind}`)
+      .blob(`/applications/${id}/download/${kind}?v=${refreshKey}`)
       .then((b) => {
         if (cancelled) return;
         obj = URL.createObjectURL(b);

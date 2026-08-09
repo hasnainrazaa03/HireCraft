@@ -549,11 +549,14 @@ def build_cover_letter_prompt(
             "\n=== REVISE THE EXISTING LETTER ===\n"
             "This is a revision, not a fresh draft. Here is the current cover letter:\n"
             f"\"\"\"\n{current[:4000]}\n\"\"\"\n\n"
-            "Apply this feedback from the candidate, changing only what it asks for "
-            "and leaving the rest intact where possible:\n"
-            f"→ {feedback.strip()[:600]}\n"
-            "Still obey every truthfulness rule — never add a claim the résumé or "
-            "attested evidence doesn't support.\n"
+            "Apply this feedback from the candidate:\n"
+            f"→ {feedback.strip()[:600]}\n\n"
+            "Make the change UNMISTAKABLE: fully rewrite the paragraph(s) the feedback "
+            "targets — don't just nudge a word — and leave paragraphs it doesn't touch "
+            "essentially intact. Reframing, emphasis, structure, and word choice are all "
+            "fair game; the underlying FACTS are not. Never add a claim the résumé or "
+            "attested evidence doesn't support, and never drop a real, relevant metric "
+            "just to reword.\n"
         )
     elif feedback:
         revision_block = (

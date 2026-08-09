@@ -264,8 +264,11 @@ export const api = {
  */
 /** Fetch a binary response with auth + one-shot refresh, returning the Blob. */
 async function fetchBlob(path: string, retry = true): Promise<Blob> {
+  // Artifacts (résumé/cover-letter PDFs) are regenerated in place, so never let
+  // the browser cache serve a stale copy — the preview must reflect the latest.
   const res = await fetch(`${API}${path}`, {
     headers: { Authorization: `Bearer ${tokens.access ?? ""}` },
+    cache: "no-store",
   });
   if (res.status === 401 && retry && tokens.refresh) {
     if (await tryRefresh()) return fetchBlob(path, false);

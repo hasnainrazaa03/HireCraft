@@ -825,7 +825,15 @@ def download_artifact(
             status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file is missing."
         )
 
-    return FileResponse(path=path, media_type=media_type, filename=filename)
+    # Artifacts are regenerated in place at a fixed path (re-tailor, cover-letter
+    # refine, …). Without this, the browser's heuristic cache serves the old PDF
+    # after a regeneration and the preview looks unchanged. Always revalidate.
+    return FileResponse(
+        path=path,
+        media_type=media_type,
+        filename=filename,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # --- Grounded assistant: revise + apply -------------------------------------
