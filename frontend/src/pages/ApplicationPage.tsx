@@ -2442,6 +2442,12 @@ function DatesCard({
             }}
           />
         </label>
+        {application.interview_at && application.reminder_at &&
+          new Date(application.reminder_at) > new Date(application.interview_at) && (
+            <p className="text-xs text-coral">
+              Your reminder is <span className="font-medium">after</span> the interview — intentional (a thank-you / check-in), or did the dates get swapped?
+            </p>
+          )}
       </div>
     </>
   );
@@ -2662,17 +2668,31 @@ function EmailsTab({ applicationId }: { applicationId: string }) {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-semibold">Draft</h2>
-              <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(`Subject: ${draft.subject}\n\n${draft.body}`);
-                  toast.success("Copied to clipboard");
-                }}
-                className="btn-secondary btn-sm"
-              >
-                Copy
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => {
+                    navigator.clipboard?.writeText(draft.subject ? `Subject: ${draft.subject}\n\n${draft.body}` : draft.body);
+                    toast.success("Copied to clipboard");
+                  }}
+                  className="btn-secondary btn-sm"
+                >
+                  Copy
+                </button>
+                <a
+                  href={`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`}
+                  target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm text-subtle hover:text-content"
+                >
+                  Gmail ↗
+                </a>
+                <a
+                  href={`https://outlook.office.com/mail/deeplink/compose?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`}
+                  target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm text-subtle hover:text-content"
+                >
+                  Outlook ↗
+                </a>
+              </div>
             </div>
             <div className="mt-3 text-xs text-subtle">Subject</div>
             <div className="rounded-lg border border-white/[0.07] bg-surface-2 px-3 py-2 text-sm text-content">{draft.subject}</div>
