@@ -22,6 +22,7 @@ from app.models.application import (
 from app.models.llm_usage import LlmUsage
 from app.schemas.job import ScrapeResult
 from app.schemas.resume import MasterResume
+from app.schemas.tailoring import GuardrailReport
 from app.services import storage
 from app.services.email.sender import Email, EmailError, send_email
 from app.services.evidence import evidence_lines
@@ -29,6 +30,7 @@ from app.services.latex.compiler import LatexCompilationError
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.llm.factory import LlmClient, client_for_user
 from app.services.pipeline import TailoringOutcome, run_pipeline
+from app.services.resume_eval import score_from_report
 from app.services.usage import accrue_usage
 from app.workers.celery_app import celery_app
 
@@ -44,6 +46,23 @@ def _set_status(application_id: str, status: PipelineStatus, error: str | None =
         if error is not None:
             # Keep the column bounded; full detail is in the logs.
             application.error_message = error[:2000]
+
+
+def _prev_score_snapshot(application: Application) -> dict[str, int] | None:
+    """Scores of the résumé currently on the application (a prior run), captured
+    before a re-tailor overwrites it — so the new scorecard can show the trend."""
+    if not application.tailored_resume or not application.guardrail_report:
+        return None
+    try:
+        tailored = MasterResume.model_validate(application.tailored_resume)
+        report = GuardrailReport.model_validate(application.guardrail_report)
+        company = application.job.company if application.job else None
+        card = score_from_report(tailored, report, company=company)
+        snap = {m.key: m.score for m in card.metrics}
+        snap["overall"] = card.overall
+        return snap
+    except Exception:  # noqa: BLE001 - a bad blob must not fail the run
+        return None
 
 
 def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOutcome) -> None:
@@ -97,6 +116,8 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
                 )
             )
 
+        # Snapshot the prior run's scores (if any) so a re-tailor shows the trend.
+        application.prev_scores = _prev_score_snapshot(application)
         application.tailored_resume = outcome.tailored_resume.model_dump(mode="json")
         application.diff = [d.model_dump(mode="json") for d in outcome.diff]
         application.guardrail_report = outcome.guardrail_report.model_dump(mode="json")

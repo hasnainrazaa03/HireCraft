@@ -1052,6 +1052,21 @@ function useMountReveal(): boolean {
   return on;
 }
 
+/** ↑/↓ change vs. the résumé before the last edit. Hidden when zero/unknown. */
+function DeltaChip({ delta, className = "" }: { delta: number | null | undefined; className?: string }) {
+  if (delta == null || delta === 0) return null;
+  const up = delta > 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${className}`}
+      style={{ color: up ? "#34D399" : "#FF9F43", background: up ? "#34D39918" : "#FF9F4318" }}
+      title="Change since your last edit"
+    >
+      {up ? "▲" : "▼"} {up ? "+" : ""}{delta}
+    </span>
+  );
+}
+
 /** Score → { verdict label, color } tier. Matches the donut and pills. */
 function tier(score: number): { label: string; color: string } {
   if (score >= 85) return { label: "Excellent", color: "#34D399" };
@@ -1141,9 +1156,12 @@ function MetricTile({ m, onFix }: { m: Scorecard["metrics"][number]; onFix: () =
           <MetricGlyph k={m.key} />
         </span>
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-content">{m.label}</span>
-        <span className="shrink-0 text-sm tabular-nums">
-          <span className="font-bold" style={{ color: scoreHex(m.score) }}>{m.score}</span>
-          <span className="text-subtle"> /100</span>
+        <span className="flex shrink-0 items-center gap-1.5 text-sm tabular-nums">
+          <DeltaChip delta={m.delta} />
+          <span>
+            <span className="font-bold" style={{ color: scoreHex(m.score) }}>{m.score}</span>
+            <span className="text-subtle"> /100</span>
+          </span>
         </span>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
@@ -1231,12 +1249,15 @@ function QualityCard({
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,220px)_1fr]">
         <div className="flex flex-col items-center justify-center gap-3 text-center">
           <ScoreRing score={card.overall} />
-          <span
-            className="rounded-full px-3 py-1 text-sm font-semibold"
-            style={{ color: t.color, background: `${t.color}1f` }}
-          >
-            {t.label}
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className="rounded-full px-3 py-1 text-sm font-semibold"
+              style={{ color: t.color, background: `${t.color}1f` }}
+            >
+              {t.label}
+            </span>
+            <DeltaChip delta={card.overall_delta} />
+          </div>
           <p className="max-w-[15rem] text-sm text-subtle">{OVERALL_BLURB[t.label]}</p>
           {grounding && grounding.score >= 100 && (
             <span className="flex items-center gap-1 text-xs text-emerald">
@@ -1799,7 +1820,26 @@ const ASSIST_SUGGESTIONS = [
   "Rewrite my summary to be stronger.",
 ];
 
-/** A proposed revision rendered inline: note + diff + Apply/Discard. */
+/** Group a proposal's diff into user-selectable buckets (Headline · Summary ·
+ *  each entry · Skills) so changes can be accepted or rejected individually. */
+function proposalBuckets(diff: DiffEntry[]): { key: string; label: string }[] {
+  const seen = new Map<string, string>();
+  for (const d of diff) {
+    if (d.change === "unchanged") continue;
+    let key: string;
+    let label: string;
+    if (d.section === "basics" && d.field === "headline") { key = "basics:headline"; label = "Headline"; }
+    else if (d.section === "basics" && d.field === "summary") { key = "basics:summary"; label = "Summary"; }
+    else if (d.section === "skills") { key = "skills"; label = "Skills"; }
+    else if (d.entry_id) { key = `entry:${d.entry_id}`; label = d.label || "Entry"; }
+    else { key = `${d.section}:${d.field}`; label = d.label || d.field; }
+    if (!seen.has(key)) seen.set(key, label);
+  }
+  return [...seen.entries()].map(([key, label]) => ({ key, label }));
+}
+
+/** A proposed revision rendered inline: a "Changes proposed" checklist (accept
+ *  each section or not) + the before→after diff + Apply/Discard. */
 function ProposalMessage({
   msg,
   onApply,
@@ -1807,11 +1847,22 @@ function ProposalMessage({
   applying,
 }: {
   msg: ChatMsg;
-  onApply: () => void;
+  onApply: (rejected: string[]) => void;
   onDiscard: () => void;
   applying: boolean;
 }) {
   const p = msg.proposal!;
+  const buckets = proposalBuckets(p.diff);
+  const [rejected, setRejected] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setRejected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const acceptedCount = buckets.length - rejected.size;
+
   return (
     <div className="rounded-2xl border border-brand-500/30 bg-brand-500/[0.05] p-3">
       <div className="flex items-center gap-1.5 text-sm font-medium text-content">
@@ -1823,6 +1874,29 @@ function ProposalMessage({
           {p.blocked.length} unsupported edit{p.blocked.length === 1 ? "" : "s"} were blocked and left out.
         </p>
       )}
+      {p.status === "pending" && buckets.length > 1 && (
+        <div className="mt-3 rounded-lg border border-white/[0.06] bg-surface-2/50 p-2.5">
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle">
+            Changes proposed — pick what to apply
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {buckets.map((b) => {
+              const on = !rejected.has(b.key);
+              return (
+                <button
+                  key={b.key}
+                  onClick={() => toggle(b.key)}
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition ${
+                    on ? "border-emerald/40 bg-emerald/10 text-emerald" : "border-white/10 bg-surface text-subtle line-through"
+                  }`}
+                >
+                  {on ? "✓" : "✕"} {b.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {p.diff.length > 0 && (
         <div className="mt-3 max-h-72 overflow-y-auto">
           <DiffView diff={p.diff} afterLabel="Proposed" emptyMessage="No changes." />
@@ -1830,8 +1904,12 @@ function ProposalMessage({
       )}
       {p.status === "pending" ? (
         <div className="mt-3 flex gap-2">
-          <button onClick={onApply} disabled={applying || p.diff.length === 0} className="btn-primary btn-sm disabled:opacity-40">
-            {applying ? "Applying…" : "Apply changes"}
+          <button
+            onClick={() => onApply([...rejected])}
+            disabled={applying || p.diff.length === 0 || acceptedCount === 0}
+            className="btn-primary btn-sm disabled:opacity-40"
+          >
+            {applying ? "Applying…" : buckets.length > 1 ? `Apply ${acceptedCount} of ${buckets.length}` : "Apply changes"}
           </button>
           <button onClick={onDiscard} disabled={applying} className="btn-ghost btn-sm">Discard</button>
         </div>
@@ -1879,8 +1957,8 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
   });
 
   const apply = useMutation({
-    mutationFn: (vars: { proposed: unknown; index: number }) =>
-      api.post(`/applications/${applicationId}/assistant/apply`, { proposed: vars.proposed }),
+    mutationFn: (vars: { proposed: unknown; index: number; rejected: string[] }) =>
+      api.post(`/applications/${applicationId}/assistant/apply`, { proposed: vars.proposed, rejected: vars.rejected }),
     onSuccess: (_d, vars) => {
       setProposalStatus(vars.index, "applied");
       qc.invalidateQueries({ queryKey: ["application", applicationId] });
@@ -1958,7 +2036,7 @@ function AIAssistantCard({ applicationId, prefill }: { applicationId: string; pr
                 key={i}
                 msg={m}
                 applying={apply.isPending}
-                onApply={() => apply.mutate({ proposed: m.proposal!.proposed, index: i })}
+                onApply={(rejected) => apply.mutate({ proposed: m.proposal!.proposed, index: i, rejected })}
                 onDiscard={() => setProposalStatus(i, "discarded")}
               />
             ) : (

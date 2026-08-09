@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import json
 import uuid
@@ -231,10 +232,20 @@ def _scorecard_for(application: Application) -> Scorecard | None:
         company = application.job.company if application.job else None
         card = score_from_report(tailored, report, company=company)
         tips = suggestions_from_report(tailored, report, company=company)
+        prev = application.prev_scores or {}
+
+        def delta(key: str, score: int) -> int | None:
+            before = prev.get(key)
+            return score - before if isinstance(before, int) else None
+
         return Scorecard(
             overall=card.overall,
+            overall_delta=delta("overall", card.overall),
             metrics=[
-                ScorecardMetric(key=m.key, label=m.label, score=m.score, detail=m.detail, measured=m.measured)
+                ScorecardMetric(
+                    key=m.key, label=m.label, score=m.score, detail=m.detail,
+                    measured=m.measured, delta=delta(m.key, m.score),
+                )
                 for m in card.metrics
             ],
             suggestions=[
@@ -659,6 +670,40 @@ def download_artifact(
 # --- Grounded assistant: revise + apply -------------------------------------
 
 
+def _selective_merge(current: dict[str, Any], proposed: dict[str, Any], rejected: list[str]) -> dict[str, Any]:
+    """Take the proposal, but revert the rejected buckets back to the current résumé.
+
+    Bucket keys: "basics:headline", "basics:summary", "skills", or "entry:<id>"
+    for one experience/project/education entry (matched by its stable id)."""
+    merged = copy.deepcopy(proposed)
+    basics_cur = current.get("basics") or {}
+    for key in rejected:
+        if key == "basics:headline":
+            merged.setdefault("basics", {})["headline"] = basics_cur.get("headline")
+        elif key == "basics:summary":
+            merged.setdefault("basics", {})["summary"] = basics_cur.get("summary")
+        elif key == "skills":
+            merged["skills"] = current.get("skills") or []
+        elif key.startswith("entry:"):
+            eid = key.split(":", 1)[1]
+            for section in ("experience", "projects", "education"):
+                cur_entry = next((e for e in (current.get(section) or []) if e.get("id") == eid), None)
+                if cur_entry is not None and section in merged:
+                    merged[section] = [cur_entry if e.get("id") == eid else e for e in merged[section]]
+    return merged
+
+
+def _score_snapshot(application: Application) -> dict[str, int] | None:
+    """Metric scores of the application's CURRENT résumé — captured before a change
+    so the next scorecard can show per-metric deltas (the improvement trend)."""
+    card = _scorecard_for(application)
+    if card is None:
+        return None
+    snap = {m.key: m.score for m in card.metrics}
+    snap["overall"] = card.overall
+    return snap
+
+
 def _tailoring_result_from(resume: MasterResume) -> TailoringResult:
     """Rebuild a TailoringResult from a résumé so the guardrail engine can re-vet
     an applied revision against the master before it is saved."""
@@ -774,9 +819,18 @@ def assistant_apply(
     résumé + diff + guardrails, and re-render the stored PDF/TeX."""
     application = _get_owned(db, user.id, application_id)
     proposed = payload.proposed
+    # Per-section accept: revert the buckets the user rejected to the current résumé.
+    if payload.rejected and application.tailored_resume:
+        proposed = MasterResume.model_validate(
+            _selective_merge(application.tailored_resume, proposed.model_dump(mode="json"), payload.rejected)
+        )
     master, evidence, requirements, profile = _resume_context(db, user.id, application)
     if master is None:
         master = proposed
+
+    # Snapshot the current scores before this change, so the new scorecard shows
+    # the per-metric trend (↑/↓) from applying it.
+    prev_scores = _score_snapshot(application)
 
     # Re-vet on apply (defense in depth) by merging the proposal onto the master.
     merged, report = GuardrailEngine(master, requirements, evidence=evidence).apply(
@@ -800,6 +854,7 @@ def assistant_apply(
     application.tailored_resume = merged.model_dump(mode="json")
     application.diff = [d.model_dump(mode="json") for d in build_diff(master, merged)]
     application.guardrail_report = report.model_dump(mode="json")
+    application.prev_scores = prev_scores
     db.commit()
     db.refresh(application)
     logger.info("application.assistant_applied", application_id=str(application_id), pages=compiled.page_count)

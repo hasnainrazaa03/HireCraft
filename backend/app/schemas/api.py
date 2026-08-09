@@ -330,6 +330,7 @@ class ScorecardMetric(ApiModel):
     score: int
     detail: str
     measured: bool = True  # False → couldn't be scored (e.g. no ATS keywords read)
+    delta: int | None = None  # change vs. the résumé before the last edit (trend)
 
 
 class ScorecardSuggestion(ApiModel):
@@ -347,6 +348,7 @@ class Scorecard(ApiModel):
     """Deterministic résumé-quality readout for a finished tailoring."""
 
     overall: int
+    overall_delta: int | None = None  # change vs. the résumé before the last edit
     metrics: list[ScorecardMetric]
     suggestions: list[ScorecardSuggestion] = Field(default_factory=list)
 
@@ -411,9 +413,14 @@ class AssistantReviseRequest(ApiModel):
 
 
 class AssistantApplyRequest(ApiModel):
-    """Apply a previously-proposed revision (already vetted, re-checked on apply)."""
+    """Apply a previously-proposed revision (already vetted, re-checked on apply).
+
+    ``rejected`` holds bucket keys the user unchecked in the proposal review
+    (e.g. "basics:summary", "entry:<id>", "skills") — those revert to the current
+    résumé so the user can accept only the changes they want."""
 
     proposed: MasterResume
+    rejected: list[str] = Field(default_factory=list)
 
 
 class AssistantProposal(ApiModel):

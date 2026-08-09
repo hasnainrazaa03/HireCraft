@@ -123,6 +123,9 @@ class Application(Base, TimestampMixin):
     # Reach mode: aggressive tailoring the candidate opted into (soft guardrails
     # relaxed to keep-and-flag; the hard anti-fabrication line is unchanged).
     reach_mode: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # Metric scores from just before the latest résumé change, so the scorecard can
+    # show a per-metric trend (↑/↓). {"overall": int, "<metric key>": int, …}.
+    prev_scores: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
     # The current cover letter body as an ordered list of paragraphs. Persisted so
     # the Cover Letter tab can render it and feed it back for feedback-driven edits.
     cover_letter: Mapped[list[str] | None] = mapped_column(JsonB)

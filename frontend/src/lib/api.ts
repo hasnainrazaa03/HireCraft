@@ -641,6 +641,7 @@ export interface ScorecardMetric {
   score: number;
   detail: string;
   measured: boolean;
+  delta: number | null;
 }
 
 export interface ScorecardSuggestion {
@@ -654,6 +655,7 @@ export interface ScorecardSuggestion {
 
 export interface Scorecard {
   overall: number;
+  overall_delta: number | null;
   metrics: ScorecardMetric[];
   suggestions: ScorecardSuggestion[];
 }
