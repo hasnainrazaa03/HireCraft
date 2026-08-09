@@ -16,12 +16,34 @@ from app.services.llm.client import Usage
 def category_for(purpose: str) -> str:
     """Map an LLM-usage purpose to a spend category shown in Analytics."""
     p = (purpose or "").lower()
-    if "cover_letter" in p or "cover" in p:
-        return "cover_letter"
     if "outreach" in p:
         return "outreach"
+    # Match the cover-letter step precisely — a bare "cover" substring also hits
+    # "plan_coverage" (coverage planning), which is a résumé step, not a letter.
+    if "cover_letter" in p or "cover letter" in p:
+        return "cover_letter"
     # Tailoring, coverage planning, optimizing, rewriting, revising, intros.
     return "resume"
+
+
+# Human-readable names for each pipeline step, shown in the Analytics timeline.
+PURPOSE_LABELS: dict[str, str] = {
+    "extract_requirements": "Read the job",
+    "plan_coverage": "Plan coverage",
+    "optimize_resume": "Tailor résumé",
+    "rewrite_resume": "Rewrite bullets",
+    "revise_resume": "Apply your edits",
+    "generate_profile_intro": "Draft intro",
+    "cover_letter": "Cover letter",
+    "outreach": "Outreach message",
+}
+
+
+def label_for(purpose: str) -> str:
+    """A friendly label for an LLM-usage purpose (falls back to a prettified key)."""
+    if purpose in PURPOSE_LABELS:
+        return PURPOSE_LABELS[purpose]
+    return (purpose or "").replace("_", " ").strip().capitalize() or "AI call"
 
 
 def accrue_usage(

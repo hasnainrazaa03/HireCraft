@@ -516,6 +516,44 @@ class UsageSummary(ApiModel):
     by_provider: list[ProviderUsage] = Field(default_factory=list)
 
 
+class UsageEvent(ApiModel):
+    """A single LLM call charged to one application, for the Analytics timeline."""
+
+    at: datetime
+    purpose: str
+    label: str
+    category: str
+    model: str
+    provider: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_ms: int
+    succeeded: bool
+
+
+class PurposeUsage(ApiModel):
+    purpose: str
+    label: str
+    category: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+
+class ApplicationUsage(ApiModel):
+    """Per-application AI spend, broken down by model, step, and over time."""
+
+    call_count: int
+    total_cost_usd: float
+    total_input_tokens: int
+    total_output_tokens: int
+    by_model: list[ModelUsage] = Field(default_factory=list)
+    by_purpose: list[PurposeUsage] = Field(default_factory=list)
+    timeline: list[UsageEvent] = Field(default_factory=list)
+
+
 class TrackerStats(ApiModel):
     counts: dict[str, int] = Field(default_factory=dict)
     total: int = 0

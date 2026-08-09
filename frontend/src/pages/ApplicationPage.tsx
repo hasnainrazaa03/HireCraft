@@ -24,6 +24,9 @@ import {
   type ResumeEntry,
   type CopilotResponse,
   type DiffEntry,
+  type ApplicationUsage,
+  type UsageEvent,
+  type ModelUsage,
 } from "../lib/api";
 import { PipelineBadge, TRACKER_STYLES } from "../components/StatusBadge";
 import { DiffView, ConfidencePanel } from "../components/ReviewPanels";
@@ -2512,56 +2515,307 @@ const COST_CATEGORY_META: Record<string, { label: string; color: string }> = {
 };
 
 /** Per-application spend: totals + a category breakdown that grows with every AI action. */
+const PROVIDER_TONE: Record<string, { label: string; color: string }> = {
+  gemini: { label: "Gemini", color: "#4CC9F0" },
+  openai: { label: "OpenAI", color: "#2DD4BF" },
+  anthropic: { label: "Claude", color: "#d9915b" },
+  mistral: { label: "Mistral", color: "#f2775a" },
+};
+const providerTone = (p: string) =>
+  PROVIDER_TONE[p] ?? {
+    label: p ? p[0].toUpperCase() + p.slice(1) : "Model",
+    color: "#8a8a8a",
+  };
+
+/** Compact token counts: 950 → "950", 12345 → "12.3k", 1_200_000 → "1.2M". */
+function compact(n: number): string {
+  if (n < 1000) return n.toLocaleString();
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/** Relative time for the activity timeline; falls back to a short date past a week. */
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** A lightweight SVG donut — segments render as arcs of a single ring. */
+function Donut({
+  segments,
+  centerValue,
+  centerLabel,
+  size = 128,
+  stroke = 15,
+}: {
+  segments: { value: number; color: string }[];
+  centerValue: string;
+  centerLabel: string;
+  size?: number;
+  stroke?: number;
+}) {
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+        {segments.map((seg, i) => {
+          const len = (seg.value / total) * c;
+          const el = (
+            <circle
+              key={i}
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={stroke}
+              strokeDasharray={`${len} ${c - len}`}
+              strokeDashoffset={-offset}
+              style={{ transition: "stroke-dasharray .6s ease" }}
+            />
+          );
+          offset += len;
+          return el;
+        })}
+      </g>
+      <text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle" className="text-content" style={{ fill: "currentColor", fontSize: 19, fontWeight: 700 }}>
+        {centerValue}
+      </text>
+      <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" className="text-subtle" style={{ fill: "currentColor", fontSize: 10 }}>
+        {centerLabel}
+      </text>
+    </svg>
+  );
+}
+
+function LegendRow({ color, label, value, total }: { color: string; label: string; value: number; total: number }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="flex items-center gap-2 text-content">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+        {label}
+      </span>
+      <span className="tabular-nums text-subtle">
+        {compact(value)} <span className="text-content">· {pct}%</span>
+      </span>
+    </div>
+  );
+}
+
+function ModelRow({ m, share }: { m: ModelUsage; share: number }) {
+  const tone = providerTone(m.provider);
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: tone.color }} />
+          <span className="truncate font-medium text-content">{m.model}</span>
+          <span
+            className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px]"
+            style={{ background: `${tone.color}1f`, color: tone.color }}
+          >
+            {tone.label}
+          </span>
+        </span>
+        <span className="shrink-0 tabular-nums text-content">${m.cost_usd.toFixed(4)}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full rounded-full" style={{ width: `${share}%`, background: tone.color, transition: "width .5s ease" }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] tabular-nums text-subtle">
+        <span>{m.calls} {m.calls === 1 ? "call" : "calls"} · {compact(m.input_tokens)} in / {compact(m.output_tokens)} out</span>
+        <span>{share}%</span>
+      </div>
+    </div>
+  );
+}
+
+function TimelineRow({ ev }: { ev: UsageEvent }) {
+  const color = COST_CATEGORY_META[ev.category]?.color ?? "#8a8a8a";
+  return (
+    <li className="flex items-start gap-3 py-2">
+      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-sm text-content">{ev.label}</span>
+          <span className="shrink-0 text-xs tabular-nums text-subtle">{timeAgo(ev.at)}</span>
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] tabular-nums text-subtle">
+          <span className="max-w-[10rem] truncate">{ev.model}</span>
+          <span>·</span>
+          <span>{compact(ev.input_tokens + ev.output_tokens)} tok</span>
+          <span>·</span>
+          <span>${ev.cost_usd.toFixed(4)}</span>
+          {ev.latency_ms > 0 && (
+            <>
+              <span>·</span>
+              <span>{(ev.latency_ms / 1000).toFixed(1)}s</span>
+            </>
+          )}
+          {!ev.succeeded && <span className="text-coral">· failed</span>}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 function AnalyticsTab({ application }: { application: ApplicationDetail }) {
+  const { data: usage, isLoading } = useQuery({
+    queryKey: ["app-usage", application.id],
+    queryFn: () => api.get<ApplicationUsage>(`/applications/${application.id}/usage`),
+  });
+
   const bd = application.cost_breakdown || {};
   const cats = Object.entries(bd)
     .filter(([, v]) => v.cost_usd > 0 || v.input_tokens + v.output_tokens > 0)
     .sort((a, b) => b[1].cost_usd - a[1].cost_usd);
   const totalCost = application.total_cost_usd;
-  const totalTokens = application.total_input_tokens + application.total_output_tokens;
+  const inTok = application.total_input_tokens;
+  const outTok = application.total_output_tokens;
+  const totalTokens = inTok + outTok;
+
+  const calls = usage?.call_count ?? 0;
+  const avgPerCall = calls > 0 ? totalCost / calls : 0;
+  const perK = totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0;
+  const byModel = usage?.by_model ?? [];
+  const topModelCost = byModel.reduce((mx, m) => Math.max(mx, m.cost_usd), 0);
+  const timeline = usage?.timeline ?? [];
+  const TIMELINE_CAP = 40;
 
   return (
     <div className="mt-6 space-y-6">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Total cost" value={`$${totalCost.toFixed(4)}`} />
-        <Stat label="Total tokens" value={totalTokens.toLocaleString()} />
-        <Stat
-          label="Input / Output tokens"
-          value={`${application.total_input_tokens.toLocaleString()} / ${application.total_output_tokens.toLocaleString()}`}
-        />
+        <Stat label="Total tokens" value={compact(totalTokens)} />
+        <Stat label="AI calls" value={calls ? calls.toLocaleString() : "—"} />
+        <Stat label="Avg cost / call" value={calls ? `$${avgPerCall.toFixed(4)}` : "—"} />
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-base font-semibold">Cost breakdown</h2>
-        <p className="mt-0.5 text-xs text-subtle">
-          Additive across every AI action on this application — tailoring, revisions, cover letter, and outreach.
-        </p>
-        {cats.length === 0 ? (
-          <p className="mt-4 text-sm text-subtle">No AI spend recorded yet.</p>
-        ) : (
-          <div className="mt-4 space-y-3.5">
-            {cats.map(([key, v]) => {
-              const meta = COST_CATEGORY_META[key] ?? { label: key, color: "#8a8a8a" };
-              const pct = totalCost > 0 ? (v.cost_usd / totalCost) * 100 : 0;
-              return (
-                <div key={key}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2 text-content">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: meta.color }} />
-                      {meta.label}
-                    </span>
-                    <span className="tabular-nums text-content">
-                      ${v.cost_usd.toFixed(4)}
-                      <span className="ml-1 text-subtle">· {(v.input_tokens + v.output_tokens).toLocaleString()} tok</span>
-                    </span>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Where the money went — by workflow category (authoritative, from the app). */}
+        <div className="card p-5">
+          <h2 className="text-base font-semibold">Cost by category</h2>
+          <p className="mt-0.5 text-xs text-subtle">
+            Additive across every AI action — tailoring, revisions, cover letter, and outreach.
+          </p>
+          {cats.length === 0 ? (
+            <p className="mt-4 text-sm text-subtle">No AI spend recorded yet.</p>
+          ) : (
+            <div className="mt-4 space-y-3.5">
+              {cats.map(([key, v]) => {
+                const meta = COST_CATEGORY_META[key] ?? { label: key, color: "#8a8a8a" };
+                const pct = totalCost > 0 ? (v.cost_usd / totalCost) * 100 : 0;
+                return (
+                  <div key={key}>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 text-content">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: meta.color }} />
+                        {meta.label}
+                      </span>
+                      <span className="tabular-nums text-content">
+                        ${v.cost_usd.toFixed(4)}
+                        <span className="ml-1 text-subtle">· {compact(v.input_tokens + v.output_tokens)} tok</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: meta.color, transition: "width 0.5s ease" }} />
+                    </div>
                   </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: meta.color, transition: "width 0.5s ease" }} />
-                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Token distribution — how much the model read vs. wrote. */}
+        <div className="card p-5">
+          <h2 className="text-base font-semibold">Token distribution</h2>
+          <p className="mt-0.5 text-xs text-subtle">
+            How much the model read (input) vs. wrote (output) for this application.
+          </p>
+          {totalTokens === 0 ? (
+            <p className="mt-4 text-sm text-subtle">No tokens recorded yet.</p>
+          ) : (
+            <div className="mt-4 flex items-center gap-5">
+              <Donut
+                segments={[
+                  { value: inTok, color: "#7c4dff" },
+                  { value: outTok, color: "#2DD4BF" },
+                ]}
+                centerValue={compact(totalTokens)}
+                centerLabel="tokens"
+              />
+              <div className="flex-1 space-y-2.5">
+                <LegendRow color="#7c4dff" label="Input (read)" value={inTok} total={totalTokens} />
+                <LegendRow color="#2DD4BF" label="Output (written)" value={outTok} total={totalTokens} />
+                <div className="border-t border-white/[0.06] pt-2 text-xs text-subtle">
+                  ≈ <span className="tabular-nums text-content">${perK.toFixed(4)}</span> per 1K tokens
                 </div>
-              );
-            })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Per-model breakdown. */}
+      <div className="card p-5">
+        <h2 className="text-base font-semibold">By model</h2>
+        <p className="mt-0.5 text-xs text-subtle">
+          Which models did the work, and what each cost. Provider is inferred from the model name.
+        </p>
+        {isLoading ? (
+          <p className="mt-4 text-sm text-subtle">Loading…</p>
+        ) : byModel.length === 0 ? (
+          <p className="mt-4 text-sm text-subtle">No model calls recorded for this application yet.</p>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {byModel.map((m) => (
+              <ModelRow key={m.model} m={m} share={topModelCost > 0 ? Math.round((m.cost_usd / topModelCost) * 100) : 0} />
+            ))}
           </div>
+        )}
+      </div>
+
+      {/* Chronological call log. */}
+      <div className="card p-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-base font-semibold">AI activity</h2>
+          {timeline.length > 0 && (
+            <span className="text-xs text-subtle">{timeline.length} {timeline.length === 1 ? "call" : "calls"}</span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-subtle">Every AI call charged to this application, newest first.</p>
+        {isLoading ? (
+          <p className="mt-4 text-sm text-subtle">Loading…</p>
+        ) : timeline.length === 0 ? (
+          <p className="mt-4 text-sm text-subtle">No AI activity recorded yet.</p>
+        ) : (
+          <>
+            <ul className="mt-3 divide-y divide-white/[0.05]">
+              {timeline.slice(0, TIMELINE_CAP).map((ev, i) => (
+                <TimelineRow key={i} ev={ev} />
+              ))}
+            </ul>
+            {timeline.length > TIMELINE_CAP && (
+              <p className="mt-2 text-xs text-subtle">
+                Showing the {TIMELINE_CAP} most recent of {timeline.length} calls.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

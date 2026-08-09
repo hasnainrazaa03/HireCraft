@@ -34,19 +34,23 @@ from app.schemas.api import (
     ApplicationStatusResponse,
     ApplicationSummary,
     ApplicationUpdate,
+    ApplicationUsage,
     AssistantApplyRequest,
     AssistantProposal,
     AssistantReviseRequest,
     CoverLetterRequest,
     JobSignalsResponse,
+    ModelUsage,
     NoteRequest,
     OutreachDraftResponse,
     OutreachRequest,
+    PurposeUsage,
     QualityBullet,
     QualityInspect,
     Scorecard,
     ScorecardMetric,
     ScorecardSuggestion,
+    UsageEvent,
 )
 from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
@@ -79,7 +83,8 @@ from app.services.resume_eval import (
     suggestions_from_report,
 )
 from app.services.scraper import ScrapeError, from_pasted_text, scrape_job
-from app.services.usage import accrue_usage
+from app.services.llm.models import provider_for_model
+from app.services.usage import accrue_usage, category_for, label_for
 from app.workers.tasks import enqueue_tailoring
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -353,6 +358,105 @@ def get_application(
     application_id: uuid.UUID, user: CurrentUser, db: DbSession
 ) -> ApplicationDetail:
     return _to_detail(_get_owned(db, user.id, application_id))
+
+
+@router.get("/{application_id}/usage", response_model=ApplicationUsage)
+def application_usage(
+    application_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> ApplicationUsage:
+    """Every AI call charged to this application — broken down by model and step,
+    plus a chronological timeline. Deterministic, read-only; powers the Analytics
+    tab's model/timeline views (the category cost split lives on the app itself)."""
+    _get_owned(db, user.id, application_id)  # ownership check
+
+    rows = db.execute(
+        select(LlmUsage)
+        .where(LlmUsage.application_id == application_id)
+        .order_by(LlmUsage.created_at.desc())
+    ).scalars().all()
+
+    model_agg: dict[str, dict[str, float]] = {}
+    purpose_agg: dict[str, dict[str, float]] = {}
+    timeline: list[UsageEvent] = []
+    total_cost = total_in = total_out = 0.0
+
+    for r in rows:
+        total_cost += r.cost_usd
+        total_in += r.input_tokens
+        total_out += r.output_tokens
+
+        m = model_agg.setdefault(
+            r.model, {"input": 0, "output": 0, "cost": 0.0, "calls": 0}
+        )
+        m["input"] += r.input_tokens
+        m["output"] += r.output_tokens
+        m["cost"] += r.cost_usd
+        m["calls"] += 1
+
+        p = purpose_agg.setdefault(
+            r.purpose, {"input": 0, "output": 0, "cost": 0.0, "calls": 0}
+        )
+        p["input"] += r.input_tokens
+        p["output"] += r.output_tokens
+        p["cost"] += r.cost_usd
+        p["calls"] += 1
+
+        timeline.append(
+            UsageEvent(
+                at=r.created_at,
+                purpose=r.purpose,
+                label=label_for(r.purpose),
+                category=category_for(r.purpose),
+                model=r.model,
+                provider=provider_for_model(r.model),
+                input_tokens=r.input_tokens,
+                output_tokens=r.output_tokens,
+                cost_usd=round(r.cost_usd, 6),
+                latency_ms=r.latency_ms,
+                succeeded=r.succeeded,
+            )
+        )
+
+    by_model = sorted(
+        (
+            ModelUsage(
+                model=model,
+                provider=provider_for_model(model),
+                input_tokens=int(a["input"]),
+                output_tokens=int(a["output"]),
+                cost_usd=round(a["cost"], 6),
+                calls=int(a["calls"]),
+            )
+            for model, a in model_agg.items()
+        ),
+        key=lambda x: (-x.cost_usd, -(x.input_tokens + x.output_tokens)),
+    )
+
+    by_purpose = sorted(
+        (
+            PurposeUsage(
+                purpose=purpose,
+                label=label_for(purpose),
+                category=category_for(purpose),
+                calls=int(a["calls"]),
+                input_tokens=int(a["input"]),
+                output_tokens=int(a["output"]),
+                cost_usd=round(a["cost"], 6),
+            )
+            for purpose, a in purpose_agg.items()
+        ),
+        key=lambda x: -x.cost_usd,
+    )
+
+    return ApplicationUsage(
+        call_count=len(rows),
+        total_cost_usd=round(total_cost, 6),
+        total_input_tokens=int(total_in),
+        total_output_tokens=int(total_out),
+        by_model=by_model,
+        by_purpose=by_purpose,
+        timeline=timeline,
+    )
 
 
 @router.get("/{application_id}/quality/inspect", response_model=QualityInspect)
@@ -803,7 +907,8 @@ def _charge(db: DbSession, user_id: uuid.UUID, application: Application, ledger:
     for purpose, usage in ledger.entries:
         db.add(
             LlmUsage(
-                user_id=user_id, purpose=purpose, model=usage.model,
+                user_id=user_id, application_id=application.id, purpose=purpose,
+                model=usage.model,
                 input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
                 cost_usd=usage.cost_usd, latency_ms=usage.latency_ms,
             )

@@ -785,6 +785,40 @@ export interface ProviderUsage {
   calls: number;
 }
 
+export interface UsageEvent {
+  at: string;
+  purpose: string;
+  label: string;
+  category: string;
+  model: string;
+  provider: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  succeeded: boolean;
+}
+
+export interface PurposeUsage {
+  purpose: string;
+  label: string;
+  category: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface ApplicationUsage {
+  call_count: number;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  by_model: ModelUsage[];
+  by_purpose: PurposeUsage[];
+  timeline: UsageEvent[];
+}
+
 export interface TrackerStats {
   counts: Record<string, number>;
   total: number;
