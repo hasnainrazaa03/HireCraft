@@ -327,10 +327,10 @@ Confirms the app is up before deep testing.
   - Notes:
 - ✅ **T-WS-07** **Cover letter** card (Overview): shows **Open** + **Download**; **Open** goes to the Cover Letter tab (stays on this application). Generate/regenerate works; reads as a real letter.
   - Notes: PASS. Open → Cover Letter tab; Download works; stays associated with the application. **P3 (UX):** like the résumé Preview, "Open" changes tabs — consider opening in a modal, or renaming to "Go to Cover Letter" so it reads as navigation. *(Same P3 tracked for the résumé Preview tab-hop.)*
-- ⬜ **T-WS-08** **Emails** tab: pick an outreach **kind** (recruiter email / LinkedIn note / follow-up / thank-you / interview check-in / referral / negotiation) → **Generate** → short, specific, truthful message; **copy** works.
-  - Notes:
-- ⬜ **T-WS-09** **Analytics** tab: **Total cost**, **Total tokens**, and **Input / Output** stat cards. Below, a **Cost breakdown** by category (Résumé tailoring & edits · Cover letter · Outreach), each with `$cost · tokens` and a **proportional colored bar** (share of total spend). Pre-existing apps show their prior spend under **Résumé**.
-  - Notes:
+- ✅ **T-WS-08** **Emails** tab (Draft Outreach workspace): pick a **kind** (recruiter email / follow-up / referral) + a **connection source** (Cold / Referral / Community / Met at event / They reached out) + optional recipient/context → **Draft message** → short, specific, truthful; right panel shows an empty state until drafted. Draft actions: **Copy**, **Gmail ↗**, **Outlook ↗** (compose prefilled).
+  - Notes: PASS. The guide's old "list of stored emails" is superseded by this generate-in-context workspace (better). **Done (P3):** Gmail/Outlook one-click compose added next to Copy. **P3 backlog:** (1) a **draft history** (keep past drafts instead of replacing) with date/kind; (2) **live preview** as you type recipient/context.
+- ✅ **T-WS-09** **Analytics** tab: **Total cost**, **Total tokens**, and **Input / Output** stat cards. Below, a **Cost breakdown** by category (Résumé tailoring & edits · Cover letter · Outreach), each with `$cost · tokens` and a **proportional colored bar** (share of total spend). Pre-existing apps show their prior spend under **Résumé**.
+  - Notes: PASS. Per-application operational analytics (cost/tokens + category breakdown) render correctly for the current app. **P3 backlog (power-user):** (1) **AI-usage timeline** (when each cost was incurred); (2) **cost efficiency** (per revision / per accepted change / per document); (3) **per-model** breakdown (we store `LlmUsage.model`); (4) a **token-distribution pie**.
 - ⬜ **T-WS-10** **Analytics is additive & categorized:** note the total, then run an action — generate outreach (T-WS-08) or a cover letter (T-WS-07). Re-open Analytics → the **total grew** *and* the **matching category** (Outreach / Cover letter) increased by that action's cost; other categories unchanged. Re-tailoring the résumé **resets** the Résumé category (fresh run), not the others.
   - Notes:
 - ✅ **T-WS-11** **Activity** tab (FIXED, was FAIL): a **real event log**, newest-first with an icon + timestamp per event — **Application created**, **Résumé tailored / regenerated**, **Résumé improved** (with a ▲/▼ overall-score delta), **Cover letter generated/updated**, and **Status changed** (from→to). Not just "created / last updated".
@@ -339,6 +339,8 @@ Confirms the app is up before deep testing.
   - Notes: **Was ⚠️ partial** (single textarea, no history). Now add/edit/delete individual timestamped entries.
 - ✅ **T-WS-13** **Provenance badge** (backlog, done): in **Résumé → Guardrails**, each kept bullet shows its **source entry** label + a grounding badge — **✓ Résumé** or **✦ Brag bank** (the latter when it surfaces a number you attested in the brag bank) — so the origin of every line is explicit.
   - Notes:
+- ✅ **T-WS-14** **Dates & reminders** (Notes tab): set an **Interview date** and **Follow-up reminder** (save on blur) → both **persist on reload** and stay tied to the application. A non-blocking **warning** appears if the reminder is set *after* the interview (catches a date swap; post-interview follow-ups are still allowed).
+  - Notes: PASS. Both persist across refresh; picker works. **Done (P3):** reminder-after-interview warning added.
 
 ---
 
