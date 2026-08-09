@@ -91,43 +91,32 @@ def test_category_literal_covers_expected_values():
     assert {"behavioral", "technical", "system_design", "coding", "resume"} <= cats
 
 
-def test_star_answer_flags_borrowed_tool_from_question(master: MasterResume):
-    """The interviewer can raise a tool the candidate has never used (SNPE). The
-    answer must not claim hands-on experience with it unflagged."""
+def test_metric_advisory_ignores_tech_names(master: MasterResume):
+    from app.services.interview import _advisory_metric_numbers
+
+    # Digits inside technology names are labels, not metrics — no nudge.
+    assert _advisory_metric_numbers(master, "Optimized 3D CNNs with INT8 on S3 and GPT-4.", "") == []
+    # A standalone, unbacked figure is a real metric — surfaced as coaching.
+    out = _advisory_metric_numbers(master, "I cut latency by 47% for 9,000 users.", "")
+    assert out and "47" in out[0] and "9000" in out[0]
+
+
+def test_star_answer_allows_constructed_hypothetical(master: MasterResume):
+    """Interview prep coaches, it doesn't verify: an answer that reasons about a
+    tool the question raised (even one not on the résumé) draws NO warning — only a
+    specific unbacked *figure* would get an advisory note."""
     star = StarAnswer(
-        situation="We deployed models on-device.",
-        task="I needed low latency under tight memory.",
-        action="I used Qualcomm SNPE to quantize the network for the Snapdragon NPU.",
-        result="Latency dropped and it shipped.",
+        situation="At my last role I optimized 3D CNNs for on-device inference.",
+        task="The interviewer asks how I'd target Qualcomm Snapdragon with SNPE.",
+        action=(
+            "If I were deploying there, I'd map my INT8 quantization work onto SNPE "
+            "and validate operator support on the NPU."
+        ),
+        result="A plausible, well-reasoned deployment plan I can walk through.",
     )
     _, warnings = draft_star_answer(
         master,
-        "How would you use Qualcomm SNPE on the Snapdragon NPU?",
+        "How would you deploy on Qualcomm Snapdragon using SNPE?",
         client=StubClient(star),
-    )
-    assert any("SNPE" in w for w in warnings)
-
-
-def test_star_answer_no_borrowed_flag_when_grounded(master: MasterResume):
-    star = StarAnswer(
-        situation="I built backend services at my last role.",
-        task="I had to improve throughput.",
-        action="I profiled and optimized the hot paths in Python.",
-        result="Throughput improved noticeably.",
-    )
-    _, warnings = draft_star_answer(
-        master,
-        "How would you use Qualcomm SNPE on the Snapdragon NPU?",
-        client=StubClient(star),
-    )
-    assert warnings == []
-
-
-def test_borrowed_terms_ignores_first_person(master: MasterResume):
-    from app.services.interview import _advisory_borrowed_terms
-
-    # "I", "My" and sentence-initial capitals must not be mistaken for tools.
-    warnings = _advisory_borrowed_terms(
-        master, "Tell me about a hard problem.", "I led the team. My work shipped early.", ""
     )
     assert warnings == []

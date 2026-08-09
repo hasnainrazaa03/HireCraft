@@ -1,14 +1,19 @@
 """Interview-prep service: question generation and STAR answer drafting.
 
-Questions are prep material (not claims about the candidate), so they need no
-guardrail. A STAR answer, though, is the candidate's real story — it's grounded
-in the résumé and gets the same advisory truthfulness check as outreach: any
-figure not backed by the résumé is flagged for the candidate to verify, never
-silently presented as fact.
+Interview prep is COACHING, not résumé verification. Questions are prep material,
+and a STAR answer is practice material: it's anchored in the candidate's real
+background (real employers, projects, and technologies) but is free to construct
+the realistic narrative and approach details a complete answer needs — how a
+disagreement was resolved, how work was delegated, how a hypothetical would be
+tackled. Those need not be things that literally happened, only things that
+plausibly could have. The one light-touch safeguard that remains is advisory: a
+specific figure the résumé can't back is surfaced as a "know your numbers" note,
+never blocked — so the candidate can be ready to defend it.
 """
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from app.core.logging import get_logger
@@ -22,48 +27,37 @@ from app.services.llm.prompts import (
     build_answer_prompt,
     build_questions_prompt,
 )
-from app.services.pipeline import UsageLedger, _advisory_number_check
+from app.services.pipeline import UsageLedger
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard
     from app.services.llm.factory import LlmClient
 
 logger = get_logger(__name__)
 
+# A standalone figure the candidate could be pressed on in the room — deliberately
+# NOT a digit buried in a technology name ("3D", "INT8", "S3", "GPT-4"), which is a
+# label, not a metric. A unit (%, x, +, k/m/b) may trail the number.
+_METRIC_RE = re.compile(
+    r"(?<![A-Za-z0-9.,\-–])\d[\d,]*(?:\.\d+)?(?=%|\+|[×xXkKmMbB]|\s|[.,;:)!?]|$)"
+)
 
-def _advisory_borrowed_terms(
-    resume: MasterResume, question: str, answer: str, context: str
-) -> list[str]:
-    """Flag tool/tech names the QUESTION introduced that the answer echoes but the
-    résumé (or attested context) doesn't back — the classic "the interviewer
-    mentioned SNPE, don't claim you've used it" case. Advisory, never blocking:
-    scoped to terms present in BOTH question and answer so it stays high-signal on
-    conversational, first-person text."""
-    from app.services.llm.guardrails import (
-        _master_corpus,
-        _stems,
-        _suspicious_tokens,
-        _tokens,
-    )
 
-    vocab = _tokens(f"{_master_corpus(resume)} {context}".lower())
-    stem_vocab = _stems(vocab)
-    q_terms = {
-        t.lower() for t in _suspicious_tokens(question, vocab, stem_vocab) if len(t) >= 2
-    }
-    seen: set[str] = set()
-    borrowed: list[str] = []
-    for t in _suspicious_tokens(answer, vocab, stem_vocab):
-        low = t.lower()
-        if len(t) >= 2 and low in q_terms and low not in seen:
-            seen.add(low)
-            borrowed.append(t)
-    if not borrowed:
+def _advisory_metric_numbers(resume: MasterResume, body: str, context: str) -> list[str]:
+    """Coaching nudge (never a block): standalone figures in the answer that
+    neither the résumé nor the brag bank backs, so the candidate is ready to
+    defend them. Digits inside tech names are ignored — only real metrics count."""
+    from app.services.llm.guardrails import _master_numbers, _numbers_in
+
+    allowed = _master_numbers(resume) | _numbers_in(context or "")
+    found = {m.replace(",", "") for m in _METRIC_RE.findall(body)}
+    unbacked = sorted(n for n in (found - allowed) if n)
+    if not unbacked:
         return []
-    names = ", ".join(borrowed[:6])
     return [
-        f"Your answer names {names} — raised by the question but not backed by your "
-        f"résumé. Present these as how you'd approach the problem, not experience you "
-        f"already have."
+        "Know your numbers — "
+        + ", ".join(unbacked)
+        + " aren't in your résumé or brag bank, so be ready to back them up (or swap "
+        "in a real figure)."
     ]
 
 
@@ -119,9 +113,8 @@ def draft_star_answer(
 
     star = result.data
     combined = " ".join([star.situation, star.task, star.action, star.result])
-    # The brag bank is attested context, so a number from it isn't unbacked.
-    evidence_text = " ".join(evidence or [])
-    warnings = _advisory_number_check(resume, combined, evidence_text)
-    # …and a tool/tech the question raised but the résumé can't back (e.g. SNPE).
-    warnings += _advisory_borrowed_terms(resume, question, combined, evidence_text)
+    # Coaching-only safeguard: surface a specific *metric* the résumé/brag bank can't
+    # back so the candidate can be ready to defend it. Everything else — narrative,
+    # approach, hypothetical reasoning — is theirs to construct.
+    warnings = _advisory_metric_numbers(resume, combined, " ".join(evidence or []))
     return star, warnings
