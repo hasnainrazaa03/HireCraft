@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -10,6 +10,8 @@ import {
   type QuestionsResponse,
   type AnswerResponse,
   type SkillGapReport,
+  type ApplicationSummary,
+  type ApplicationDetail,
 } from "../lib/api";
 import { PageLoader, EmptyState } from "../components/ui";
 import { IconSparkles, IconResume } from "../components/icons";
@@ -74,15 +76,42 @@ export default function InterviewPage() {
 function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
   const toast = useToast();
   const [resumeId, setResumeId] = useState(resumes[0].id);
+  const [applicationId, setApplicationId] = useState("");
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [selected, setSelected] = useState<Set<QuestionCategory>>(new Set());
   const [questions, setQuestions] = useState<InterviewQuestion[] | null>(null);
 
+  // Applications to "prepare for" — picking one grounds the questions in that
+  // job (role, company, and the posting's keywords, via the backend).
+  const { data: apps = [] } = useQuery({
+    queryKey: ["applications"],
+    queryFn: () => api.get<ApplicationSummary[]>("/applications"),
+  });
+  // Load the chosen application's detail just to borrow its résumé profile.
+  const { data: appDetail } = useQuery({
+    queryKey: ["application", applicationId],
+    queryFn: () => api.get<ApplicationDetail>(`/applications/${applicationId}`),
+    enabled: !!applicationId,
+  });
+  useEffect(() => {
+    if (appDetail?.resume_profile_id) setResumeId(appDetail.resume_profile_id);
+  }, [appDetail]);
+
+  function chooseApplication(id: string) {
+    setApplicationId(id);
+    const app = apps.find((a) => a.id === id);
+    if (app) {
+      setRole(app.job_title ?? "");
+      setCompany(app.company ?? "");
+    }
+  }
+
   const generate = useMutation({
     mutationFn: () =>
       api.post<QuestionsResponse>("/interview/questions", {
         resume_profile_id: resumeId,
+        application_id: applicationId || null,
         role: role || null,
         company: company || null,
         categories: Array.from(selected),
@@ -104,6 +133,28 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
   return (
     <div className="space-y-4">
       <div className="card space-y-4 p-5">
+        {apps.length > 0 && (
+          <div>
+            <label className="label">Prepare for</label>
+            <select className="input" value={applicationId} onChange={(e) => chooseApplication(e.target.value)}>
+              <option value="">Custom — standalone prep</option>
+              {apps.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.company || "Application"}{a.job_title ? ` · ${a.job_title}` : ""}
+                </option>
+              ))}
+            </select>
+            {applicationId ? (
+              <p className="mt-1 text-xs text-brand-300">
+                Grounded in this job — its posting's keywords steer the questions; résumé, role &amp; company auto-filled (still editable below).
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-subtle">
+                Pick an application to auto-fill and ground the questions in that job — or keep it custom.
+              </p>
+            )}
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <label className="label">Résumé</label>
