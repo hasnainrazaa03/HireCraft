@@ -434,7 +434,9 @@ Confirms the app is up before deep testing.
 
 ## 10. Interview Prep  (`/interview`)
 
-- ⬜ **T-INT-01** Pick **role/company** + **categories** (Behavioral, Technical, Résumé, Project, Company, System Design, Coding, General) → **Generate questions** → ~8 questions, **specific to your résumé** (they reference your real projects/companies).
+- ⬜ **T-INT-01** Pick **role/company** + **categories** (Behavioral, Technical, Résumé, Project, Company, System Design, Coding, General) → **Generate questions** → ~8 questions, **specific to your résumé** (they reference your real projects/companies). Leaving categories blank yields a balanced mix.
+  - Notes:
+- ⬜ **T-INT-01b** **Prepare for: [application]** selector (new): the top of the question generator lists your applications. Choosing one (e.g. **Qualcomm · Machine Learning Engineer**) **auto-fills role & company, borrows that app's résumé**, and **grounds the questions in the job posting's keywords**; a **Custom — standalone prep** option keeps manual entry. (Backend already accepted `application_id`; this exposes it — the P2 you logged.)
   - Notes:
 - ⬜ **T-INT-02** Ask for a **STAR answer** to a question → returns **Situation / Task / Action / Result**, grounded in your experience.
   - Notes:
