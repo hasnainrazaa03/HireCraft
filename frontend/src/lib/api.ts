@@ -910,6 +910,37 @@ export interface OutreachResult {
   warnings: string[];
 }
 
+export interface SavedCoverLetterSummary {
+  id: string;
+  company: string | null;
+  role: string | null;
+  tone: string;
+  used_voice: boolean;
+  application_id: string | null;
+  application_label: string | null;
+  paragraph_count: number;
+  updated_at: string;
+}
+
+export interface SavedCoverLetterDetail {
+  id: string;
+  company: string | null;
+  role: string | null;
+  hiring_manager: string | null;
+  tone: string;
+  used_voice: boolean;
+  resume_profile_id: string | null;
+  application_id: string | null;
+  application_label: string | null;
+  paragraphs: string[];
+  job_text: string | null;
+  guardrail_report: GuardrailReport | null;
+  greeting: string;
+  signature: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- Company intelligence ---------------------------------------------------
 
 export interface CompanyBrief {

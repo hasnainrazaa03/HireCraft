@@ -8,18 +8,24 @@ exports to PDF, DOCX, or LaTeX just like a résumé does.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Response, status
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, GenerationUser
+from app.api.routes.applications import _write_artifact
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.models.application import Application, ArtifactKind
 from app.models.llm_usage import LlmUsage
 from app.models.resume import ResumeProfile
+from app.models.saved_cover_letter import SavedCoverLetter
 from app.models.writing import WritingProfile
+from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.schemas.studio import (
     CoverLetterGenerateRequest,
@@ -28,10 +34,17 @@ from app.schemas.studio import (
     OutreachGenerateRequest,
     OutreachKindInfo,
     OutreachResult,
+    SaveCoverLetterRequest,
+    SavedCoverLetterAttachRequest,
+    SavedCoverLetterDetail,
+    SavedCoverLetterFeedbackRequest,
+    SavedCoverLetterSummary,
     ToneInfo,
 )
+from app.schemas.tailoring import GuardrailReport
 from app.schemas.writing import VoiceProfile
 from app.services import storage
+from app.services.activity import log_event
 from app.services.evidence import evidence_lines
 from app.services.export.docx import cover_letter_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
@@ -43,7 +56,12 @@ from app.services.llm.client import (
 )
 from app.services.llm.factory import client_for_user
 from app.services.llm.prompts import COVER_LETTER_TONES, OUTREACH_KINDS
-from app.services.pipeline import UsageLedger, compose_cover_letter, generate_outreach
+from app.services.pipeline import (
+    UsageLedger,
+    compose_cover_letter,
+    draft_cover_letter,
+    generate_outreach,
+)
 from app.services.scraper import ScrapeError, scrape_job
 
 router = APIRouter(prefix="/studio", tags=["studio"])
@@ -281,6 +299,317 @@ def render_cover_letter_file(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Unsupported format {fmt!r}. Use pdf, docx, or tex.",
     )
+
+
+# --- Saved cover letters -----------------------------------------------------
+
+
+def _get_owned_letter(
+    db: DbSession, user_id: uuid.UUID, letter_id: uuid.UUID
+) -> SavedCoverLetter:
+    letter = db.get(SavedCoverLetter, letter_id)
+    if letter is None or letter.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Saved cover letter not found."
+        )
+    return letter
+
+
+def _application_label(
+    db: DbSession, user_id: uuid.UUID, application_id: uuid.UUID | None
+) -> str | None:
+    if application_id is None:
+        return None
+    app = db.get(Application, application_id)
+    if app is None or app.user_id != user_id:
+        return None
+    company = app.job.company if app.job else None
+    role = app.job.title if app.job else None
+    return " · ".join(x for x in (company, role) if x) or "Application"
+
+
+def _signature_for(
+    db: DbSession, user_id: uuid.UUID, resume_profile_id: uuid.UUID | None
+) -> str:
+    if resume_profile_id is None:
+        return ""
+    profile = db.get(ResumeProfile, resume_profile_id)
+    if profile is None or profile.user_id != user_id:
+        return ""
+    with contextlib.suppress(Exception):
+        return MasterResume.model_validate(profile.content).basics.name or ""
+    return ""
+
+
+def _saved_detail(
+    db: DbSession, user_id: uuid.UUID, letter: SavedCoverLetter
+) -> SavedCoverLetterDetail:
+    report = None
+    if letter.guardrail_report:
+        with contextlib.suppress(Exception):
+            report = GuardrailReport.model_validate(letter.guardrail_report)
+    return SavedCoverLetterDetail(
+        id=letter.id,
+        company=letter.company,
+        role=letter.role,
+        hiring_manager=letter.hiring_manager,
+        tone=letter.tone,
+        used_voice=letter.used_voice,
+        resume_profile_id=letter.resume_profile_id,
+        application_id=letter.application_id,
+        application_label=_application_label(db, user_id, letter.application_id),
+        paragraphs=letter.paragraphs or [],
+        job_text=letter.job_text,
+        guardrail_report=report,
+        greeting=_greeting(letter.hiring_manager, letter.company),
+        signature=_signature_for(db, user_id, letter.resume_profile_id),
+        created_at=letter.created_at,
+        updated_at=letter.updated_at,
+    )
+
+
+def _store_on_application(
+    db: DbSession,
+    user_id: uuid.UUID,
+    app: Application,
+    resume: MasterResume,
+    letter: SavedCoverLetter,
+) -> None:
+    """Render the letter and stage it on the application so it shows in that
+    application's Cover Letter tab (PDF + LaTeX artifacts + stored paragraphs)."""
+    tex = render_cover_letter(
+        resume, letter.paragraphs, settings.templates_dir,
+        company=letter.company, role=letter.role,
+    )
+    try:
+        compiled = compile_latex(tex, job_name="cover_letter")
+    except LatexCompilationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Couldn't typeset the cover letter: {exc.summary()}",
+        ) from exc
+    _write_artifact(
+        db, app, user_id, ArtifactKind.COVER_LETTER_PDF,
+        "cover_letter.pdf", compiled.pdf_bytes, "application/pdf",
+    )
+    _write_artifact(
+        db, app, user_id, ArtifactKind.COVER_LETTER_TEX,
+        "cover_letter.tex", tex.encode("utf-8"), "application/x-tex",
+    )
+    app.cover_letter = letter.paragraphs
+    app.include_cover_letter = True
+    log_event(app, "cover_letter", "Cover letter attached from studio")
+
+
+def _sync_attached(
+    db: DbSession, user_id: uuid.UUID, letter: SavedCoverLetter, resume: MasterResume
+) -> None:
+    """After a refine/regenerate, keep a linked application's copy in sync."""
+    if letter.application_id is None:
+        return
+    app = db.get(Application, letter.application_id)
+    if app is None or app.user_id != user_id:
+        return
+    _store_on_application(db, user_id, app, resume, letter)
+
+
+@router.get("/cover-letters/saved", response_model=list[SavedCoverLetterSummary])
+def list_saved_cover_letters(
+    user: CurrentUser, db: DbSession
+) -> list[SavedCoverLetterSummary]:
+    rows = (
+        db.execute(
+            select(SavedCoverLetter)
+            .where(SavedCoverLetter.user_id == user.id)
+            .order_by(SavedCoverLetter.updated_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        SavedCoverLetterSummary(
+            id=letter.id,
+            company=letter.company,
+            role=letter.role,
+            tone=letter.tone,
+            used_voice=letter.used_voice,
+            application_id=letter.application_id,
+            application_label=_application_label(db, user.id, letter.application_id),
+            paragraph_count=len(letter.paragraphs or []),
+            updated_at=letter.updated_at,
+        )
+        for letter in rows
+    ]
+
+
+@router.post(
+    "/cover-letters/saved",
+    response_model=SavedCoverLetterDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+def save_cover_letter(
+    payload: SaveCoverLetterRequest, user: CurrentUser, db: DbSession
+) -> SavedCoverLetterDetail:
+    _owned_resume(db, user.id, payload.resume_profile_id)  # ownership check
+    letter = SavedCoverLetter(
+        user_id=user.id,
+        resume_profile_id=payload.resume_profile_id,
+        company=payload.company,
+        role=payload.role,
+        hiring_manager=payload.hiring_manager,
+        tone=payload.tone,
+        used_voice=payload.used_voice,
+        paragraphs=payload.paragraphs,
+        job_text=payload.job_text,
+        guardrail_report=(
+            payload.guardrail_report.model_dump() if payload.guardrail_report else None
+        ),
+    )
+    db.add(letter)
+    db.commit()
+    db.refresh(letter)
+    return _saved_detail(db, user.id, letter)
+
+
+@router.get(
+    "/cover-letters/saved/{letter_id}", response_model=SavedCoverLetterDetail
+)
+def get_saved_cover_letter(
+    letter_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> SavedCoverLetterDetail:
+    return _saved_detail(db, user.id, _get_owned_letter(db, user.id, letter_id))
+
+
+@router.post(
+    "/cover-letters/saved/{letter_id}/refine", response_model=SavedCoverLetterDetail
+)
+def refine_saved_cover_letter(
+    letter_id: uuid.UUID,
+    payload: SavedCoverLetterFeedbackRequest,
+    user: GenerationUser,
+    db: DbSession,
+) -> SavedCoverLetterDetail:
+    letter = _get_owned_letter(db, user.id, letter_id)
+    profile = (
+        _owned_resume(db, user.id, letter.resume_profile_id)
+        if letter.resume_profile_id
+        else None
+    )
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The résumé this letter was written from is no longer available.",
+        )
+    resume = MasterResume.model_validate(profile.content)
+    requirements = JobRequirements(title=letter.role, company=letter.company)
+    voice = _voice_for(db, user.id) if letter.used_voice else None
+    ledger = UsageLedger()
+    try:
+        paragraphs = draft_cover_letter(
+            resume, requirements, letter.job_text or "",
+            tone=letter.tone, voice=voice, evidence=evidence_lines(db, user.id),
+            feedback=payload.feedback, previous=letter.paragraphs,
+            client=_client_for(user), ledger=ledger,
+        )
+    except LlmError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"The AI service is unavailable right now: {exc}",
+        ) from exc
+    if not paragraphs:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Couldn't produce a grounded revision. Try rewording your request.",
+        )
+    letter.paragraphs = paragraphs
+    _sync_attached(db, user.id, letter, resume)
+    _record(db, user.id, ledger)  # commits the session
+    db.refresh(letter)
+    return _saved_detail(db, user.id, letter)
+
+
+@router.post(
+    "/cover-letters/saved/{letter_id}/regenerate",
+    response_model=SavedCoverLetterDetail,
+)
+def regenerate_saved_cover_letter(
+    letter_id: uuid.UUID, user: GenerationUser, db: DbSession
+) -> SavedCoverLetterDetail:
+    letter = _get_owned_letter(db, user.id, letter_id)
+    profile = (
+        _owned_resume(db, user.id, letter.resume_profile_id)
+        if letter.resume_profile_id
+        else None
+    )
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The résumé this letter was written from is no longer available.",
+        )
+    resume = MasterResume.model_validate(profile.content)
+    voice = _voice_for(db, user.id) if letter.used_voice else None
+    ledger = UsageLedger()
+    try:
+        paragraphs, report = compose_cover_letter(
+            resume, letter.job_text or "",
+            company=letter.company, role=letter.role, tone=letter.tone, voice=voice,
+            evidence=evidence_lines(db, user.id), client=_client_for(user), ledger=ledger,
+        )
+    except LlmError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"The AI service is unavailable right now: {exc}",
+        ) from exc
+    if not paragraphs:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Couldn't produce a grounded letter. Try again.",
+        )
+    letter.paragraphs = paragraphs
+    letter.guardrail_report = report.model_dump()
+    _sync_attached(db, user.id, letter, resume)
+    _record(db, user.id, ledger)  # commits the session
+    db.refresh(letter)
+    return _saved_detail(db, user.id, letter)
+
+
+@router.post(
+    "/cover-letters/saved/{letter_id}/attach", response_model=SavedCoverLetterDetail
+)
+def attach_saved_cover_letter(
+    letter_id: uuid.UUID,
+    payload: SavedCoverLetterAttachRequest,
+    user: CurrentUser,
+    db: DbSession,
+) -> SavedCoverLetterDetail:
+    letter = _get_owned_letter(db, user.id, letter_id)
+    app = db.get(Application, payload.application_id)
+    if app is None or app.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Application not found."
+        )
+    # Render the sender block from the letter's résumé, falling back to the
+    # application's own résumé if that profile is gone.
+    profile = db.get(ResumeProfile, letter.resume_profile_id) if letter.resume_profile_id else None
+    if profile is None or profile.user_id != user.id:
+        profile = db.get(ResumeProfile, app.resume_profile_id)
+    resume = MasterResume.model_validate(profile.content)
+    letter.application_id = app.id
+    _store_on_application(db, user.id, app, resume, letter)
+    db.commit()
+    db.refresh(letter)
+    return _saved_detail(db, user.id, letter)
+
+
+@router.delete(
+    "/cover-letters/saved/{letter_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_saved_cover_letter(
+    letter_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> None:
+    letter = _get_owned_letter(db, user.id, letter_id)
+    db.delete(letter)
+    db.commit()
 
 
 @router.post("/outreach/generate", response_model=OutreachResult)

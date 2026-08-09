@@ -18,6 +18,7 @@ from app.models.llm_usage import LlmUsage
 from app.models.notification import Notification
 from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile, ResumeVersion
+from app.models.saved_cover_letter import SavedCoverLetter
 from app.models.user import User
 from app.models.writing import WritingProfile, WritingSample, WritingSampleKind
 
@@ -36,6 +37,7 @@ __all__ = [
     "PipelineStatus",
     "ResumeProfile",
     "ResumeVersion",
+    "SavedCoverLetter",
     "Session",
     "TrackerStatus",
     "User",
