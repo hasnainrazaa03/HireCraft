@@ -89,3 +89,45 @@ def test_star_answer_clean_has_no_warnings(master: MasterResume):
 def test_category_literal_covers_expected_values():
     cats = set(get_args(QuestionCategory))
     assert {"behavioral", "technical", "system_design", "coding", "resume"} <= cats
+
+
+def test_star_answer_flags_borrowed_tool_from_question(master: MasterResume):
+    """The interviewer can raise a tool the candidate has never used (SNPE). The
+    answer must not claim hands-on experience with it unflagged."""
+    star = StarAnswer(
+        situation="We deployed models on-device.",
+        task="I needed low latency under tight memory.",
+        action="I used Qualcomm SNPE to quantize the network for the Snapdragon NPU.",
+        result="Latency dropped and it shipped.",
+    )
+    _, warnings = draft_star_answer(
+        master,
+        "How would you use Qualcomm SNPE on the Snapdragon NPU?",
+        client=StubClient(star),
+    )
+    assert any("SNPE" in w for w in warnings)
+
+
+def test_star_answer_no_borrowed_flag_when_grounded(master: MasterResume):
+    star = StarAnswer(
+        situation="I built backend services at my last role.",
+        task="I had to improve throughput.",
+        action="I profiled and optimized the hot paths in Python.",
+        result="Throughput improved noticeably.",
+    )
+    _, warnings = draft_star_answer(
+        master,
+        "How would you use Qualcomm SNPE on the Snapdragon NPU?",
+        client=StubClient(star),
+    )
+    assert warnings == []
+
+
+def test_borrowed_terms_ignores_first_person(master: MasterResume):
+    from app.services.interview import _advisory_borrowed_terms
+
+    # "I", "My" and sentence-initial capitals must not be mistaken for tools.
+    warnings = _advisory_borrowed_terms(
+        master, "Tell me about a hard problem.", "I led the team. My work shipped early.", ""
+    )
+    assert warnings == []

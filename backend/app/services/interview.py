@@ -30,6 +30,43 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle guard
 logger = get_logger(__name__)
 
 
+def _advisory_borrowed_terms(
+    resume: MasterResume, question: str, answer: str, context: str
+) -> list[str]:
+    """Flag tool/tech names the QUESTION introduced that the answer echoes but the
+    résumé (or attested context) doesn't back — the classic "the interviewer
+    mentioned SNPE, don't claim you've used it" case. Advisory, never blocking:
+    scoped to terms present in BOTH question and answer so it stays high-signal on
+    conversational, first-person text."""
+    from app.services.llm.guardrails import (
+        _master_corpus,
+        _stems,
+        _suspicious_tokens,
+        _tokens,
+    )
+
+    vocab = _tokens(f"{_master_corpus(resume)} {context}".lower())
+    stem_vocab = _stems(vocab)
+    q_terms = {
+        t.lower() for t in _suspicious_tokens(question, vocab, stem_vocab) if len(t) >= 2
+    }
+    seen: set[str] = set()
+    borrowed: list[str] = []
+    for t in _suspicious_tokens(answer, vocab, stem_vocab):
+        low = t.lower()
+        if len(t) >= 2 and low in q_terms and low not in seen:
+            seen.add(low)
+            borrowed.append(t)
+    if not borrowed:
+        return []
+    names = ", ".join(borrowed[:6])
+    return [
+        f"Your answer names {names} — raised by the question but not backed by your "
+        f"résumé. Present these as how you'd approach the problem, not experience you "
+        f"already have."
+    ]
+
+
 def generate_questions(
     resume: MasterResume,
     *,
@@ -83,5 +120,8 @@ def draft_star_answer(
     star = result.data
     combined = " ".join([star.situation, star.task, star.action, star.result])
     # The brag bank is attested context, so a number from it isn't unbacked.
-    warnings = _advisory_number_check(resume, combined, " ".join(evidence or []))
+    evidence_text = " ".join(evidence or [])
+    warnings = _advisory_number_check(resume, combined, evidence_text)
+    # …and a tool/tech the question raised but the résumé can't back (e.g. SNPE).
+    warnings += _advisory_borrowed_terms(resume, question, combined, evidence_text)
     return star, warnings
