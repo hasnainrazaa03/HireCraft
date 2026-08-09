@@ -446,6 +446,8 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-INT-05** Answer to a question about experience you *don't* have → it stays honest (doesn't invent) or picks the closest real experience.
   - Notes:
+- ⬜ **T-INT-06** **Borrowed-tool guard** (new, from the SNPE observation): when a question *introduces* a tool/tech you haven't used (e.g. it suggests **Qualcomm SNPE**), the STAR answer must **not claim hands-on experience** with it. The prompt now forces "here's how I'd approach it" framing over "I used it", and an **advisory warning** appears if the answer name-drops a tool the question raised that your résumé can't back — so you can reframe before the interview. (Grounded answers and normal first-person phrasing don't trip it.)
+  - Notes:
 
 ---
 
