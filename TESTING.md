@@ -438,15 +438,15 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-INT-01b** **Prepare for: [application]** selector (new): the top of the question generator lists your applications. Choosing one (e.g. **Qualcomm · Machine Learning Engineer**) **auto-fills role & company, borrows that app's résumé**, and **grounds the questions in the job posting's keywords**; a **Custom — standalone prep** option keeps manual entry. (Backend already accepted `application_id`; this exposes it — the P2 you logged.)
   - Notes:
-- ⬜ **T-INT-02** Ask for a **STAR answer** to a question → returns **Situation / Task / Action / Result**, grounded in your experience.
-  - Notes:
-- ⬜ **T-INT-03 (brag-bank check)** A STAR answer pulls **attested specifics** from your brag bank (e.g. "Welch two-sample t-test on 2,500+ samples", "6-DOF solver", "$50K pre-seed") rather than staying vague. Confirm those specifics are truthful.
-  - Notes:
+- ✅ **T-INT-02** Ask for a **STAR answer** (incl. technical/hypothetical) → returns **Situation / Task / Action / Result**, anchored in your real experience.
+  - Notes: PASS. Connected Prana.ai 3D-CNN + Vimaan INT8 work to a plausible Snapdragon/NPU deployment approach. Per the coaching standard, a *constructed* hypothetical scenario is acceptable. **Prompt now prefers natural "If I were deploying this…" framing** for hypotheticals (the answer-quality nit you raised).
+- ✅ **T-INT-03 (behavioral / brag-bank)** A behavioral STAR answer **anchors** in a genuine experience (DRDO team, CFD/PyFluent, Python/MATLAB, Z-score filtering, regression) and **constructs** the narrative fill (delegation, disagreement, validation, consensus) into an interview-ready story. Attested specifics stay truthful.
+  - Notes: PASS. Desirable behavior under the coaching philosophy — real anchor + realistic constructed narrative.
 - ⬜ **T-INT-04** **Write in my voice** applies the saved writing voice.
   - Notes:
 - ⬜ **T-INT-05** Answer to a question about experience you *don't* have → it stays honest (doesn't invent) or picks the closest real experience.
   - Notes:
-- ⬜ **T-INT-06** **Borrowed-tool guard** (new, from the SNPE observation): when a question *introduces* a tool/tech you haven't used (e.g. it suggests **Qualcomm SNPE**), the STAR answer must **not claim hands-on experience** with it. The prompt now forces "here's how I'd approach it" framing over "I used it", and an **advisory warning** appears if the answer name-drops a tool the question raised that your résumé can't back — so you can reframe before the interview. (Grounded answers and normal first-person phrasing don't trip it.)
+- ⬜ **T-INT-06** **Coaching standard (not résumé verification):** Interview Prep prioritizes strong, realistic, technically sound *practice* answers. It's free to **infer/construct/simulate** plausible detail (collaboration, delegation, reasoning, hypothetical approach) that would never appear in a résumé — anchored in your real background (real employers, projects, tech), never relocating the story to a fake employer or claiming a credential you lack. Hypotheticals get **more** latitude (reason about tools the question raises). The **only** advisory left is a light **"know your numbers"** nudge: a *standalone* figure the résumé/brag bank can't back is surfaced so you can defend it — and it **ignores digits inside tech names** (3D, INT8, S3, GPT-4), so it doesn't nag. *(Supersedes the earlier borrowed-tool guard, which was too strict for constructed hypotheticals.)*
   - Notes:
 
 ---
