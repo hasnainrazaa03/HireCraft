@@ -20,6 +20,8 @@ import {
   type ScorecardSuggestion,
   type JobSignals,
   type QualityInspect,
+  type ResumeProfile,
+  type ResumeEntry,
   type CopilotResponse,
   type DiffEntry,
 } from "../lib/api";
@@ -642,6 +644,157 @@ function ResumePreview({ id }: { id: string }) {
   return (
     <div className="h-[78vh] max-h-[calc(100dvh-14rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-white">
       <PdfBlobFrame id={id} kind="resume_pdf" title="Final résumé" />
+    </div>
+  );
+}
+
+/** Reusable centered lightbox (portal, Esc/backdrop close, scroll lock). */
+function Modal({
+  title,
+  icon,
+  onClose,
+  actions,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  onClose: () => void;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const shown = useMountReveal();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${shown ? "opacity-100" : "opacity-0"}`} onClick={onClose} />
+      <div className={`relative z-10 flex h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl transition-all duration-200 ${shown ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}>
+        <header className="flex items-center gap-3 border-b border-white/10 p-4">
+          {icon}
+          <h3 className="flex-1 truncate text-base font-semibold">{title}</h3>
+          {actions}
+          <button onClick={onClose} className="rounded-lg p-1.5 text-subtle transition hover:bg-white/5 hover:text-content" aria-label="Close">
+            <IconClose className="h-5 w-5" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** The job description used for this application, shown in-context (with a link
+ *  to the live posting) so you never have to leave to re-read it. */
+function JobDescriptionModal({ job, onClose }: { job: ApplicationDetail["job"]; onClose: () => void }) {
+  return (
+    <Modal
+      title="Job description"
+      icon={<span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-coral/15 text-coral"><IconBriefcase className="h-4 w-4" /></span>}
+      onClose={onClose}
+      actions={
+        job?.url ? (
+          <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm shrink-0">
+            Open original ↗
+          </a>
+        ) : undefined
+      }
+    >
+      <div className="p-5">
+        <div className="text-lg font-semibold text-content">{job?.title ?? "Role"}</div>
+        <div className="text-sm text-subtle">
+          {job?.company ?? "—"}{job?.location ? ` · ${job.location}` : ""}
+        </div>
+        <pre className="mt-4 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-muted">
+          {job?.raw_text?.trim() || "No stored description for this application."}
+        </pre>
+      </div>
+    </Modal>
+  );
+}
+
+/** The master (source) résumé this application was tailored from — read it in
+ *  place instead of leaving for the Résumés page. */
+function SourceResumeModal({ profileId, onClose }: { profileId: string; onClose: () => void }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["resume-profile", profileId],
+    queryFn: () => api.get<ResumeProfile>(`/resumes/${profileId}`),
+  });
+  const r = data?.content;
+  const entries = (list: ResumeEntry[] | undefined, kind: "exp" | "proj" | "edu") =>
+    (list ?? []).map((e) => (
+      <div key={e.id} className="mt-3">
+        <div className="text-sm font-medium text-content">
+          {e.name || e.company || e.institution || "Entry"}
+          {(e.title || e.degree) && <span className="text-subtle"> — {e.title || e.degree}</span>}
+        </div>
+        {e.highlights.length > 0 && (
+          <ul className="mt-1 space-y-1">
+            {e.highlights.map((h, i) => (
+              <li key={i} className="flex gap-2 text-sm text-muted"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/25" />{h}</li>
+            ))}
+          </ul>
+        )}
+        {kind === "exp" && null}
+      </div>
+    ));
+
+  return (
+    <Modal
+      title="Master résumé (source)"
+      icon={<span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald/15 text-emerald"><IconUpload className="h-4 w-4" /></span>}
+      onClose={onClose}
+      actions={<Link to="/resumes" className="btn-secondary btn-sm shrink-0">Edit in Résumés</Link>}
+    >
+      <div className="p-5">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-subtle"><Spinner className="h-4 w-4" /> Loading…</div>
+        ) : isError || !r ? (
+          <p className="text-sm text-danger">Couldn't load the source résumé.</p>
+        ) : (
+          <>
+            <div className="text-lg font-semibold text-content">{r.basics.name}</div>
+            {r.basics.headline && <div className="text-sm text-brand-200">{r.basics.headline}</div>}
+            {r.basics.summary && <p className="mt-2 text-sm leading-relaxed text-muted">{r.basics.summary}</p>}
+
+            {r.experience.length > 0 && <ResumeSection label="Experience">{entries(r.experience, "exp")}</ResumeSection>}
+            {r.projects.length > 0 && <ResumeSection label="Projects">{entries(r.projects, "proj")}</ResumeSection>}
+            {r.skills.length > 0 && (
+              <ResumeSection label="Skills">
+                <div className="mt-2 space-y-1.5">
+                  {r.skills.map((g) => (
+                    <div key={g.category} className="text-sm">
+                      <span className="font-medium text-content">{g.category}:</span>{" "}
+                      <span className="text-muted">{g.items.join(", ")}</span>
+                    </div>
+                  ))}
+                </div>
+              </ResumeSection>
+            )}
+            {r.education.length > 0 && <ResumeSection label="Education">{entries(r.education, "edu")}</ResumeSection>}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ResumeSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-subtle">{label}</div>
+      {children}
     </div>
   );
 }
@@ -2104,8 +2257,9 @@ function OverviewTab({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const navigate = useNavigate();
   const hasCover = application.artifacts.some((a) => a.kind === "cover_letter_pdf");
+  const [jdOpen, setJdOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
 
   const coverLetter = useMutation({
     mutationFn: () => api.post<ApplicationDetail>(`/applications/${application.id}/cover-letter`, {}),
@@ -2163,17 +2317,12 @@ function OverviewTab({
             <DocCard
               icon={<IconUpload className="h-4 w-4" />} tint="bg-emerald/15 text-emerald"
               title="Résumé source" subtitle="Your master résumé" action="Open"
-              onAction={() => navigate("/resumes")}
+              onAction={() => setSourceOpen(true)}
             />
             <DocCard
               icon={<IconBriefcase className="h-4 w-4" />} tint="bg-coral/15 text-coral"
               title="Job description" subtitle={application.job?.company ? `From ${application.job.company}` : "Extracted"}
-              action="View"
-              onAction={() =>
-                application.job?.url
-                  ? window.open(application.job.url, "_blank", "noopener,noreferrer")
-                  : onOpenDocs("requirements")
-              }
+              action="View" onAction={() => setJdOpen(true)}
             />
           </div>
         </div>
@@ -2189,6 +2338,9 @@ function OverviewTab({
         <NotesCard application={application} onSave={onSaveNotes} />
         <JobDetailsCard job={application.job} />
       </div>
+
+      {jdOpen && <JobDescriptionModal job={application.job} onClose={() => setJdOpen(false)} />}
+      {sourceOpen && <SourceResumeModal profileId={application.resume_profile_id} onClose={() => setSourceOpen(false)} />}
     </div>
   );
 }

@@ -373,6 +373,7 @@ class QualityInspect(ApiModel):
 
 class ApplicationDetail(ApiModel):
     id: uuid.UUID
+    resume_profile_id: uuid.UUID
     pipeline_status: PipelineStatus
     tracker_status: TrackerStatus
     celery_task_id: str | None

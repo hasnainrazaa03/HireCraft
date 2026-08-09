@@ -684,6 +684,7 @@ export interface QualityInspect {
 
 export interface ApplicationDetail {
   id: string;
+  resume_profile_id: string;
   pipeline_status: PipelineStatus;
   tracker_status: TrackerStatus;
   error_message: string | null;
