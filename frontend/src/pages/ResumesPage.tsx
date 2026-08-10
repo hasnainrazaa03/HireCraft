@@ -54,7 +54,7 @@ export default function ResumesPage() {
   const [name, setName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [template, setTemplate] = useState("modern");
-  const [onePage, setOnePage] = useState(false);
+  const [onePage, setOnePage] = useState(true);
   const [content, setContent] = useState<ResumeContent>(STARTER);
   const [mode, setMode] = useState<Mode>("builder");
   const [jsonDraft, setJsonDraft] = useState("");
@@ -143,7 +143,7 @@ export default function ResumesPage() {
     setName(full.name);
     setTags(full.tags ?? []);
     setTemplate(full.template ?? "modern");
-    setOnePage(full.one_page ?? false);
+    setOnePage(full.one_page ?? true);
     setContent(full.content as unknown as ResumeContent);
     setMode("builder");
     setError(null);
@@ -569,14 +569,14 @@ function Editor(props: any) {
         <label className="mt-3 flex items-start gap-2.5 text-sm">
           <input
             type="checkbox"
-            checked={!!onePage}
-            onChange={(e) => setOnePage(e.target.checked)}
+            checked={!onePage}
+            onChange={(e) => setOnePage(!e.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-white/[0.14] bg-surface-3 text-brand-600 focus:ring-brand-500"
           />
           <span>
-            <span className="font-medium">Fit to one page</span>
+            <span className="font-medium">Allow more than one page</span>
             <span className="mt-0.5 block text-xs text-subtle">
-              Auto-tightens spacing until the résumé fits a single page (stops at a readable limit). Applies to preview, exports, and tailored versions.
+              By default HireCraft auto-tightens spacing so the résumé fits a single page (preview, exports, and tailored versions). Check this to relax that and let it run onto a second page.
             </span>
           </span>
         </label>

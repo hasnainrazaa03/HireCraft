@@ -115,6 +115,22 @@ HOW TO REWRITE EACH BULLET:
 - In `keywords_used`, list only job keywords you actually surfaced using genuine \
   candidate experience.
 
+TECHNICAL DEPTH & QUANTIFICATION - this is where a strong résumé is won:
+- Keep the SPECIFIC technical substance. Name the real methods, architectures, \
+  algorithms, libraries, and systems the candidate actually used - "depthwise- \
+  separable 3D CNNs", "INT8 quantization", "SO(3)-equivariant CNNs", "k-omega SST \
+  overset mesh", "REST orchestration across Pega/MDM/SAP". NEVER flatten these into \
+  vague phrases like "deep learning models", "data work", or "backend tasks". \
+  Specific and correct always beats generic. Engineers read these bullets - be \
+  precise about what was actually built and how.
+- QUANTIFY relentlessly, but ONLY with real numbers. Every metric already in the \
+  master résumé or attested evidence MUST survive the rewrite, and when a number is \
+  the strongest thing in a bullet, LEAD with it - scale, latency, throughput, %, \
+  volume, accuracy, size, count. A bullet that owns a real metric but buries or drops \
+  it is a wasted bullet. If a bullet genuinely has no number, do NOT invent one \
+  (the verifier deletes fabricated metrics) - land it on a concrete technical outcome \
+  instead. Quantified + technically specific is the bar for every bullet that can hit it.
+
 LEEWAY - HOW TO SELL THE CANDIDATE WITHOUT LYING:
 You are their advocate, not a transcriptionist. Within the constraints above you \
 have real room to make them look strong. This is allowed and expected:

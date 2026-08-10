@@ -1008,7 +1008,7 @@ def assistant_apply(
     )
 
     template = resolve_filename(profile.template if profile else None)
-    one_page = profile.one_page if profile else False
+    one_page = profile.one_page if profile else True
     try:
         compiled, resume_tex = render_and_fit(
             merged, settings.templates_dir, template_name=template, one_page=one_page, job_name="resume"

@@ -141,7 +141,9 @@ class ResumeProfileCreate(ApiModel):
     is_default: bool = False
     tags: list[str] = Field(default_factory=list, max_length=20)
     template: str | None = Field(default=None, max_length=20)
-    one_page: bool = False
+    # One-page fit is the default; the résumé auto-tightens to a single page unless
+    # the user opts to let it run longer.
+    one_page: bool = True
     # Label for the first version ("Imported résumé", "Original draft", …).
     version_label: str | None = Field(default=None, max_length=200)
 
