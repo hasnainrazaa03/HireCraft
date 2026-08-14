@@ -111,3 +111,22 @@ def client_for_user(user: User, *, provider: str | None = None, model: str | Non
             f"{registry.provider_label(prov)} isn't configured. Add an API key in Settings."
         )
     return build_client(prov, model=mdl, api_key=key)
+
+
+# Cheap model for the pipeline's mechanical steps (reading the job into
+# requirements, coverage planning) so a full tailoring on a premium primary model
+# stays inexpensive without giving up writing quality.
+_FAST_GEMINI_MODEL = "gemini-flash-latest"
+
+
+def fast_client_for_user(user: User) -> LlmClient:
+    """A cheap client for mechanical steps. Prefers Gemini Flash on any available
+    Gemini key (the user's or the server's); falls back to the user's primary
+    client when no Gemini key exists — so callers can use it unconditionally.
+
+    When the primary provider is itself Gemini this returns an equivalent client,
+    so nothing changes; the split only kicks in for premium primaries (Claude/GPT)."""
+    key = user_key(user, "gemini") or _SERVER_KEY["gemini"]()
+    if key:
+        return build_client("gemini", model=_FAST_GEMINI_MODEL, api_key=key)
+    return client_for_user(user)

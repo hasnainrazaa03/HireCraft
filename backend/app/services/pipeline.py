@@ -22,7 +22,7 @@ from app.schemas.writing import VoiceProfile
 from app.services.latex.compiler import compile_latex
 from app.services.latex.renderer import render_and_fit, render_cover_letter
 from app.services.latex.templates import resolve_filename
-from app.services.llm.client import LlmResult, Usage, get_client
+from app.services.llm.client import LlmError, LlmResult, Usage, get_client
 from app.services.llm.guardrails import GuardrailEngine, build_diff
 from app.services.llm.prompts import (
     COVER_LETTER_SYSTEM,
@@ -185,6 +185,7 @@ def optimize_resume(
     two_stage: bool = True,
     reach: bool = False,
     client: LlmClient | None = None,
+    plan_client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[MasterResume, GuardrailReport, list[DiffEntry]]:
     """Stage 3: rewrite presentation, then enforce truthfulness.
@@ -199,7 +200,8 @@ def optimize_resume(
     if two_stage:
         try:
             plan = plan_coverage(
-                master, requirements, evidence=evidence, client=client, ledger=ledger
+                master, requirements, evidence=evidence,
+                client=plan_client or client, ledger=ledger,
             )
             prompt = build_optimizer_prompt_with_plan(prompt, plan.covered_lines())
         except Exception as exc:  # noqa: BLE001 - the plan is best-effort
@@ -529,14 +531,21 @@ def run_pipeline(
     one_page: bool = False,
     reach: bool = False,
     client: LlmClient | None = None,
+    fast_client: LlmClient | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> TailoringOutcome:
     """Run every stage after scraping and return the finished artifacts.
 
     ``evidence`` is the candidate's brag bank, threaded into both the tailoring
-    and cover-letter stages so attested facts are usable and never flagged."""
+    and cover-letter stages so attested facts are usable and never flagged.
+
+    ``fast_client`` (optional) runs the mechanical steps — reading the job into
+    requirements and coverage planning — on a cheap model (e.g. Gemini Flash),
+    while ``client`` (the primary) does the writing. Falls back to ``client`` if
+    the fast step errors, so a cheap-model hiccup never fails the run."""
     templates_dir = templates_dir or settings.templates_dir
     client = client or get_client()
+    fast = fast_client or client
     ledger = UsageLedger()
 
     def progress(stage: str, message: str) -> None:
@@ -544,11 +553,18 @@ def run_pipeline(
             on_progress(stage, message)
 
     progress("extracting", "Reading the job description")
-    requirements = extract_requirements(scrape, client=client, ledger=ledger)
+    try:
+        requirements = extract_requirements(scrape, client=fast, ledger=ledger)
+    except LlmError:
+        if fast is client:
+            raise
+        logger.info("pipeline.fast_extract_fell_back_to_primary")
+        requirements = extract_requirements(scrape, client=client, ledger=ledger)
 
     progress("optimizing", "Tailoring your experience to the role")
     tailored, report, diff = optimize_resume(
-        master, requirements, scrape.text, evidence=evidence, reach=reach, client=client, ledger=ledger
+        master, requirements, scrape.text, evidence=evidence, reach=reach,
+        client=client, plan_client=fast, ledger=ledger,
     )
 
     cover_tex: str | None = None

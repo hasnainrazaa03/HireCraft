@@ -29,7 +29,7 @@ from app.services.email.sender import Email, EmailError, send_email
 from app.services.evidence import evidence_lines
 from app.services.latex.compiler import LatexCompilationError
 from app.services.llm.client import LlmConfigurationError, LlmError
-from app.services.llm.factory import LlmClient, client_for_user
+from app.services.llm.factory import LlmClient, client_for_user, fast_client_for_user
 from app.services.pipeline import TailoringOutcome, run_pipeline
 from app.services.resume_eval import score_from_report
 from app.services.usage import accrue_usage
@@ -210,9 +210,13 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
         # back to the shared Gemini key - or fail outright when there wasn't one
         # - while every other AI feature honoured their choice.
         client: LlmClient | None = None
+        fast_client: LlmClient | None = None
         config_error: str | None = None
         try:
             client = client_for_user(application.user)
+            # Cheap model (Gemini Flash) for the mechanical steps; the writing runs
+            # on the primary. Equivalent to `client` when the primary is Gemini.
+            fast_client = fast_client_for_user(application.user)
         except LlmConfigurationError as exc:
             config_error = str(exc)
         job = application.job
@@ -254,6 +258,7 @@ def run_tailoring_task(self, application_id: str) -> dict[str, object]:
             reach=reach_mode,
             on_progress=on_progress,
             client=client,
+            fast_client=fast_client,
         )
     except LlmConfigurationError as exc:
         # Retrying will not conjure an API key.
