@@ -128,6 +128,26 @@ def render_resume(
 
 # Readable floor: never compact past this level, even if the résumé still spills.
 _MAX_DENSITY = 3
+# Backstop cap on how many bullets one-page fit may trim before giving up.
+_MAX_TRIM_STEPS = 24
+
+
+def _trim_one(resume: MasterResume) -> bool:
+    """Remove the single lowest-priority bullet so a résumé can fit one page: the
+    last highlight of the last entry (least relevant, since the tailoring orders by
+    relevance), dropping an entry that empties. Trims projects before experience;
+    leaves education intact. Returns False when there is nothing left to trim."""
+    for section in ("projects", "experience"):
+        entries = getattr(resume, section, None) or []
+        for i in range(len(entries) - 1, -1, -1):
+            highlights = getattr(entries[i], "highlights", None)
+            if highlights:
+                if len(highlights) > 1:
+                    highlights.pop()
+                else:
+                    entries.pop(i)
+                return True
+    return False
 
 
 def render_and_fit(
@@ -140,7 +160,9 @@ def render_and_fit(
 ):
     """Render and compile a résumé PDF. When ``one_page`` is set, escalate the
     compact density until the PDF fits a single page or the readable floor is
-    reached. Returns ``(CompileResult, tex)`` for the density that was used.
+    reached; if it still spills at max density, trim the lowest-priority bullets
+    (on a copy) until it fits — so one page is a real guarantee, not best-effort.
+    Returns ``(CompileResult, tex)`` for the layout that was used.
     """
     # Imported lazily so the renderer module has no import-time dependency on the
     # LaTeX toolchain wrapper.
@@ -153,6 +175,17 @@ def render_and_fit(
         tex = render_resume(resume, templates_dir, template_name, density=density)
         result = compile_latex(tex, job_name=job_name)
         if not one_page or result.page_count <= 1:
+            return result, tex
+
+    # Density is maxed and it still spills: prune lowest-priority content (on a
+    # copy, so the caller's résumé is untouched) and re-render at max density.
+    pruned = resume.model_copy(deep=True)
+    for _ in range(_MAX_TRIM_STEPS):
+        if not _trim_one(pruned):
+            break
+        tex = render_resume(pruned, templates_dir, template_name, density=max_density)
+        result = compile_latex(tex, job_name=job_name)
+        if result.page_count <= 1:
             break
     return result, tex
 

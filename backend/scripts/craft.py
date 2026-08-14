@@ -234,6 +234,87 @@ def cmd_build(args: argparse.Namespace) -> None:
         }, indent=2, ensure_ascii=False))
 
 
+def cmd_eval(args: argparse.Namespace) -> None:
+    """Benchmark two (or more) tailored applications head-to-head using HireCraft's
+    own deterministic scorer, job-match, and real page counts — no LLM."""
+    import io
+
+    from pypdf import PdfReader
+    from sqlalchemy import func
+
+    from app.models.llm_usage import LlmUsage
+    from app.schemas.job import JobRequirements
+    from app.schemas.tailoring import GuardrailReport
+    from app.services.matching import match_resume_to_job
+    from app.services.resume_eval import score_from_report
+
+    with SessionLocal() as db:
+        cols = []
+        for aid in args.app:
+            app = db.get(Application, uuid.UUID(aid))
+            if app is None or app.tailored_resume is None:
+                _err(f"application {aid} not found or not tailored")
+            resume = MasterResume.model_validate(app.tailored_resume)
+            report = GuardrailReport.model_validate(app.guardrail_report or {})
+            company = app.job.company if app.job else None
+            card = score_from_report(resume, report, company=company)
+            reqs = (
+                JobRequirements.model_validate(app.job.requirements)
+                if app.job and app.job.requirements else None
+            )
+            match = match_resume_to_job(resume, reqs) if reqs else None
+            pdf = next((a for a in app.artifacts if a.kind.value == "resume_pdf"), None)
+            pages = None
+            if pdf is not None:
+                try:
+                    data = open(storage.resolve_path(pdf.storage_path), "rb").read()
+                    pages = len(PdfReader(io.BytesIO(data)).pages)
+                except Exception:  # noqa: BLE001
+                    pages = None
+            n_calls = db.scalar(select(func.count(LlmUsage.id)).where(LlmUsage.application_id == app.id)) or 0
+            cols.append({
+                "id": str(app.id)[:8],
+                "engine": "CLI (Claude Code)" if n_calls == 0 else "In-app (hosted LLM)",
+                "overall": card.overall,
+                "metrics": {m.key: (m.score, m.measured) for m in card.metrics},
+                "match": match.overall_score if match else None,
+                "verdict": match.verdict if match else None,
+                "pages": pages,
+                "errors": sum(1 for v in report.violations if v.severity == "error"),
+                "warnings": sum(1 for v in report.violations if v.severity == "warning"),
+                "cost": app.total_cost_usd,
+                "calls": n_calls,
+            })
+
+        metric_keys = list(cols[0]["metrics"].keys())
+        w = 22
+        def row(label, vals):
+            print(f"  {label:<26}" + "".join(f"{str(v):<{w}}" for v in vals))
+        print("\n=== BENCHMARK ===")
+        row("", [c["engine"] for c in cols])
+        row("application", [c["id"] for c in cols])
+        row("Overall /100", [c["overall"] for c in cols])
+        for k in metric_keys:
+            row(f"  · {k}", [f"{c['metrics'][k][0]}{'' if c['metrics'][k][1] else ' (n/m)'}" for c in cols])
+        row("Job match /100", [c["match"] for c in cols])
+        row("  verdict", [c["verdict"] for c in cols])
+        row("Pages", [c["pages"] for c in cols])
+        row("Guardrail errors", [c["errors"] for c in cols])
+        row("Guardrail warnings", [c["warnings"] for c in cols])
+        row("Hosted-LLM cost", [f"${c['cost']:.5f}" for c in cols])
+        row("Hosted-LLM calls", [c["calls"] for c in cols])
+
+        # Verdict: quality (overall, then match), truthfulness (errors), then cost.
+        best_q = max(cols, key=lambda c: (c["overall"], c["match"] or 0, -c["errors"]))
+        cheapest = min(cols, key=lambda c: c["cost"])
+        print("\n=== VERDICT ===")
+        print(f"  Best quality:  {best_q['engine']} ({best_q['id']}) — overall {best_q['overall']}, match {best_q['match']}, {best_q['errors']} blocked claims")
+        print(f"  Cheapest:      {cheapest['engine']} ({cheapest['id']}) — ${cheapest['cost']:.5f}")
+        allsame = len({c["overall"] for c in cols}) == 1
+        if allsame:
+            print("  Quality is effectively tied → the cheaper engine wins on value.")
+
+
 def cmd_rm(args: argparse.Namespace) -> None:
     with SessionLocal() as db:
         app = db.get(Application, uuid.UUID(args.app))
@@ -269,6 +350,10 @@ def main() -> None:
     p_build.add_argument("--title")
     p_build.add_argument("--company")
     p_build.set_defaults(func=cmd_build)
+
+    p_eval = sub.add_parser("eval", help="benchmark two tailored applications head-to-head")
+    p_eval.add_argument("--app", required=True, action="append", help="application id (pass twice)")
+    p_eval.set_defaults(func=cmd_eval)
 
     p_rm = sub.add_parser("rm", help="delete an application (cleanup a test run)")
     p_rm.add_argument("--app", required=True)
