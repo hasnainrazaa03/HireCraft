@@ -42,6 +42,17 @@ def _parse[T: BaseModel](text: str, schema: type[T]) -> T:
         ) from exc
 
 
+# Models that have deprecated a custom ``temperature`` and reject the parameter
+# (e.g. claude-sonnet-5). Discovered at call time and cached, so the whole newer
+# Claude family is handled without a brittle hardcoded list.
+_ANTHROPIC_NO_TEMPERATURE: set[str] = set()
+
+
+def _temperature_rejected(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "temperature" in msg and ("deprecat" in msg or "unsupported" in msg or "not support" in msg)
+
+
 class AnthropicClient:
     """Claude via the official anthropic SDK. Structured output = forced tool use."""
 
@@ -66,45 +77,59 @@ class AnthropicClient:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_output_tokens or settings.llm_max_output_tokens,
-            "temperature": temperature if temperature is not None else settings.llm_temperature,
         }
+        # Omit temperature for any model we've learned rejects it (see _create).
+        if self.model not in _ANTHROPIC_NO_TEMPERATURE:
+            kwargs["temperature"] = temperature if temperature is not None else settings.llm_temperature
         if system_instruction:
             kwargs["system"] = system_instruction
         return kwargs
 
+    def _create(self, *, system_instruction: str | None, temperature: float | None,
+                max_output_tokens: int | None, **extra: Any) -> Any:
+        """``messages.create`` with a one-time retry that drops ``temperature`` for
+        a model that has deprecated it, then remembers so later calls skip it."""
+        client = self._ensure()
+        kwargs = self._base_kwargs(system_instruction, temperature, max_output_tokens)
+        try:
+            return client.messages.create(**kwargs, **extra)
+        except Exception as exc:  # noqa: BLE001
+            if "temperature" in kwargs and _temperature_rejected(exc):
+                _ANTHROPIC_NO_TEMPERATURE.add(self.model)
+                kwargs.pop("temperature", None)
+                try:
+                    return client.messages.create(**kwargs, **extra)
+                except Exception as exc2:  # noqa: BLE001
+                    raise _classify(exc2) from exc2
+            raise _classify(exc) from exc
+
     def generate_text(self, *, prompt: str, system_instruction: str | None = None,
                       temperature: float | None = None, max_output_tokens: int | None = None) -> TextResult:
-        client = self._ensure()
         started = time.perf_counter()
-        try:
-            resp = client.messages.create(
-                messages=[{"role": "user", "content": prompt}],
-                **self._base_kwargs(system_instruction, temperature, max_output_tokens),
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise _classify(exc) from exc
+        resp = self._create(
+            system_instruction=system_instruction, temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
         return TextResult(text=text.strip(), usage=self._usage(resp, started))
 
     def _tool_call(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None,
                    temperature: float | None, max_output_tokens: int | None) -> tuple[Any, Usage]:
         """Force the structured tool call and return its raw, UNVALIDATED input."""
-        client = self._ensure()
         tool = {
             "name": "emit_result",
             "description": "Return the answer as structured data matching the schema.",
             "input_schema": schema.model_json_schema(),
         }
         started = time.perf_counter()
-        try:
-            resp = client.messages.create(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "emit_result"},
-                **self._base_kwargs(system_instruction, temperature, max_output_tokens),
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise _classify(exc) from exc
+        resp = self._create(
+            system_instruction=system_instruction, temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            messages=[{"role": "user", "content": prompt}],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "emit_result"},
+        )
         block = next((b for b in resp.content if getattr(b, "type", None) == "tool_use"), None)
         if block is None:
             raise LlmResponseError("Claude did not return the structured result.")
