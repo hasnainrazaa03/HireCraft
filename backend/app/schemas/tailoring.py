@@ -110,6 +110,9 @@ class GuardrailReport(TailoringModel):
     violations: list[GuardrailViolation] = Field(default_factory=list)
     keywords_requested: list[str] = Field(default_factory=list)
     keywords_verified: list[str] = Field(default_factory=list)
+    # Kept under reach mode: on the page (an ATS matches them) but flagged as not
+    # independently backed. Counted toward coverage alongside verified.
+    keywords_reached: list[str] = Field(default_factory=list)
     # Per-bullet truthfulness verdicts for the final résumé (Guardrails v2).
     bullet_confidence: list[BulletConfidence] = Field(default_factory=list)
     locks: list[str] = Field(default_factory=lambda: list(LOCKS))
@@ -122,7 +125,8 @@ class GuardrailReport(TailoringModel):
     def keyword_coverage(self) -> float:
         if not self.keywords_requested:
             return 0.0
-        return len(self.keywords_verified) / len(self.keywords_requested)
+        surfaced = set(self.keywords_verified) | set(self.keywords_reached)
+        return min(1.0, len(surfaced) / len(self.keywords_requested))
 
 
 class DiffEntry(TailoringModel):

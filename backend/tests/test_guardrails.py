@@ -623,3 +623,20 @@ class TestCoverLetterParagraphs:
         engine = GuardrailEngine(master, requirements)
         para = "I scaled our platform to 900 million requests per day at Globex."
         assert engine.vet_paragraph(para) is None
+
+
+def test_keyword_coverage_counts_reach_kept():
+    """Reach-kept keywords are on the page (an ATS matches them), so they count
+    toward coverage alongside genuinely-verified ones."""
+    from app.schemas.tailoring import GuardrailReport
+
+    r = GuardrailReport(
+        keywords_requested=["Kubernetes", "Docker", "AWS", "Kafka"],
+        keywords_verified=["Docker"],
+        keywords_reached=["Kubernetes", "Kafka"],
+    )
+    assert r.keyword_coverage == 0.75  # (1 verified + 2 reached) / 4
+    strict = GuardrailReport(
+        keywords_requested=["Docker"], keywords_verified=["Docker"], keywords_reached=[]
+    )
+    assert strict.keyword_coverage == 1.0

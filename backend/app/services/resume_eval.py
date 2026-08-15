@@ -189,10 +189,14 @@ def score_from_report(
     bullets = _bullets(tailored)
     requested = filter_company_keywords(list(report.keywords_requested), company)
     verified = filter_company_keywords(list(report.keywords_verified), company)
+    reached = filter_company_keywords(list(report.keywords_reached), company)
+    # Reach-kept keywords are on the page (an ATS matches them), so they count
+    # toward coverage alongside genuinely-verified ones.
+    surfaced = set(verified) | set(reached)
     ats_measured = bool(requested)
     if ats_measured:
-        ats = _pct(len(verified), len(requested))
-        ats_d = f"{len(verified)}/{len(requested)} job keywords surfaced"
+        ats = _pct(len(surfaced), len(requested))
+        ats_d = f"{len(surfaced)}/{len(requested)} job keywords surfaced"
     else:
         ats = 0
         ats_d = "No job keywords found in this posting"

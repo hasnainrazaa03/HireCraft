@@ -287,6 +287,10 @@ class GuardrailEngine:
                 if not self._claimed_in_master(kw)
             ]
         self.violations: list[GuardrailViolation] = []
+        # Job keywords kept under reach mode: present in the résumé (flagged for
+        # the candidate to confirm) but not independently backed. Counted toward
+        # keyword coverage — an ATS still matches them on the page.
+        self.keywords_reached: set[str] = set()
         # Per-bullet truthfulness verdicts for the final résumé (Guardrails v2).
         self.confidence: list[BulletConfidence] = []
 
@@ -429,6 +433,7 @@ class GuardrailEngine:
                 )
                 continue
             if injected:  # reach mode: keep it, but flag it for the user to confirm
+                self.keywords_reached.update(injected)
                 self._flag(
                     "unverified_keyword_claim",
                     "warning",
@@ -698,6 +703,8 @@ class GuardrailEngine:
                 field=field,
                 action="reach_kept" if self.reach else "flagged",
             )
+            if self.reach:
+                self.keywords_reached.update(injected)
         unknown = _suspicious_tokens(text, self.vocab, self.stem_vocab)
         if unknown:
             terms = sorted(set(unknown))
@@ -782,6 +789,7 @@ class GuardrailEngine:
                 self.requirements.all_keywords() if self.requirements else []
             ),
             keywords_verified=self._verify_keywords(result),
+            keywords_reached=sorted(self.keywords_reached),
             bullet_confidence=self.confidence,
         )
         return result, report
