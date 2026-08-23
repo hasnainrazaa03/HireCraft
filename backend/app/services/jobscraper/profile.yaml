@@ -1,0 +1,116 @@
+# ---------------------------------------------------------------------------
+# Your profile. Everything the scraper uses to filter + score lives here.
+# Built from MHR_SWE / MHR_ML_v2 / MHR_AIML / MHR_DataScience resumes.
+# ---------------------------------------------------------------------------
+name: Mohammad Hasnain Raza
+resume_dir: ".."            # relative to this file; where the MHR_*.pdf files live
+
+# What you're looking for. Levels: intern | new_grad | early (full-time, <= max_years exp)
+# Situation (Aug 2026): 3rd semester of MSCS (Scientists & Engineers), graduating Dec 2027,
+# or May 2027 early if a full-time offer lands. So: full-time roles starting May 2027+,
+# Summer 2027 internships, Spring 2027 part-time (20 h/wk) internships, Fall 2027 full-time co-op.
+levels: [intern, new_grad, early]
+graduation_year: 2027           # new-grad postings for earlier cohorts (e.g. "2026 Start") are dropped
+# Internship terms you can take. Postings tagged with a term NOT in this list are dropped
+# (Fall 2026 is already under way; Winter 2027 == Jan-Apr co-op == Spring 2027 for us).
+target_terms: ["Summer 2027", "Spring 2027", "Winter 2027", "Fall 2027"]
+# Bucket labels shown in the report (intern terms map to these; new_grad/early -> full-time)
+buckets:
+  "Summer 2027": "Internship · Summer 2027"
+  "Spring 2027": "Internship · Spring 2027 (part-time, 20 h/wk)"
+  "Winter 2027": "Internship · Spring 2027 (part-time, 20 h/wk)"
+  "Fall 2027":   "Co-op · Fall 2027 (full-time)"
+  fulltime:      "Full-time · start May 2027 or later"
+  unspecified:   "Internship · term not stated (check posting)"
+# Roles with a stated minimum experience above this are dropped.
+max_years_experience: 3
+# Keep full-time roles whose level can't be determined from title/description?
+keep_unknown_level: false
+
+# Work authorisation. F-1 / CPT / OPT -> flag postings that say "no sponsorship",
+# drop postings that require citizenship or a security clearance.
+requires_sponsorship: true
+sponsorship_policy: flag        # flag | exclude
+
+location:
+  us_only: true                 # drop postings clearly outside the US
+  prefer: ["Los Angeles", "Remote", "San Francisco", "Bay Area", "Mountain View",
+           "Palo Alto", "Sunnyvale", "San Jose", "Santa Monica", "Irvine",
+           "San Diego", "Seattle", "New York"]
+
+# Generic role words. A title must match at least one `include` and no `exclude`.
+role:
+  include: [software, "engineer*", developer, programmer, "computer science", "machine learning", " ml", ml/ai, ai/ml,
+            " ai ", "artificial intelligence", "data scien*", "data engineer",
+            "applied scien*", "research scien*", "research engineer", backend, back-end,
+            "full stack", full-stack, platform, infrastructure, "deep learning",
+            "computer vision", nlp, llm, perception, robotics, "generative*",
+            "analytics", "data analy*", "quantitative research", "quant research", sde, swe]
+  exclude: [hardware, electrical, mechanical, civil, asic, fpga, rtl, "analog", "radio frequency", " rf ",
+            chemical, structural, aerospace, "test engineer", "quality engineer", "process engineer",
+            sales, marketing, recruit, "account ", finance, accounting, legal,
+            designer, "product design", "product manager", "program manager",
+            "project manager", " ux", " ui ", "human resources", "people ops",
+            "customer success", "solutions engineer", "sales engineer", "support engineer",
+            "technical writer", "content ", "community", "security clearance",
+            "field engineer", "manufacturing", "supply chain", "procurement",
+            "business analyst", "business development", "operations analyst", "actuar"]
+
+# Scoring threshold; jobs below this are still stored but not shown.
+min_score: 30
+
+# ---------------------------------------------------------------------------
+# Tracks = one per resume variant. Title keywords decide WHICH resume fits;
+# skills (matched in the description) decide HOW WELL it fits.
+# ---------------------------------------------------------------------------
+tracks:
+  swe:
+    label: "Software Engineering"
+    resume: MHR_SWE.pdf
+    title_keywords: ["software engineer", "software developer", "software development",
+                     backend, back-end, "full stack", full-stack, platform, infrastructure,
+                     "distributed systems", "systems engineer", sde, swe, "developer",
+                     "mobile", android, ios, "cloud"]
+    skills: [java, "spring boot", spring, python, fastapi, rest, "restful", api, "microservice*",
+             docker, kubernetes, aws, azure, gcp, mongodb, postgres, postgresql, redis,
+             sql, react, flutter, "node", typescript, javascript, "c++", go, golang, kafka,
+             grpc, "ci/cd", "github actions", "unit test", pytest, "distributed", "async*",
+             "webhook*", "idempot*", "concurrency", linux, git, "system design", "scalab*"]
+  ml:
+    label: "Machine Learning"
+    resume: MHR_ML_v2.pdf
+    title_keywords: ["machine learning", "ml engineer", "ml ", "applied scientist",
+                     "research engineer", "research scientist", "deep learning",
+                     "computer vision", perception, nlp, "natural language", "speech",
+                     "ai research", "applied research", "ml infrastructure", "ml platform"]
+    skills: [pytorch, tensorflow, "hugging face", huggingface, transformers, bert, distilbert,
+             onnx, "quantiz*", yolo, "object detection", "segment*", cnn, "convolution*",
+             "fine-tun*", "finetun*", "train*", "inferenc*", cuda, gpu, "deep learning",
+             "computer vision", nlp, "speech", "model*", "neural", "dataset", "benchmark*",
+             "f1", "precision", "recall", "map", "latency", python, numpy, "3d", "medical imaging",
+             "super-resolution", "equivarian*", "e3nn", "scikit", "distributed training"]
+  aiml:
+    label: "AI / LLM Engineering"
+    resume: MHR_AIML.pdf
+    title_keywords: ["ai engineer", "ai/ml", "ml/ai", "genai", "generative ai", "gen ai",
+                     llm, "applied ai", "agent", "ai software", "ai platform", "ai product",
+                     "conversational", "forward deployed", "member of technical staff",
+                     "ai solutions"]
+    skills: [llm, "large language", rag, "retriev*", langchain, llamaindex, pinecone,
+             "vector", "embedding*", "prompt", "function calling", "tool call", "tool use",
+             "agent*", openai, anthropic, claude, gpt, gemini, "eval*",
+             "fine-tun*", "vision-language", "multimodal", "multi-modal", "chatbot", "copilot", fastapi,
+             python, "hallucination", "guardrail", "rerank", "semantic search", "knowledge base",
+             "speech-to-text", "transcri*", "sentiment"]
+  ds:
+    label: "Data Science"
+    resume: MHR_DataScience.pdf
+    title_keywords: ["data scientist", "data science", "data analyst", "analytics",
+                     "data engineer", "quantitative", "statistic*", "applied scientist",
+                     "decision scien*", "experimentation", "business intelligence"]
+    skills: [sql, pandas, numpy, "scikit", "statistic*", "hypothes*", "a/b", "ab test",
+             "experiment*", "regression*", "time series", "time-series", "anomaly", "forecast*",
+             xgboost, "gradient boost", tableau, "power bi", looker, etl, spark, pyspark,
+             airflow, dbt, snowflake, bigquery, "causal", "bayesian", "feature engineering",
+             "data pipeline", "dashboard*", "visuali*", matplotlib, seaborn, r, python,
+             "outlier", "z-score", "welch", "t-test", "cusum", "change-point"]

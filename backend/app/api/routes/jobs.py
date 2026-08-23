@@ -16,6 +16,7 @@ from app.core.rate_limit import get_redis
 from app.models.llm_usage import LlmUsage
 from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile
+from app.models.scraped_job import ScrapedJob
 from app.schemas.jobsearch import JobSearchResult
 from app.schemas.resume import MasterResume
 from app.services import feature_flags
@@ -255,3 +256,117 @@ def _rerank_cache_get(key: str) -> dict | None:
 def _rerank_cache_set(key: str, data: dict) -> None:
     with contextlib.suppress(redis.RedisError, TypeError):
         get_redis().setex(key, _RERANK_TTL, json.dumps(data))
+
+
+def _feed_row_to_result(row: ScrapedJob) -> JobSearchResult:
+    """Render a stored feed posting in the same shape the job cards already use,
+    plus the scraper's extras (level, term bucket, sponsorship, track pick)."""
+    tags = [t for t in (row.terms or []) if t]
+    if row.level and row.level != "unknown":
+        tags.append(row.level.replace("_", " "))
+    return JobSearchResult(
+        id=str(row.id),
+        title=row.title,
+        company=row.company,
+        location=row.location or "",
+        url=row.url,
+        remote=bool(row.remote),
+        tags=tags[:8],
+        snippet=(row.description or "")[:400],
+        source=row.source,
+        created_at=int(row.posted_at.timestamp()) if row.posted_at else None,
+        match_score=row.match_score,
+        verdict=row.match_verdict,
+        interview_chance=row.interview_chance,
+        summary=row.match_summary or None,
+        strengths=list(row.strengths or []),
+        gaps=list(row.gaps or []),
+        level=row.level,
+        bucket=row.bucket or None,
+        terms=list(row.terms or []),
+        sponsorship=row.sponsorship or "",
+        track=row.track or None,
+        track_resume=row.track_resume or None,
+        track_score=row.track_score,
+        status=row.status,
+        active=row.active,
+    )
+
+
+@router.get("/feed", response_model=list[JobSearchResult])
+def job_feed(
+    user: CurrentUser,
+    db: DbSession,
+    bucket: str | None = None,
+    source: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    include_closed: bool = False,
+    min_score: int = Query(default=0, ge=0, le=100),
+    limit: int = Query(default=60, ge=1, le=300),
+) -> list[JobSearchResult]:
+    """The scheduled scraper's accumulated postings for this user.
+
+    Unlike ``/jobs/search`` (live boards, nothing stored), these are persisted by
+    the every-6-hours scrape, so the feed fills up over time and each posting keeps
+    its fit analysis, term bucket, and résumé-track recommendation.
+    """
+    stmt = select(ScrapedJob).where(ScrapedJob.user_id == user.id)
+    if not include_closed:
+        stmt = stmt.where(ScrapedJob.active.is_(True))
+    if bucket:
+        stmt = stmt.where(ScrapedJob.bucket == bucket)
+    if source:
+        stmt = stmt.where(ScrapedJob.source == source)
+    if status_filter:
+        stmt = stmt.where(ScrapedJob.status == status_filter)
+    if min_score:
+        stmt = stmt.where(ScrapedJob.match_score >= min_score)
+    rows = db.execute(
+        stmt.order_by(ScrapedJob.match_score.desc().nullslast(), ScrapedJob.last_seen.desc())
+        .limit(limit)
+    ).scalars().all()
+    return [_feed_row_to_result(r) for r in rows]
+
+
+@router.get("/feed/stats", response_model=dict)
+def job_feed_stats(user: CurrentUser, db: DbSession) -> dict:
+    """Counts for the feed header: how many postings, how fresh, per bucket."""
+    rows = db.execute(
+        select(ScrapedJob).where(ScrapedJob.user_id == user.id)
+    ).scalars().all()
+    active = [r for r in rows if r.active]
+    buckets: dict[str, int] = {}
+    sources: dict[str, int] = {}
+    for r in active:
+        buckets[r.bucket or "Unspecified"] = buckets.get(r.bucket or "Unspecified", 0) + 1
+        sources[r.source] = sources.get(r.source, 0) + 1
+    last = max((r.last_seen for r in rows if r.last_seen), default=None)
+    return {
+        "total": len(rows),
+        "active": len(active),
+        "new": sum(1 for r in active if r.status == "new"),
+        "closed": len(rows) - len(active),
+        "by_bucket": dict(sorted(buckets.items(), key=lambda kv: -kv[1])),
+        "by_source": dict(sorted(sources.items(), key=lambda kv: -kv[1])),
+        "last_run": last.isoformat() if last else None,
+    }
+
+
+@router.patch("/feed/{job_id}", response_model=JobSearchResult)
+def update_feed_job(
+    job_id: uuid.UUID,
+    payload: dict,
+    user: CurrentUser,
+    db: DbSession,
+) -> JobSearchResult:
+    """Triage a feed posting: new | seen | saved | applied | dismissed."""
+    row = db.get(ScrapedJob, job_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found.")
+    new_status = str(payload.get("status") or "").strip()
+    if new_status not in {"new", "seen", "saved", "applied", "dismissed"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown status.")
+    row.status = new_status
+    db.commit()
+    db.refresh(row)
+    return _feed_row_to_result(row)

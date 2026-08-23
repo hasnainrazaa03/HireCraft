@@ -25,3 +25,15 @@ class JobSearchResult(BaseModel):
     summary: str | None = None
     strengths: list[str] = []
     gaps: list[str] = []
+    # --- scraped-feed extras (empty for the live board sources) -------------
+    # Stable id for feed rows, so the UI can mark one saved/applied/dismissed.
+    id: str | None = None
+    level: str | None = None          # intern | new_grad | early
+    bucket: str | None = None         # "Internship · Summer 2027", "Full-time · …"
+    terms: list[str] = []             # ["Summer 2027"]
+    sponsorship: str = ""             # what the posting says about visa support
+    track: str | None = None          # which résumé track fits best
+    track_resume: str | None = None   # e.g. "MHR_ML_v2.pdf"
+    track_score: int | None = None    # the scraper's own 0-100 track score
+    status: str | None = None         # new | seen | saved | applied | dismissed
+    active: bool = True               # False once the posting stops appearing

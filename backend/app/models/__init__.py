@@ -20,6 +20,7 @@ from app.models.notification import Notification
 from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile, ResumeVersion
 from app.models.saved_cover_letter import SavedCoverLetter
+from app.models.scraped_job import ScrapedJob
 from app.models.user import User
 from app.models.writing import WritingProfile, WritingSample, WritingSampleKind
 
@@ -40,6 +41,7 @@ __all__ = [
     "ResumeProfile",
     "ResumeVersion",
     "SavedCoverLetter",
+    "ScrapedJob",
     "Session",
     "TrackerStatus",
     "User",

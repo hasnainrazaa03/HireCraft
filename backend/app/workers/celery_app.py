@@ -68,6 +68,13 @@ celery_app.conf.beat_schedule = {
         "task": "hirecraft.scan_reminders",
         "schedule": 60 * 60 * 6,  # every 6 hours
     },
+    # Public ATS boards, no API key and no LLM — so a frequent refresh is free.
+    # Six hours keeps new postings surfacing the same day while staying a polite
+    # client of the unauthenticated endpoints.
+    "scrape-job-feed": {
+        "task": "hirecraft.scrape_job_feed",
+        "schedule": 60 * 60 * 6,  # every 6 hours
+    },
     "weekly-summary": {
         "task": "hirecraft.weekly_summary",
         "schedule": 60 * 60 * 24,  # daily check; the weekly dedupe key gates it

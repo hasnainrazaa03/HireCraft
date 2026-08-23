@@ -33,3 +33,6 @@ PLAN.md
 # OS
 .DS_Store
 backups/
+
+# Vendored scraper caches
+backend/app/services/jobscraper/**/__pycache__/

@@ -1,0 +1,100 @@
+# ---------------------------------------------------------------------------
+# ATS boards to scrape. Every entry below was verified reachable on 2026-08-22.
+#   greenhouse: token from  https://job-boards.greenhouse.io/<token>
+#   lever:      token from  https://jobs.lever.co/<token>
+#   ashby:      token from  https://jobs.ashbyhq.com/<token>
+#   workday:    {tenant, host (wd1/wd5/...), site}  from
+#               https://<tenant>.<host>.myworkdayjobs.com/<site>
+# Add more with:  python scrape.py probe <token>     (tries all three ATSs)
+#                 python scrape.py discover          (mines new tokens from SimplifyJobs)
+# ---------------------------------------------------------------------------
+greenhouse:
+  - anthropic
+  - databricks
+  - stripe
+  - scaleai
+  - xai
+  - figma
+  - waymo
+  - andurilindustries
+  - roblox
+  - airbnb
+  - datadog
+  - cloudflare
+  - duolingo
+  - samsara
+  - pinterest
+  - reddit
+  - mongodb
+  - snorkelai
+  - coinbase
+  - robinhood
+  - lyft
+  - instacart
+  - dropbox
+  - affirm
+  - asana
+  - brex
+  - gusto
+  - twitch
+  - discord
+  - nuro
+  - gitlab
+  - vercel
+  - flexport
+  - verkada
+  - chime
+  - sofi
+  - hudl
+  - flyzipline
+  - elastic
+  - spacex
+
+lever:
+  - palantir
+  - zoox
+  - shieldai
+  - anyscale
+
+ashby:
+  - openai
+  - perplexity
+  - ramp
+  - cursor
+  - notion
+  - linear
+  - replit
+  - elevenlabs
+  - sierra
+  - harvey
+  - cohere
+  - character
+  - vanta
+  - supabase
+  - openevidence
+  - mercor
+  - decagon
+  - writer
+  - lambda
+  - modal
+  - cognition
+  - physicalintelligence
+  - abridge
+  - midjourney
+  - lovable
+  - zed
+
+workday:
+  - {tenant: nvidia,     host: wd5,  site: NVIDIAExternalCareerSite}
+  - {tenant: salesforce, host: wd12, site: External_Career_Site}
+  - {tenant: adobe,      host: wd5,  site: external_experienced}
+  - {tenant: workday,    host: wd5,  site: Workday}
+  - {tenant: paypal,     host: wd1,  site: jobs}
+  - {tenant: boeing,     host: wd1,  site: EXTERNAL_CAREERS}
+  - {tenant: autodesk,   host: wd1,  site: Ext}
+  - {tenant: disney,     host: wd5,  site: disneycareer}
+
+# Aggregators (no config needed; toggle here)
+simplify_internships: true     # github.com/SimplifyJobs/Summer2027-Internships
+simplify_new_grad: true        # github.com/SimplifyJobs/New-Grad-Positions
+hackernews_who_is_hiring: true # latest "Ask HN: Who is hiring?" thread

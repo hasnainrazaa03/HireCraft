@@ -7,6 +7,7 @@ broker, and the task stays a thin, auditable state machine.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -438,3 +439,48 @@ def _utcnow():
     from datetime import UTC, datetime
 
     return datetime.now(UTC)
+
+
+@celery_app.task(name="hirecraft.scrape_job_feed")
+def scrape_job_feed_task() -> dict[str, int]:
+    """Every few hours: pull public ATS boards and refresh each user's job feed.
+
+    Costs nothing — every source is a public JSON endpoint and the fit scoring is
+    deterministic, so no LLM call and no API key are involved. The scrape runs
+    once and its results are scored per user, rather than re-fetching per user.
+    """
+    from sqlalchemy import select
+
+    from app.models.resume import ResumeProfile
+    from app.models.user import User
+    from app.schemas.resume import MasterResume
+    from app.services.jobfeed import persist, scrape
+
+    try:
+        jobs, stats = scrape()
+    except Exception as exc:  # noqa: BLE001 - a bad run must not kill the beat loop
+        logger.warning("jobfeed.scrape_failed", error=str(exc)[:300])
+        return {"users": 0, "new": 0, "failed": 1}
+
+    totals = {"users": 0, "new": 0, "updated": 0, "deactivated": 0}
+    with session_scope() as db:
+        users = db.execute(select(User).where(User.is_active.is_(True))).scalars().all()
+        for user in users:
+            # Score against the user's default résumé so the feed's fit numbers
+            # mean something; without one the postings still land, unscored.
+            profile = db.execute(
+                select(ResumeProfile)
+                .where(ResumeProfile.user_id == user.id)
+                .order_by(ResumeProfile.is_default.desc())
+            ).scalars().first()
+            resume = None
+            if profile is not None:
+                with contextlib.suppress(Exception):
+                    resume = MasterResume.model_validate(profile.content)
+            counts = persist(db, user.id, jobs, resume=resume)
+            totals["users"] += 1
+            for key in ("new", "updated", "deactivated"):
+                totals[key] += counts[key]
+
+    logger.info("jobfeed.run_complete", passed=stats.get("passed"), **totals)
+    return totals
