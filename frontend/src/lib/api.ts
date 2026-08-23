@@ -1197,6 +1197,17 @@ export interface JobSearchResult {
   summary: string | null;
   strengths: string[];
   gaps: string[];
+  // --- scraped-feed extras (absent/empty for the live board sources) ------
+  id?: string | null;
+  level?: string | null;
+  bucket?: string | null;
+  terms?: string[];
+  sponsorship?: string;
+  track?: string | null;
+  track_resume?: string | null;
+  track_score?: number | null;
+  status?: string | null;
+  active?: boolean;
 }
 
 export interface PublicConfig {

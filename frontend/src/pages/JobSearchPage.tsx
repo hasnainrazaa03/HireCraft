@@ -54,6 +54,18 @@ type Sort = "match" | "newest";
 
 // --- page -------------------------------------------------------------------
 
+type Mode = "feed" | "live";
+
+interface FeedStats {
+  total: number;
+  active: number;
+  new: number;
+  closed: number;
+  by_bucket: Record<string, number>;
+  by_source: Record<string, number>;
+  last_run: string | null;
+}
+
 export default function JobSearchPage() {
   const navigate = useNavigate();
   const [input, setInput] = useState("");
@@ -65,9 +77,14 @@ export default function JobSearchPage() {
   const [sort, setSort] = useState<Sort>("match");
   const [saved, setSaved] = useState<Set<string>>(loadSaved);
   const [modal, setModal] = useState<JobSearchResult | null>(null);
+  // "live" searches the boards on demand; "feed" reads the postings the
+  // scheduled ATS scraper has accumulated (persisted, so it fills up over time).
+  const [mode, setMode] = useState<Mode>("feed");
+  const [bucket, setBucket] = useState("");
 
-  const { data: jobs, isLoading, isFetching } = useQuery({
+  const live = useQuery({
     queryKey: ["job-search", query, remoteOnly, exclude, mustHave],
+    enabled: mode === "live",
     queryFn: () =>
       api.get<JobSearchResult[]>(
         `/jobs/search?limit=30${query ? `&q=${encodeURIComponent(query)}` : ""}${remoteOnly ? "&remote_only=true" : ""}` +
@@ -78,6 +95,26 @@ export default function JobSearchPage() {
     // blanking the whole grid to a spinner on every keystroke-search.
     placeholderData: keepPreviousData,
   });
+
+  const feed = useQuery({
+    queryKey: ["job-feed", bucket],
+    enabled: mode === "feed",
+    queryFn: () =>
+      api.get<JobSearchResult[]>(
+        `/jobs/feed?limit=120${bucket ? `&bucket=${encodeURIComponent(bucket)}` : ""}`,
+      ),
+    placeholderData: keepPreviousData,
+  });
+
+  const { data: feedStats } = useQuery({
+    queryKey: ["job-feed-stats"],
+    queryFn: () => api.get<FeedStats>("/jobs/feed/stats"),
+  });
+
+  const active = mode === "feed" ? feed : live;
+  const jobs = active.data;
+  const isLoading = active.isLoading;
+  const isFetching = active.isFetching;
 
   function toggleSave(job: JobSearchResult) {
     const key = jobKey(job);
@@ -114,6 +151,44 @@ export default function JobSearchPage() {
       </div>
 
       <div className="space-y-3">
+        {/* Feed = postings the scheduled ATS scraper has collected (persisted, so
+            the list grows); Live = search the boards right now. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="segment">
+            <button
+              onClick={() => setMode("feed")}
+              className={`segment-item ${mode === "feed" ? "segment-item-active" : ""}`}
+            >
+              My feed{feedStats?.active ? ` (${feedStats.active})` : ""}
+            </button>
+            <button
+              onClick={() => setMode("live")}
+              className={`segment-item ${mode === "live" ? "segment-item-active" : ""}`}
+            >
+              Live search
+            </button>
+          </div>
+          {mode === "feed" && feedStats?.last_run && (
+            <span className="text-xs text-subtle">
+              Auto-updates every 6 hours · last run {new Date(feedStats.last_run).toLocaleString()}
+            </span>
+          )}
+        </div>
+
+        {mode === "feed" && feedStats && Object.keys(feedStats.by_bucket).length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterPill active={!bucket} onClick={() => setBucket("")}>
+              All ({feedStats.active})
+            </FilterPill>
+            {Object.entries(feedStats.by_bucket).map(([b, n]) => (
+              <FilterPill key={b} active={bucket === b} onClick={() => setBucket(b)}>
+                {b} ({n})
+              </FilterPill>
+            ))}
+          </div>
+        )}
+
+        {mode === "live" && (
         <form onSubmit={(e) => { e.preventDefault(); setQuery(input.trim()); }} className="relative">
           <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
           <input
@@ -124,17 +199,22 @@ export default function JobSearchPage() {
           />
           <button type="submit" className="btn-primary absolute right-1.5 top-1/2 -translate-y-1/2 !py-2">Search</button>
         </form>
+        )}
         <div className="flex flex-wrap items-center gap-2">
+          {mode === "live" && (
+            <>
           <FilterPill active={remoteOnly} onClick={() => setRemoteOnly((v) => !v)}>Remote only</FilterPill>
           <FilterPill active={showFilters || !!(exclude || mustHave)} onClick={() => setShowFilters((v) => !v)}>
             Filters{exclude || mustHave ? " •" : ""}
           </FilterPill>
           <div className="mx-1 h-5 w-px bg-white/[0.08]" />
+            </>
+          )}
           <span className="text-xs text-subtle">Sort</span>
           <FilterPill active={sort === "match"} onClick={() => setSort("match")}>Best match</FilterPill>
           <FilterPill active={sort === "newest"} onClick={() => setSort("newest")}>Newest</FilterPill>
         </div>
-        {showFilters && (
+        {mode === "live" && showFilters && (
           <div className="grid gap-3 rounded-xl border border-white/[0.08] bg-surface-2/50 p-3 sm:grid-cols-2">
             <label className="block">
               <span className="label">Must include <span className="text-subtle">(comma-separated)</span></span>
@@ -153,8 +233,12 @@ export default function JobSearchPage() {
       ) : sorted.length === 0 ? (
         <EmptyState
           icon={<IconSearch className="h-6 w-6" />}
-          title="No matching roles right now"
-          description="Try a broader search, or paste a specific posting into a new application."
+          title={mode === "feed" ? "Your feed is still filling up" : "No matching roles right now"}
+          description={
+            mode === "feed"
+              ? "The scraper runs every 6 hours and saves what matches your profile. Check back shortly, or use Live search in the meantime."
+              : "Try a broader search, or paste a specific posting into a new application."
+          }
           action={<button onClick={() => navigate("/new")} className="btn-secondary">New application</button>}
         />
       ) : (
@@ -256,10 +340,31 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
           )}
 
           <div className="mt-auto space-y-3 pt-3">
+            {/* Feed-only: the term bucket the scraper classified this into, and
+                which of the user's résumés it recommends sending. */}
+            {(job.bucket || job.track_resume) && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {job.bucket && <span className="badge-muted text-[10px]">{job.bucket}</span>}
+                {job.track_resume && (
+                  <span className="badge-brand text-[10px]" title={`Best-fitting track: ${job.track} (${job.track_score}/100)`}>
+                    Send {job.track_resume.replace(/\.pdf$/i, "")}
+                  </span>
+                )}
+                {!job.active && <span className="badge-coral text-[10px]">Closed</span>}
+              </div>
+            )}
             <div className="flex items-center gap-1.5 text-xs text-subtle">
               <span>{job.created_at ? `Posted ${timeAgo(job.created_at)}` : "Recently posted"}</span>
               <span>·</span>
               <span className="truncate text-brand-300/70">{job.source}</span>
+              {job.sponsorship && (
+                <>
+                  <span>·</span>
+                  <span className="truncate" title="What the posting says about visa sponsorship">
+                    {job.sponsorship.slice(0, 28)}
+                  </span>
+                </>
+              )}
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
               <button onClick={onOpen} className="inline-flex items-center gap-1 text-sm font-medium text-brand-300 hover:text-brand-200">
