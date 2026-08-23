@@ -90,6 +90,7 @@ class TailoringOutcome:
     resume_pdf: bytes
     cover_letter_tex: str | None = None
     cover_letter_pdf: bytes | None = None
+    cover_letter: list[str] | None = None
     usage: UsageLedger = field(default_factory=UsageLedger)
     page_count: int = 1
 
@@ -569,15 +570,16 @@ def run_pipeline(
 
     cover_tex: str | None = None
     cover_pdf: bytes | None = None
+    cover_paragraphs: list[str] = []
     if include_cover_letter:
         progress("optimizing", "Drafting your cover letter")
-        paragraphs = draft_cover_letter(
+        cover_paragraphs = draft_cover_letter(
             tailored, requirements, scrape.text, evidence=evidence, client=client, ledger=ledger
         )
-        if paragraphs:
+        if cover_paragraphs:
             cover_tex = render_cover_letter(
                 tailored,
-                paragraphs,
+                cover_paragraphs,
                 templates_dir,
                 company=requirements.company,
                 role=requirements.title,
@@ -613,6 +615,7 @@ def run_pipeline(
         resume_pdf=compiled.pdf_bytes,
         cover_letter_tex=cover_tex,
         cover_letter_pdf=cover_pdf,
+        cover_letter=cover_paragraphs or None,
         usage=ledger,
         page_count=compiled.page_count,
     )

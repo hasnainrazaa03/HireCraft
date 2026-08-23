@@ -123,6 +123,10 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
         application.tailored_resume = outcome.tailored_resume.model_dump(mode="json")
         application.diff = [d.model_dump(mode="json") for d in outcome.diff]
         application.guardrail_report = outcome.guardrail_report.model_dump(mode="json")
+        # Store the cover-letter paragraphs (not just the rendered PDF) so the
+        # Cover Letter tab's refine-with-feedback has the text to work from.
+        if outcome.cover_letter:
+            application.cover_letter = outcome.cover_letter
         # Reset the cost rollup: a fresh (or retried) tailoring replaces everything.
         accrue_usage(application, outcome.usage.entries, reset=True)
         application.pipeline_status = PipelineStatus.COMPLETED

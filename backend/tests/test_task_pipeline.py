@@ -110,6 +110,15 @@ def stub_llm(monkeypatch):
                         )
                     ]
                 )
+            elif schema.__name__ == "CoverLetterDraft":
+                # A grounded paragraph (200 users + React are in the master résumé),
+                # so it survives the guardrail vetting.
+                data = schema(
+                    paragraphs=[
+                        "I built a React dashboard serving 200 users and would bring "
+                        "that same focus to your team.",
+                    ]
+                )
             else:
                 data = schema()
             return LlmResult(data=data, usage=usage, raw_text="{}")
@@ -127,7 +136,7 @@ def stub_llm(monkeypatch):
     return Stub()
 
 
-def _seed(factory) -> str:
+def _seed(factory, cover: bool = False) -> str:
     from app.models.job import Job
 
     with factory() as db:
@@ -144,11 +153,28 @@ def _seed(factory) -> str:
         application = Application(
             user_id=user.id, job_id=job.id, resume_profile_id=profile.id,
             pipeline_status=PipelineStatus.PENDING,
+            include_cover_letter=cover,
         )
         db.add(application)
         db.flush()
         db.commit()
         return str(application.id)
+
+
+def test_task_persists_cover_letter_paragraphs(sessions, stub_llm):
+    """Regression: the worker rendered the cover-letter PDF but didn't store the
+    paragraphs, so the Cover Letter tab's refine panel had nothing to work from."""
+    import app.workers.tasks as tasks
+
+    application_id = _seed(sessions, cover=True)
+    result = tasks.run_tailoring_task.run(application_id)
+    assert result["status"] == "completed", result
+    with sessions() as db:
+        application = db.get(Application, uuid.UUID(application_id))
+        kinds = {a.kind.value for a in application.artifacts}
+        assert "cover_letter_pdf" in kinds  # PDF still rendered
+        assert application.cover_letter  # …and the paragraphs are now stored
+        assert len(application.cover_letter) >= 1
 
 
 def test_task_produces_artifacts_and_enforces_guardrails(sessions, stub_llm):
