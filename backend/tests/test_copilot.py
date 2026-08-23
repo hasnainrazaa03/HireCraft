@@ -66,6 +66,18 @@ class StubClient:
             usage=Usage(input_tokens=200, output_tokens=80, model="stub", latency_ms=6),
         )
 
+    def generate_structured(self, *, prompt, schema, **kwargs):  # noqa: ANN001, ANN003
+        """Copilot asks for a structured reply so it can carry an optional edit
+        action alongside the prose."""
+        from app.services.llm.client import LlmResult
+
+        self.last_prompt = prompt
+        return LlmResult(
+            data=schema(reply=self._text, action=None),
+            usage=Usage(input_tokens=200, output_tokens=80, model="stub", latency_ms=6),
+            raw_text="{}",
+        )
+
 
 def _application(db, user, resume, *, requirements=None, guardrail_report=None):
     job = Job(
@@ -145,7 +157,7 @@ def test_answer_grounds_and_meters(db, user, resume):
 
     client = StubClient("Your score is 72 because two bullets lack metrics.")
     ledger = UsageLedger()
-    reply, grounded = answer(
+    reply, grounded, _action = answer(
         db, user.id,
         CopilotRequest(message="why is my score low?", history=[ChatMessage(role="user", content="hey")]),
         client=client, ledger=ledger,

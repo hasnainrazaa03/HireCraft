@@ -35,8 +35,29 @@ class CopilotRequest(CopilotModel):
     model: str | None = Field(default=None, max_length=80)
 
 
+class CopilotAction(CopilotModel):
+    """An edit Copilot wants to make. It is a PROPOSAL: the app runs it through
+    the same guardrailed revise→preview→apply path the Application page uses, and
+    nothing is written until the user accepts."""
+
+    kind: Literal["revise_resume"]
+    # Rewritten as a self-contained instruction for the revise pipeline, since
+    # that call doesn't see the chat history.
+    instruction: str = Field(min_length=3, max_length=600)
+
+
+class CopilotAnswer(CopilotModel):
+    """The model's structured reply: prose, plus an optional edit to propose."""
+
+    reply: str
+    action: CopilotAction | None = None
+
+
 class CopilotResponse(CopilotModel):
     reply: str
+    # Present when Copilot wants to change something. The client turns this into
+    # a preview the user accepts or rejects; Copilot never writes directly.
+    action: CopilotAction | None = None
     # Human-readable labels of the data the answer was grounded in, for transparency.
     grounded_in: list[str] = Field(default_factory=list)
     cost_usd: float = 0.0

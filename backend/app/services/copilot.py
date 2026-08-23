@@ -9,6 +9,7 @@ rather than inventing plausible-sounding ones.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import TYPE_CHECKING
 
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.logging import get_logger
 from app.models.application import Application
 from app.models.resume import ResumeProfile
-from app.schemas.copilot import CopilotRequest
+from app.schemas.copilot import CopilotAction, CopilotAnswer, CopilotRequest
 from app.schemas.job import JobRequirements
 from app.schemas.resume import MasterResume
 from app.services.analysis import analyze_resume
@@ -186,6 +187,54 @@ def build_context(
     return "\n\n".join(sections), labels
 
 
+# An edit request needs the structured path (it returns a proposal card, where
+# streaming buys nothing); everything else streams. Deciding this with a cheap
+# regex rather than a preliminary LLM call keeps the common case at one call.
+_EDIT_INTENT = re.compile(
+    r"\b(rewrite|re-?word|reword|change|update|edit|revise|improve|strengthen|"
+    r"make (?:it|my|the)|emphasi[sz]e|add|remove|drop|replace|shorten|lengthen|"
+    r"tighten|reorder|swap|fix (?:my|the))\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_edit(message: str) -> bool:
+    """Does this ask for a change to the résumé (rather than an explanation)?"""
+    return bool(_EDIT_INTENT.search(message or ""))
+
+
+def stream_answer(
+    db: Session,
+    user_id: uuid.UUID,
+    request: CopilotRequest,
+    *,
+    client: LlmClient | None = None,
+):
+    """Yield (chunk, None) as the reply generates, then (None, (labels, usage)).
+
+    Prose only — an edit request goes through ``answer`` instead, because it
+    returns a proposal the user acts on rather than text to read.
+    """
+    client = client or get_client()
+    context, labels = build_context(
+        db, user_id,
+        resume_id=request.resume_profile_id,
+        application_id=request.application_id,
+    )
+    history = [(m.role, m.content) for m in request.history[-8:]]
+    prompt = build_copilot_prompt(context, history, request.message)
+    usage = None
+    for chunk, final_usage in client.stream_text(
+        prompt=prompt, system_instruction=COPILOT_SYSTEM, temperature=0.3
+    ):
+        if chunk is not None:
+            yield chunk, None
+        else:
+            usage = final_usage
+    logger.info("copilot.streamed", grounded=len(labels))
+    yield None, (labels, usage)
+
+
 def answer(
     db: Session,
     user_id: uuid.UUID,
@@ -193,7 +242,7 @@ def answer(
     *,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], CopilotAction | None]:
     client = client or get_client()
     context, labels = build_context(
         db,
@@ -202,12 +251,21 @@ def answer(
         application_id=request.application_id,
     )
     history = [(m.role, m.content) for m in request.history[-8:]]
-    result = client.generate_text(
+    result = client.generate_structured(
         prompt=build_copilot_prompt(context, history, request.message),
+        schema=CopilotAnswer,
         system_instruction=COPILOT_SYSTEM,
         temperature=0.3,
     )
     if ledger is not None:
         ledger.record("copilot", result.usage)
-    logger.info("copilot.answered", grounded=len(labels))
-    return result.text, labels
+
+    action = result.data.action
+    # An edit needs a specific application to act on: the revise pipeline works
+    # against one tailored résumé. Without that focus there is nothing to change,
+    # so drop the action rather than let the UI offer a preview it can't build.
+    if action is not None and request.application_id is None:
+        logger.info("copilot.action_dropped_no_application")
+        action = None
+    logger.info("copilot.answered", grounded=len(labels), action=bool(action))
+    return result.data.reply, labels, action

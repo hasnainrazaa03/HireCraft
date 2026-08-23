@@ -114,6 +114,40 @@ class AnthropicClient:
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
         return TextResult(text=text.strip(), usage=self._usage(resp, started))
 
+    def stream_text(self, *, prompt: str, system_instruction: str | None = None,
+                    temperature: float | None = None, max_output_tokens: int | None = None):
+        """Yield the reply as it is generated, then a final Usage.
+
+        Chat answers are long enough that waiting for the whole response feels
+        broken; streaming shows the first words in well under a second. Yields
+        ``(text_chunk, None)`` repeatedly and finally ``(None, Usage)``.
+        """
+        client = self._ensure()
+        kwargs = self._base_kwargs(system_instruction, temperature, max_output_tokens)
+        started = time.perf_counter()
+        try:
+            with client.messages.stream(
+                messages=[{"role": "user", "content": prompt}], **kwargs
+            ) as stream:
+                for chunk in stream.text_stream:
+                    if chunk:
+                        yield chunk, None
+                final = stream.get_final_message()
+        except Exception as exc:  # noqa: BLE001
+            if "temperature" in kwargs and _temperature_rejected(exc):
+                _ANTHROPIC_NO_TEMPERATURE.add(self.model)
+                kwargs.pop("temperature", None)
+                with client.messages.stream(
+                    messages=[{"role": "user", "content": prompt}], **kwargs
+                ) as stream:
+                    for chunk in stream.text_stream:
+                        if chunk:
+                            yield chunk, None
+                    final = stream.get_final_message()
+            else:
+                raise _classify(exc) from exc
+        yield None, self._usage(final, started)
+
     def _tool_call(self, *, prompt: str, schema: type[BaseModel], system_instruction: str | None,
                    temperature: float | None, max_output_tokens: int | None) -> tuple[Any, Usage]:
         """Force the structured tool call and return its raw, UNVALIDATED input."""

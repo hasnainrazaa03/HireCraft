@@ -135,6 +135,13 @@ class Application(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text)
     # Timestamped note entries: [{id, text, at, updated_at}]. A real notes log.
     note_entries: Mapped[list[dict[str, Any]]] = mapped_column(JsonB, default=list, nullable=False)
+    # Snapshots of the tailored résumé taken immediately BEFORE each applied
+    # revision, newest last, capped. Lets the user undo an accepted change — or
+    # roll back to where the résumé stood before this editing session started.
+    # {resume, at, note}
+    resume_history: Mapped[list[dict[str, Any]]] = mapped_column(
+        JsonB, default=list, nullable=False
+    )
     # Tracker v2: a scheduled interview and an optional follow-up reminder.
     interview_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

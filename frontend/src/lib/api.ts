@@ -1092,8 +1092,22 @@ export interface NotificationList {
 
 // --- Copilot ----------------------------------------------------------------
 
+/** A previewed résumé revision — the diff and the proposed résumé, not yet saved. */
+export interface AssistantProposal {
+  note: string;
+  diff: Record<string, unknown>[];
+  proposed: Record<string, unknown>;
+  blocked: string[];
+}
+
+export interface CopilotAction {
+  kind: "revise_resume";
+  instruction: string;
+}
+
 export interface CopilotResponse {
   reply: string;
+  action?: CopilotAction | null;
   grounded_in: string[];
   cost_usd: number;
 }
@@ -1237,4 +1251,69 @@ export interface AdminUserDetail {
 export interface AdminUserPage {
   users: AdminUserDetail[];
   total: number;
+}
+
+/** Copilot's streamed reply.
+ *
+ * `fetch` + a reader rather than EventSource: EventSource can't send a POST body
+ * or an Authorization header, and the request carries both.
+ */
+export async function streamCopilot(
+  body: Record<string, unknown>,
+  handlers: {
+    onToken: (text: string) => void;
+    onDone: (final: { grounded_in: string[]; action: CopilotAction | null }) => void;
+  },
+  retry = true,
+): Promise<void> {
+  const res = await fetch(`${API}/copilot/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${tokens.access ?? ""}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401 && retry && tokens.refresh) {
+    if (await tryRefresh()) return streamCopilot(body, handlers, false);
+    tokens.clear();
+    window.dispatchEvent(new Event("hirecraft:logout"));
+    throw new ApiError("Your session expired. Please sign in again.", 401);
+  }
+  if (!res.ok) throw await parseError(res);
+  if (!res.body) throw new ApiError("The reply stream was empty.", 500);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  // SSE frames are separated by a blank line and can split across chunks, so
+  // hold a buffer and only consume whole frames.
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let split: number;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      const payload = JSON.parse(dataLines.join("\n"));
+      if (event === "token") handlers.onToken(payload.text ?? "");
+      else if (event === "done") {
+        handlers.onDone({
+          grounded_in: payload.grounded_in ?? [],
+          action: payload.action ?? null,
+        });
+      } else if (event === "error") {
+        throw new ApiError(payload.detail ?? "The reply failed.", 502);
+      }
+    }
+  }
 }

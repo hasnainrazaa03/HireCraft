@@ -6,8 +6,10 @@ import {
   fetchAll,
   type ResumeProfileSummary,
   type ApplicationSummary,
-  type CopilotResponse,
   type LlmSettings,
+  streamCopilot,
+  type CopilotAction,
+  type AssistantProposal,
 } from "../lib/api";
 import { IconSparkles } from "../components/icons";
 import { Spinner } from "../components/ui";
@@ -16,6 +18,11 @@ interface Msg {
   role: "user" | "assistant";
   content: string;
   grounded_in?: string[];
+  // Set when Copilot wants to change the résumé. Rendered as a preview the user
+  // accepts or rejects — Copilot never writes on its own.
+  action?: CopilotAction | null;
+  // Cleared once the proposal has been applied or dismissed.
+  actionDone?: string;
 }
 
 const SUGGESTIONS = [
@@ -67,44 +74,65 @@ export default function CopilotPage() {
     queryFn: () => api.get<LlmSettings>("/account/llm"),
   });
 
-  const send = useMutation({
-    mutationFn: (message: string) => {
-      const [provider, model] = override ? override.split("::") : [null, null];
-      return api.post<CopilotResponse>("/copilot/chat", {
-        message,
-        history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
-        resume_profile_id: resumeId || null,
-        application_id: appId || null,
-        provider,
-        model,
-      });
-    },
-    onSuccess: (r) =>
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: r.reply, grounded_in: r.grounded_in },
-      ]),
-    onError: (e) =>
-      setMessages((prev) => [
-        ...prev,
+  // Streamed via SSE so the answer appears as it's written, rather than after
+  // the whole reply lands. `streaming` gates the composer the way isPending did.
+  const [streaming, setStreaming] = useState(false);
+
+  async function send(message: string) {
+    const [provider, model] = override ? override.split("::") : [null, null];
+    setStreaming(true);
+    // The placeholder the tokens stream into.
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    try {
+      await streamCopilot(
         {
-          role: "assistant",
-          content:
-            e instanceof ApiError ? `⚠️ ${e.message}` : "⚠️ Something went wrong. Please try again.",
+          message,
+          history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+          resume_profile_id: resumeId || null,
+          application_id: appId || null,
+          provider,
+          model,
         },
-      ]),
-  });
+        {
+          onToken: (text) =>
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = {
+                ...next[next.length - 1],
+                content: next[next.length - 1].content + text,
+              };
+              return next;
+            }),
+          onDone: ({ grounded_in, action }) =>
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = { ...next[next.length - 1], grounded_in, action };
+              return next;
+            }),
+        },
+      );
+    } catch (e) {
+      setMessages((prev) => {
+        const next = [...prev];
+        const detail = e instanceof Error ? e.message : "Something went wrong. Please try again.";
+        next[next.length - 1] = { role: "assistant", content: `⚠️ ${detail}` };
+        return next;
+      });
+    } finally {
+      setStreaming(false);
+    }
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, send.isPending]);
+  }, [messages, streaming]);
 
   function submit(text: string) {
     const message = text.trim();
-    if (!message || send.isPending) return;
+    if (!message || streaming) return;
     setMessages((prev) => [...prev, { role: "user", content: message }]);
     setInput("");
-    send.mutate(message);
+    void send(message);
   }
 
   const controls = (stacked: boolean) => {
@@ -195,7 +223,14 @@ export default function CopilotPage() {
           <div className="mt-2 flex flex-wrap gap-2">{controls(false)}</div>
         </div>
 
-        <div className="relative flex-1 space-y-4 overflow-y-auto rounded-2xl border border-white/[0.06] bg-surface-2/40 p-4">
+        {/* Only scrollable once there's a conversation: the empty state is
+            h-full, so with padding it overflowed and showed a scrollbar with
+            nothing to scroll. */}
+        <div
+          className={`relative flex-1 space-y-4 rounded-2xl border border-white/[0.06] bg-surface-2/40 p-4 ${
+            messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
+          }`}
+        >
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
               <div
@@ -221,9 +256,22 @@ export default function CopilotPage() {
               <p className="hidden text-xs text-subtle lg:block">Pick a starter from the left, or type your own below.</p>
             </div>
           ) : (
-            messages.map((m, i) => <Bubble key={i} msg={m} />)
+            messages.map((m, i) => (
+              <Bubble
+                key={i}
+                msg={m}
+                applicationId={appId}
+                onResolved={(note) =>
+                  setMessages((prev) => {
+                    const next = [...prev];
+                    next[i] = { ...next[i], action: null, actionDone: note };
+                    return next;
+                  })
+                }
+              />
+            ))
           )}
-          {send.isPending && (
+          {streaming && (
             <div className="flex items-center gap-2 text-sm text-subtle">
               <Spinner className="h-4 w-4" /> Thinking…
             </div>
@@ -238,7 +286,7 @@ export default function CopilotPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
-          <button type="submit" disabled={!input.trim() || send.isPending} className="btn-primary">
+          <button type="submit" disabled={!input.trim() || streaming} className="btn-primary">
             Send
           </button>
         </form>
@@ -247,7 +295,15 @@ export default function CopilotPage() {
   );
 }
 
-function Bubble({ msg }: { msg: Msg }) {
+function Bubble({
+  msg,
+  applicationId,
+  onResolved,
+}: {
+  msg: Msg;
+  applicationId: string;
+  onResolved: (note: string) => void;
+}) {
   const isUser = msg.role === "user";
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -261,6 +317,16 @@ function Bubble({ msg }: { msg: Msg }) {
         >
           {msg.content}
         </div>
+        {msg.action && applicationId && (
+          <ProposalCard
+            action={msg.action}
+            applicationId={applicationId}
+            onResolved={onResolved}
+          />
+        )}
+        {msg.actionDone && (
+          <p className="px-1 text-xs text-emerald">{msg.actionDone}</p>
+        )}
         {msg.grounded_in && msg.grounded_in.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-1">
             {msg.grounded_in.map((g) => (
@@ -269,6 +335,99 @@ function Bubble({ msg }: { msg: Msg }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+
+/** Copilot's proposed edit: preview the diff, then accept or discard.
+ *
+ * Reuses the Application page's guardrailed pipeline — `assistant/revise` builds
+ * the preview, `assistant/apply` writes it — so a Copilot edit is vetted exactly
+ * like one made there, and nothing is saved until the user accepts.
+ */
+function ProposalCard({
+  action,
+  applicationId,
+  onResolved,
+}: {
+  action: CopilotAction;
+  applicationId: string;
+  onResolved: (note: string) => void;
+}) {
+  const [proposal, setProposal] = useState<AssistantProposal | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const preview = useMutation({
+    mutationFn: () =>
+      api.post<AssistantProposal>(`/applications/${applicationId}/assistant/revise`, {
+        instruction: action.instruction,
+      }),
+    onSuccess: setProposal,
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't build that preview."),
+  });
+
+  const apply = useMutation({
+    mutationFn: () =>
+      api.post(`/applications/${applicationId}/assistant/apply`, {
+        proposed: proposal!.proposed,
+        rejected: [],
+      }),
+    onSuccess: () => onResolved("Applied. You can undo this from the application's Résumé tab."),
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't apply that change."),
+  });
+
+  if (error) return <p className="px-1 text-xs text-coral">⚠️ {error}</p>;
+
+  return (
+    <div className="rounded-xl border border-brand-500/30 bg-brand-500/[0.07] p-3">
+      <p className="text-xs font-medium text-brand-200">Proposed change</p>
+      <p className="mt-0.5 text-xs text-subtle">{action.instruction}</p>
+
+      {!proposal ? (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={() => preview.mutate()}
+            disabled={preview.isPending}
+            className="btn-primary btn-sm"
+          >
+            {preview.isPending ? <><Spinner className="h-3.5 w-3.5" /> Preparing…</> : "Preview change"}
+          </button>
+          <button onClick={() => onResolved("Dismissed.")} className="btn-ghost btn-sm text-subtle">
+            Not now
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-content">{proposal.note}</p>
+          {proposal.blocked.length > 0 && (
+            <div className="rounded-lg border border-coral/30 bg-coral/10 px-2.5 py-1.5 text-[11px] text-coral">
+              Guardrails blocked {proposal.blocked.length} unsupported claim
+              {proposal.blocked.length === 1 ? "" : "s"} — the rest is still yours to accept.
+            </div>
+          )}
+          <div className="max-h-56 space-y-1.5 overflow-y-auto">
+            {proposal.diff.slice(0, 8).map((d, i) => (
+              <div key={i} className="rounded-lg border border-white/[0.06] bg-surface p-2 text-[11px]">
+                <div className="text-subtle">{String(d.label ?? d.section ?? "Change")}</div>
+                {d.before ? <div className="mt-0.5 text-coral line-through">{String(d.before).slice(0, 160)}</div> : null}
+                {d.after ? <div className="mt-0.5 text-emerald">{String(d.after).slice(0, 160)}</div> : null}
+              </div>
+            ))}
+            {proposal.diff.length > 8 && (
+              <p className="text-[11px] text-subtle">+{proposal.diff.length - 8} more changes</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => apply.mutate()} disabled={apply.isPending} className="btn-primary btn-sm">
+              {apply.isPending ? <><Spinner className="h-3.5 w-3.5" /> Applying…</> : "Accept & apply"}
+            </button>
+            <button onClick={() => onResolved("Discarded — nothing was changed.")} className="btn-ghost btn-sm text-subtle">
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

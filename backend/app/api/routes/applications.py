@@ -944,6 +944,95 @@ def _write_artifact(
         )
 
 
+_MAX_RESTORE_POINTS = 10
+
+
+def _push_restore_point(application: Application, note: str) -> None:
+    """Snapshot the current tailored résumé so a later change can be undone.
+
+    Bounded: only the most recent snapshots are kept, oldest dropped first, so a
+    long editing session can't grow the row without limit.
+    """
+    if not application.tailored_resume:
+        return
+    history = list(application.resume_history or [])
+    history.append(
+        {
+            "resume": application.tailored_resume,
+            "at": _now_iso(),
+            "note": note,
+        }
+    )
+    application.resume_history = history[-_MAX_RESTORE_POINTS:]
+
+
+@router.get("/{application_id}/restore-points", response_model=list[dict])
+def list_restore_points(
+    application_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> list[dict]:
+    """What the résumé can be rolled back to, newest first (no résumé bodies)."""
+    application = _get_owned(db, user.id, application_id)
+    points = list(application.resume_history or [])
+    return [
+        {"index": i, "at": p.get("at"), "note": p.get("note", "")}
+        for i, p in reversed(list(enumerate(points)))
+    ]
+
+
+@router.post("/{application_id}/restore", response_model=ApplicationDetail)
+def restore_resume(
+    application_id: uuid.UUID,
+    payload: dict,
+    user: CurrentUser,
+    db: DbSession,
+) -> ApplicationDetail:
+    """Roll the tailored résumé back to a restore point and re-render the PDF.
+
+    ``index`` selects one (omit for the most recent — plain undo); ``oldest``
+    rolls all the way back to where this editing session started.
+    """
+    application = _get_owned(db, user.id, application_id)
+    history = list(application.resume_history or [])
+    if not history:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nothing to restore.")
+
+    index = len(history) - 1
+    if payload.get("oldest"):
+        index = 0
+    elif payload.get("index") is not None:
+        try:
+            index = int(payload["index"])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bad restore point.") from exc
+    if not 0 <= index < len(history):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bad restore point.")
+
+    point = history[index]
+    restored = MasterResume.model_validate(point["resume"])
+    profile = db.get(ResumeProfile, application.resume_profile_id)
+    template = resolve_filename(profile.template if profile else None)
+    one_page = profile.one_page if profile else True
+    try:
+        compiled, resume_tex, restored = render_and_fit(
+            restored, settings.templates_dir, template_name=template,
+            one_page=one_page, job_name="resume",
+        )
+    except Exception as exc:  # noqa: BLE001 - typesetting failure -> friendly 422
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"Couldn't typeset the restored résumé: {exc}"
+        ) from exc
+
+    _write_artifact(db, application, user.id, ArtifactKind.RESUME_PDF, "resume.pdf", compiled.pdf_bytes, "application/pdf")
+    _write_artifact(db, application, user.id, ArtifactKind.RESUME_TEX, "resume.tex", resume_tex.encode("utf-8"), "application/x-tex")
+    application.tailored_resume = restored.model_dump(mode="json")
+    # Everything from this point forward is undone, so those snapshots go too.
+    application.resume_history = history[:index]
+    log_event(application, "restored", f"Résumé restored ({point.get('note', 'earlier version')})")
+    db.commit()
+    db.refresh(application)
+    return _to_detail(application)
+
+
 @router.post("/{application_id}/assistant/revise", response_model=AssistantProposal)
 def assistant_revise(
     application_id: uuid.UUID, payload: AssistantReviseRequest, user: GenerationUser, db: DbSession
@@ -989,6 +1078,9 @@ def assistant_apply(
     """Apply a proposed revision: re-vet against the master, update the tailored
     résumé + diff + guardrails, and re-render the stored PDF/TeX."""
     application = _get_owned(db, user.id, application_id)
+    # Restore point: capture the résumé as it stands BEFORE this change, so an
+    # accepted edit can still be undone (and a session's worth rolled back).
+    _push_restore_point(application, "Before an assistant revision")
     proposed = payload.proposed
     # Per-section accept: revert the buckets the user rejected to the current résumé.
     if payload.rejected and application.tailored_resume:
