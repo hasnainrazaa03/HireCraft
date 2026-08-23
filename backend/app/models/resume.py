@@ -46,6 +46,15 @@ class ResumeProfile(Base, TimestampMixin):
     # Preference: auto-compact the render until it fits a single page. Applies to
     # this résumé's preview, exports, and its tailored applications.
     one_page: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # The file this profile was imported from, kept byte-for-byte so the user can
+    # always get back the document they actually uploaded. Parsing is lossy (and
+    # a template re-render is a different document), so the original is the only
+    # faithful copy. Null for profiles built in the app rather than imported.
+    source_filename: Mapped[str | None] = mapped_column(String(255))
+    source_path: Mapped[str | None] = mapped_column(String(500))
+    source_content_type: Mapped[str | None] = mapped_column(String(120))
+    source_size_bytes: Mapped[int | None] = mapped_column(Integer)
     # Free-form tags for the résumé library ("SWE", "ML", "New Grad", …).
     tags: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
     # Monotonic version counter; the latest saved content is this number, and

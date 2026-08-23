@@ -108,10 +108,31 @@ def create_profile(
     # The first profile a user creates is their default whether they asked or not.
     is_default = payload.is_default or has_any is None
 
+    source_filename = source_path = source_type = None
+    source_size = None
+    if payload.source_ref:
+        # Path-prefix check: a ref only ever addresses this user's own stash.
+        if not payload.source_ref.startswith(f"{user.id}/resume-sources/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid source reference."
+            )
+        try:
+            data = storage.read_bytes(payload.source_ref)
+            source_path = payload.source_ref
+            source_filename = payload.source_ref.rsplit("-", 1)[-1] or "resume"
+            source_size = len(data)
+            source_type = _CONTENT_TYPES.get(source_filename.rsplit(".", 1)[-1].lower())
+        except Exception as exc:  # noqa: BLE001 - never fail a save over the copy
+            logger.info("resume.source_missing", error=str(exc)[:200])
+
     profile = ResumeProfile(
         user_id=user.id,
         name=payload.name,
         content=payload.content.model_dump(mode="json"),
+        source_filename=source_filename,
+        source_path=source_path,
+        source_content_type=source_type,
+        source_size_bytes=source_size,
         is_default=is_default,
         tags=_clean_tags(payload.tags),
         template=payload.template if payload.template and is_valid(payload.template) else "modern",
@@ -254,9 +275,21 @@ async def parse_resume(
         )
     )
     db.commit()
+    # Keep the uploaded file. Parsing is lossy and a template re-render is a
+    # different document, so this is the only faithful copy of what the user
+    # actually sent. It is attached to the profile when they save (source_ref).
+    source_ref: str | None = None
+    try:
+        source_ref = f"{user.id}/resume-sources/{uuid.uuid4()}-{storage.safe_filename(filename)}"
+        storage.save_bytes(source_ref, raw)
+    except Exception as exc:  # noqa: BLE001 - the import still works without it
+        logger.info("resume.source_not_stashed", error=str(exc)[:200])
+        source_ref = None
+
     logger.info("resume.parsed", user_id=str(user.id), cost_usd=usage.cost_usd)
     return ResumeParseResponse(
-        content=resume, cost_usd=usage.cost_usd, source_filename=filename
+        content=resume, cost_usd=usage.cost_usd, source_filename=filename,
+        source_ref=source_ref,
     )
 
 
@@ -659,3 +692,44 @@ def _clean_tags(tags: list[str]) -> list[str]:
             seen.add(key)
             out.append(cleaned)
     return out[:20]
+
+
+_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc": "application/msword",
+    "tex": "application/x-tex",
+    "txt": "text/plain",
+    "json": "application/json",
+    "md": "text/markdown",
+}
+
+
+@router.get("/{profile_id}/original")
+def download_original(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> Response:
+    """The file this résumé was imported from, byte-for-byte.
+
+    Parsing is lossy and a template render is a different document, so this is
+    the only way back to exactly what the user uploaded.
+    """
+    profile = _get_owned(db, user.id, profile_id)
+    if not profile.source_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This résumé was built in the app, so there's no uploaded original.",
+        )
+    try:
+        data = storage.read_bytes(profile.source_path)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="The original file is no longer available."
+        ) from exc
+    name = profile.source_filename or "resume"
+    return Response(
+        content=data,
+        media_type=profile.source_content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{storage.safe_filename(name)}"',
+            "Cache-Control": "no-store",
+        },
+    )

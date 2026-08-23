@@ -144,6 +144,9 @@ class ResumeProfileCreate(ApiModel):
     # One-page fit is the default; the résumé auto-tightens to a single page unless
     # the user opts to let it run longer.
     one_page: bool = True
+    # Points at the uploaded file stashed by /resumes/parse, so the profile keeps
+    # the document the user actually uploaded alongside the parsed content.
+    source_ref: str | None = Field(default=None, max_length=500)
     # Label for the first version ("Imported résumé", "Original draft", …).
     version_label: str | None = Field(default=None, max_length=200)
 
@@ -167,6 +170,9 @@ class ResumeProfileResponse(ApiModel):
     tags: list[str]
     template: str
     one_page: bool
+    # The uploaded file this was imported from, if any.
+    source_filename: str | None = None
+    source_size_bytes: int | None = None
     current_version: int
     label: str | None
     created_at: datetime
@@ -180,6 +186,7 @@ class ResumeProfileSummary(ApiModel):
     tags: list[str]
     template: str
     one_page: bool
+    source_filename: str | None = None
     current_version: int
     label: str | None
     updated_at: datetime
@@ -208,6 +215,8 @@ class ResumeParseResponse(ApiModel):
     content: MasterResume
     cost_usd: float
     source_filename: str
+    # Where the uploaded file was stashed; pass back on create to keep the original.
+    source_ref: str | None = None
 
 
 class ResumeRewriteResponse(ApiModel):

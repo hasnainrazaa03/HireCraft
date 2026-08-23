@@ -55,6 +55,9 @@ export default function ResumesPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [template, setTemplate] = useState("modern");
   const [onePage, setOnePage] = useState(true);
+  // Points at the file the import stashed server-side, so saving keeps the
+  // original document alongside the parsed content.
+  const [sourceRef, setSourceRef] = useState<string | null>(null);
   const [content, setContent] = useState<ResumeContent>(STARTER);
   const [mode, setMode] = useState<Mode>("builder");
   const [jsonDraft, setJsonDraft] = useState("");
@@ -83,7 +86,7 @@ export default function ResumesPage() {
       const body = { name, content: currentContent(), tags, template, one_page: onePage };
       return editingId
         ? api.patch(`/resumes/${editingId}`, body)
-        : api.post("/resumes", { ...body, version_label: originLabel });
+        : api.post("/resumes", { ...body, version_label: originLabel, source_ref: sourceRef });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["resumes"] });
@@ -123,6 +126,7 @@ export default function ResumesPage() {
     setTags([]);
     setTemplate("modern");
     setOnePage(true); // one-page is the default; startNew() calls close() first
+    setSourceRef(null);
     setContent(STARTER);
     setMode("builder");
     setJsonDraft("");
@@ -176,6 +180,7 @@ export default function ResumesPage() {
       } else {
         const res = await api.upload<ResumeParseResponse>("/resumes/parse", file);
         setContent(res.content as unknown as ResumeContent);
+        setSourceRef(res.source_ref ?? null);
         toast.success("Résumé imported", "Review and edit before saving.");
       }
       setName((n) => n || file.name.replace(/\.[^.]+$/, "").slice(0, 120));
@@ -276,6 +281,17 @@ export default function ResumesPage() {
                 </button>
                 <button onClick={() => setPreviewFor(p)} className="btn-ghost btn-sm">Preview</button>
                 <ExportMenu profileId={p.id} name={p.name} />
+                {/* Only for imported résumés — the exact file the user uploaded,
+                    which parsing and a template render can never reproduce. */}
+                {p.source_filename && (
+                  <button
+                    onClick={() => api.download(`/resumes/${p.id}/original`, p.source_filename!)}
+                    className="btn-ghost btn-sm"
+                    title={`Download the file you uploaded (${p.source_filename})`}
+                  >
+                    Original
+                  </button>
+                )}
                 {p.current_version > 1 && (
                   <button onClick={() => setHistoryFor(p)} className="btn-ghost btn-sm">
                     <IconHistory className="h-4 w-4" /> History

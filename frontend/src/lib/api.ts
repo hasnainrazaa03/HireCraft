@@ -371,6 +371,8 @@ export interface SessionInfo {
 }
 
 export interface ResumeProfileSummary {
+  /** The file this résumé was imported from, if any. */
+  source_filename?: string | null;
   id: string;
   name: string;
   is_default: boolean;
@@ -470,6 +472,8 @@ export interface TemplateInfo {
 }
 
 export interface ResumeParseResponse {
+  /** Server-side stash of the uploaded file; pass to POST /resumes to keep it. */
+  source_ref?: string | null;
   content: MasterResume;
   cost_usd: number;
   source_filename: string;
