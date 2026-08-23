@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import uuid
 
 import redis
@@ -258,7 +259,7 @@ def _rerank_cache_set(key: str, data: dict) -> None:
         get_redis().setex(key, _RERANK_TTL, json.dumps(data))
 
 
-def _feed_row_to_result(row: ScrapedJob) -> JobSearchResult:
+def _feed_row_to_result(row: ScrapedJob, fit: dict | None = None) -> JobSearchResult:
     """Render a stored feed posting in the same shape the job cards already use,
     plus the scraper's extras (level, term bucket, sponsorship, track pick)."""
     tags = [t for t in (row.terms or []) if t]
@@ -275,12 +276,12 @@ def _feed_row_to_result(row: ScrapedJob) -> JobSearchResult:
         snippet=(row.description or "")[:400],
         source=row.source,
         created_at=int(row.posted_at.timestamp()) if row.posted_at else None,
-        match_score=row.match_score,
-        verdict=row.match_verdict,
-        interview_chance=row.interview_chance,
-        summary=row.match_summary or None,
-        strengths=list(row.strengths or []),
-        gaps=list(row.gaps or []),
+        match_score=fit["score"] if fit else row.match_score,
+        verdict=fit["verdict"] if fit else row.match_verdict,
+        interview_chance=fit["interview_chance"] if fit else row.interview_chance,
+        summary=(fit["summary"] if fit else row.match_summary) or None,
+        strengths=list((fit["strengths"] if fit else row.strengths) or []),
+        gaps=list((fit["gaps"] if fit else row.gaps) or []),
         level=row.level,
         bucket=row.bucket or None,
         terms=list(row.terms or []),
@@ -293,39 +294,124 @@ def _feed_row_to_result(row: ScrapedJob) -> JobSearchResult:
     )
 
 
+# Re-scoring the whole feed costs ~1.3 ms a posting — fine for a filtered page,
+# but ~3 s for all of them, so results are cached per (résumé, posting).
+_FIT_TTL = 60 * 30
+
+
+def _fit_cached(resume_id: str, row: ScrapedJob, resume: MasterResume):
+    """Fit analysis for one posting against one résumé, memoised in Redis."""
+    key = f"jobfit:{resume_id}:{row.fingerprint}"
+    cached = _cache_get_json(key)
+    if cached:
+        return cached
+    fit = analyze_job_fit(resume, f"{row.title}\n{row.description}", title=row.title)
+    payload = {
+        "score": fit.score,
+        "verdict": fit.verdict,
+        "interview_chance": fit.interview_chance,
+        "summary": fit.summary,
+        "strengths": list(fit.strengths or [])[:12],
+        "gaps": list(fit.gaps or [])[:12],
+    }
+    _cache_set_json(key, payload, _FIT_TTL)
+    return payload
+
+
+def _cache_get_json(key: str):
+    import contextlib as _c
+
+    import redis as _redis
+
+    with _c.suppress(_redis.RedisError, ValueError):
+        raw = get_redis().get(key)
+        if raw:
+            return json.loads(raw)
+    return None
+
+
+def _cache_set_json(key: str, data: dict, ttl: int) -> None:
+    import contextlib as _c
+
+    import redis as _redis
+
+    with _c.suppress(_redis.RedisError, TypeError):
+        get_redis().setex(key, ttl, json.dumps(data))
+
+
 @router.get("/feed", response_model=list[JobSearchResult])
 def job_feed(
     user: CurrentUser,
     db: DbSession,
+    resume_id: uuid.UUID | None = Query(default=None, description="Score against this résumé"),
+    q: str | None = Query(default=None, description="Match title, company, or location"),
+    level: str | None = None,
     bucket: str | None = None,
     source: str | None = None,
+    location: str | None = None,
+    remote_only: bool = False,
     status_filter: str | None = Query(default=None, alias="status"),
     include_closed: bool = False,
     min_score: int = Query(default=0, ge=0, le=100),
+    sort: str = Query(default="match", pattern="^(match|newest|company)$"),
     limit: int = Query(default=60, ge=1, le=300),
 ) -> list[JobSearchResult]:
     """The scheduled scraper's accumulated postings for this user.
 
     Unlike ``/jobs/search`` (live boards, nothing stored), these are persisted by
-    the every-6-hours scrape, so the feed fills up over time and each posting keeps
-    its fit analysis, term bucket, and résumé-track recommendation.
+    the every-6-hours scrape, so the feed fills up over time.
+
+    ``resume_id`` re-scores every result against that résumé instead of using the
+    score stored at scrape time — which was computed against whichever résumé was
+    default *then*, and goes stale as soon as the user adds or edits one.
     """
     stmt = select(ScrapedJob).where(ScrapedJob.user_id == user.id)
     if not include_closed:
         stmt = stmt.where(ScrapedJob.active.is_(True))
     if bucket:
         stmt = stmt.where(ScrapedJob.bucket == bucket)
+    if level:
+        stmt = stmt.where(ScrapedJob.level == level)
     if source:
         stmt = stmt.where(ScrapedJob.source == source)
     if status_filter:
         stmt = stmt.where(ScrapedJob.status == status_filter)
-    if min_score:
-        stmt = stmt.where(ScrapedJob.match_score >= min_score)
-    rows = db.execute(
-        stmt.order_by(ScrapedJob.match_score.desc().nullslast(), ScrapedJob.last_seen.desc())
-        .limit(limit)
-    ).scalars().all()
-    return [_feed_row_to_result(r) for r in rows]
+    if remote_only:
+        stmt = stmt.where(ScrapedJob.remote.is_(True))
+    if location:
+        stmt = stmt.where(ScrapedJob.location.ilike(f"%{location}%"))
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            ScrapedJob.title.ilike(like)
+            | ScrapedJob.company.ilike(like)
+            | ScrapedJob.location.ilike(like)
+        )
+
+    rows = db.execute(stmt).scalars().all()
+
+    resume: MasterResume | None = None
+    if resume_id is not None:
+        profile = db.get(ResumeProfile, resume_id)
+        if profile is None or profile.user_id != user.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Résumé not found.")
+        resume = MasterResume.model_validate(profile.content)
+
+    results: list[JobSearchResult] = []
+    for row in rows:
+        fit = _fit_cached(str(resume_id), row, resume) if resume else None
+        score = fit["score"] if fit else row.match_score
+        if min_score and (score or 0) < min_score:
+            continue
+        results.append(_feed_row_to_result(row, fit))
+
+    if sort == "newest":
+        results.sort(key=lambda r: r.created_at or 0, reverse=True)
+    elif sort == "company":
+        results.sort(key=lambda r: (r.company or "").lower())
+    else:
+        results.sort(key=lambda r: (r.match_score or 0), reverse=True)
+    return results[:limit]
 
 
 @router.get("/feed/stats", response_model=dict)
@@ -337,9 +423,21 @@ def job_feed_stats(user: CurrentUser, db: DbSession) -> dict:
     active = [r for r in rows if r.active]
     buckets: dict[str, int] = {}
     sources: dict[str, int] = {}
+    levels: dict[str, int] = {}
+    locations: dict[str, int] = {}
+    remote = 0
     for r in active:
         buckets[r.bucket or "Unspecified"] = buckets.get(r.bucket or "Unspecified", 0) + 1
         sources[r.source] = sources.get(r.source, 0) + 1
+        levels[r.level or "unknown"] = levels.get(r.level or "unknown", 0) + 1
+        if r.remote:
+            remote += 1
+        # Postings list several sites separated by ; or •; count each city once so
+        # the filter offers real places rather than whole location strings.
+        for part in re.split(r"[;•|]", r.location or ""):
+            city = part.strip()
+            if city:
+                locations[city] = locations.get(city, 0) + 1
     last = max((r.last_seen for r in rows if r.last_seen), default=None)
     return {
         "total": len(rows),
@@ -348,6 +446,10 @@ def job_feed_stats(user: CurrentUser, db: DbSession) -> dict:
         "closed": len(rows) - len(active),
         "by_bucket": dict(sorted(buckets.items(), key=lambda kv: -kv[1])),
         "by_source": dict(sorted(sources.items(), key=lambda kv: -kv[1])),
+        "by_level": dict(sorted(levels.items(), key=lambda kv: -kv[1])),
+        "remote": remote,
+        # Top places only — the tail is a long list of one-off office addresses.
+        "by_location": dict(sorted(locations.items(), key=lambda kv: -kv[1])[:20]),
         "last_run": last.isoformat() if last else None,
     }
 

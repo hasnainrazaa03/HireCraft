@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { api, type JobSearchResult } from "../lib/api";
+import { api, type JobSearchResult, type ResumeProfileSummary } from "../lib/api";
 import { EmptyState, Spinner } from "../components/ui";
 import {
   IconSearch, IconSparkles, IconCheck, IconPin,
@@ -63,6 +63,9 @@ interface FeedStats {
   closed: number;
   by_bucket: Record<string, number>;
   by_source: Record<string, number>;
+  by_level: Record<string, number>;
+  by_location: Record<string, number>;
+  remote: number;
   last_run: string | null;
 }
 
@@ -81,6 +84,16 @@ export default function JobSearchPage() {
   // scheduled ATS scraper has accumulated (persisted, so it fills up over time).
   const [mode, setMode] = useState<Mode>("feed");
   const [bucket, setBucket] = useState("");
+  // Which résumé the feed is scored against. The stored score was computed at
+  // scrape time against whichever résumé was default then, so it goes stale as
+  // soon as you add or edit one — picking here re-scores every card live.
+  const [feedResume, setFeedResume] = useState("");
+  const [feedLevel, setFeedLevel] = useState("");
+  const [feedSource, setFeedSource] = useState("");
+  const [feedLocation, setFeedLocation] = useState("");
+  const [feedRemote, setFeedRemote] = useState(false);
+  const [feedMinScore, setFeedMinScore] = useState(0);
+  const [feedQuery, setFeedQuery] = useState("");
 
   const live = useQuery({
     queryKey: ["job-search", query, remoteOnly, exclude, mustHave],
@@ -96,13 +109,31 @@ export default function JobSearchPage() {
     placeholderData: keepPreviousData,
   });
 
+  const { data: feedResumes = [] } = useQuery({
+    queryKey: ["resumes"],
+    queryFn: () => api.get<ResumeProfileSummary[]>("/resumes"),
+  });
+  // Default to the user's default résumé so the scores mean something on arrival.
+  useEffect(() => {
+    if (!feedResume && feedResumes.length) {
+      setFeedResume((feedResumes.find((r) => r.is_default) ?? feedResumes[0]).id);
+    }
+  }, [feedResumes, feedResume]);
+
+  const feedParams = new URLSearchParams({ limit: "120", sort });
+  if (feedResume) feedParams.set("resume_id", feedResume);
+  if (bucket) feedParams.set("bucket", bucket);
+  if (feedLevel) feedParams.set("level", feedLevel);
+  if (feedSource) feedParams.set("source", feedSource);
+  if (feedLocation) feedParams.set("location", feedLocation);
+  if (feedRemote) feedParams.set("remote_only", "true");
+  if (feedMinScore) feedParams.set("min_score", String(feedMinScore));
+  if (feedQuery.trim()) feedParams.set("q", feedQuery.trim());
+
   const feed = useQuery({
-    queryKey: ["job-feed", bucket],
+    queryKey: ["job-feed", feedParams.toString()],
     enabled: mode === "feed",
-    queryFn: () =>
-      api.get<JobSearchResult[]>(
-        `/jobs/feed?limit=120${bucket ? `&bucket=${encodeURIComponent(bucket)}` : ""}`,
-      ),
+    queryFn: () => api.get<JobSearchResult[]>(`/jobs/feed?${feedParams.toString()}`),
     placeholderData: keepPreviousData,
   });
 
@@ -175,16 +206,110 @@ export default function JobSearchPage() {
           )}
         </div>
 
-        {mode === "feed" && feedStats && Object.keys(feedStats.by_bucket).length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <FilterPill active={!bucket} onClick={() => setBucket("")}>
-              All ({feedStats.active})
-            </FilterPill>
-            {Object.entries(feedStats.by_bucket).map(([b, n]) => (
-              <FilterPill key={b} active={bucket === b} onClick={() => setBucket(b)}>
-                {b} ({n})
-              </FilterPill>
-            ))}
+        {mode === "feed" && (
+          <div className="space-y-3 rounded-xl border border-white/[0.08] bg-surface-2/40 p-3">
+            {/* Which résumé the scores describe. Without this the number is
+                whatever résumé happened to be default when the scrape ran. */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="block">
+                <span className="label">Score against</span>
+                <select
+                  className="input mt-1"
+                  value={feedResume}
+                  onChange={(e) => setFeedResume(e.target.value)}
+                >
+                  {feedResumes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}{r.is_default ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label">Search</span>
+                <input
+                  className="input mt-1"
+                  placeholder="title, company, or place"
+                  value={feedQuery}
+                  onChange={(e) => setFeedQuery(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="label">Level</span>
+                <select className="input mt-1" value={feedLevel} onChange={(e) => setFeedLevel(e.target.value)}>
+                  <option value="">Any level</option>
+                  {Object.entries(feedStats?.by_level ?? {}).map(([lv, n]) => (
+                    <option key={lv} value={lv}>{lv.replace("_", " ")} ({n})</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label">Location</span>
+                <select className="input mt-1" value={feedLocation} onChange={(e) => setFeedLocation(e.target.value)}>
+                  <option value="">Anywhere</option>
+                  {Object.entries(feedStats?.by_location ?? {}).map(([loc, n]) => (
+                    <option key={loc} value={loc}>{loc} ({n})</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label">Board</span>
+                <select className="input mt-1" value={feedSource} onChange={(e) => setFeedSource(e.target.value)}>
+                  <option value="">All boards</option>
+                  {Object.entries(feedStats?.by_source ?? {}).map(([s, n]) => (
+                    <option key={s} value={s}>{s} ({n})</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label">Minimum match</span>
+                <select className="input mt-1" value={feedMinScore} onChange={(e) => setFeedMinScore(Number(e.target.value))}>
+                  {[0, 40, 50, 60, 70, 80].map((v) => (
+                    <option key={v} value={v}>{v === 0 ? "Any score" : `${v}+`}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label">Sort</span>
+                <select className="input mt-1" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+                  <option value="match">Best match</option>
+                  <option value="newest">Newest</option>
+                </select>
+              </label>
+              <label className="flex items-end gap-2 pb-1.5 text-sm text-muted">
+                <input
+                  type="checkbox"
+                  checked={feedRemote}
+                  onChange={(e) => setFeedRemote(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/[0.14] bg-surface-3 text-brand-600 focus:ring-brand-500"
+                />
+                Remote only{feedStats?.remote ? ` (${feedStats.remote})` : ""}
+              </label>
+            </div>
+
+            {feedStats && Object.keys(feedStats.by_bucket).length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
+                <FilterPill active={!bucket} onClick={() => setBucket("")}>
+                  All ({feedStats.active})
+                </FilterPill>
+                {Object.entries(feedStats.by_bucket).map(([b, n]) => (
+                  <FilterPill key={b} active={bucket === b} onClick={() => setBucket(b)}>
+                    {b} ({n})
+                  </FilterPill>
+                ))}
+                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedQuery) && (
+                  <button
+                    onClick={() => {
+                      setBucket(""); setFeedLevel(""); setFeedSource("");
+                      setFeedLocation(""); setFeedRemote(false); setFeedMinScore(0); setFeedQuery("");
+                    }}
+                    className="btn-ghost btn-sm text-subtle hover:text-content"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -252,6 +377,7 @@ export default function JobSearchPage() {
           <div className={`grid gap-6 transition-opacity xl:grid-cols-2 ${isFetching ? "opacity-60" : ""}`}>
             {sorted.map((job) => (
               <JobCard
+                scoredWith={mode === "feed" ? feedResumes.find((r) => r.id === feedResume)?.name : undefined}
                 key={jobKey(job)} job={job} saved={saved.has(jobKey(job))}
                 onSave={() => toggleSave(job)}
                 onTailor={() => tailor(job)}
@@ -288,8 +414,10 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
 
 // --- card (matches the reference: logo, title, ring, meta, skills, actions) -
 
-function JobCard({ job, saved, onSave, onTailor, onOpen }: {
+function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
   job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onOpen: () => void;
+  /** Name of the résumé this card's match score was computed against. */
+  scoredWith?: string;
 }) {
   const [flipped, setFlipped] = useState(false);
   const allSkills = [...job.strengths, ...job.gaps];
@@ -345,9 +473,17 @@ function JobCard({ job, saved, onSave, onTailor, onOpen }: {
             {(job.bucket || job.track_resume) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {job.bucket && <span className="badge-muted text-[10px]">{job.bucket}</span>}
-                {job.track_resume && (
-                  <span className="badge-brand text-[10px]" title={`Best-fitting track: ${job.track} (${job.track_score}/100)`}>
-                    Send {job.track_resume.replace(/\.pdf$/i, "")}
+                {/* Deliberately NOT job.track_resume: that comes from the
+                    scraper's own config and names a PDF in the user's folder,
+                    which may not correspond to any résumé in the app. The score
+                    shown on this card is against the résumé selected above, so
+                    that is the one to name. */}
+                {scoredWith && (
+                  <span
+                    className="badge-brand text-[10px]"
+                    title={`This card's match score is against ${scoredWith}`}
+                  >
+                    Scored vs {scoredWith}
                   </span>
                 )}
                 {!job.active && <span className="badge-coral text-[10px]">Closed</span>}
