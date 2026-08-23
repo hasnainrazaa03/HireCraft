@@ -33,7 +33,7 @@ export default function CoverLettersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Writing studio</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Cover letters &amp; outreach</h1>
         <p className="mt-1 text-sm text-muted">
           Cover letters and outreach, written from your résumé and in your voice —
           every claim checked against what you've actually done.

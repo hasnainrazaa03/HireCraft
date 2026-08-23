@@ -841,6 +841,12 @@ the best technical approach using the candidate's real experience as context. It
 fine to reason about tools or platforms the question introduces (even ones not on \
 the résumé) — prefer natural hypothetical framing ("If I were deploying this on X, \
 I'd…") over implying you have already shipped it.
+- PREFER the attested details block (the candidate's brag bank) when it has \
+something relevant: those are specifics they have personally vouched for and can \
+defend under follow-up questions, which is exactly what makes an answer land.
+- When the brag bank is thin or has nothing for this question, do NOT return a \
+vague answer — build the most credible, realistic one you can from the résumé's \
+actual work, filling in the ordinary specifics such a story would have.
 - Keep numbers defensible: reuse the candidate's real metrics where you can, and \
 don't pin a specific invented statistic to a real project as though it were measured.
 - Keep each STAR field to 1–3 tight sentences, first person, natural spoken tone.

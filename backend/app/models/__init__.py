@@ -13,6 +13,7 @@ from app.models.application import (
 from app.models.auth import AuthToken, AuthTokenPurpose, Session
 from app.models.evidence import EvidenceItem, EvidenceKind
 from app.models.feature_flag import FeatureFlag
+from app.models.interview import SavedInterviewQuestion
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
 from app.models.notification import Notification
@@ -32,6 +33,7 @@ __all__ = [
     "EvidenceKind",
     "FeatureFlag",
     "Job",
+    "SavedInterviewQuestion",
     "LlmUsage",
     "Notification",
     "PipelineStatus",

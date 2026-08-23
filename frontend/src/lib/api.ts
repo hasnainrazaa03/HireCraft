@@ -1039,6 +1039,8 @@ export interface InterviewQuestion {
 export interface QuestionsResponse {
   questions: InterviewQuestion[];
   cost_usd: number;
+  /** Persisted copies carrying the ids needed to draft/redraft an answer. */
+  saved: SavedQuestion[];
 }
 
 export interface StarAnswer {
@@ -1053,6 +1055,22 @@ export interface AnswerResponse {
   used_voice: boolean;
   warnings: string[];
   cost_usd: number;
+}
+
+export interface SavedQuestion {
+  id: string;
+  category: QuestionCategory;
+  question: string;
+  why: string;
+  tip: string;
+  role: string | null;
+  company: string | null;
+  application_id: string | null;
+  resume_profile_id: string | null;
+  answer: StarAnswer | null;
+  answer_warnings: string[];
+  used_voice: boolean;
+  order_index: number;
 }
 
 // --- Notifications ----------------------------------------------------------

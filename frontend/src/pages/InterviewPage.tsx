@@ -1,15 +1,14 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   ApiError,
   fetchAll,
   type ResumeProfileSummary,
   type QuestionCategory,
-  type InterviewQuestion,
   type QuestionsResponse,
-  type AnswerResponse,
+  type SavedQuestion,
   type SkillGapReport,
   type ApplicationSummary,
   type ApplicationDetail,
@@ -77,13 +76,24 @@ export default function InterviewPage() {
 
 function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
   const toast = useToast();
+  const qc = useQueryClient();
   const [resumeId, setResumeId] = useState(resumes[0].id);
   const [applicationId, setApplicationId] = useState("");
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [selected, setSelected] = useState<Set<QuestionCategory>>(new Set());
   const [useVoice, setUseVoice] = useState(true);
-  const [questions, setQuestions] = useState<InterviewQuestion[] | null>(null);
+
+  // Saved questions are the source of truth: the set (and every answer drafted
+  // against it) survives a reload, and each question keeps its own answered /
+  // unanswered state.
+  const { data: questions = [], isLoading: loadingSaved } = useQuery({
+    queryKey: ["interview-saved", applicationId],
+    queryFn: () =>
+      api.get<SavedQuestion[]>(
+        `/interview/saved${applicationId ? `?application_id=${applicationId}` : ""}`,
+      ),
+  });
 
   // Applications to "prepare for" — picking one grounds the questions in that
   // job (role, company, and the posting's keywords, via the backend). Uses
@@ -125,7 +135,10 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
         categories: Array.from(selected),
         count: 8,
       }),
-    onSuccess: (r) => setQuestions(r.questions),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["interview-saved", applicationId] });
+      toast.success("Questions saved", "They'll still be here when you come back.");
+    },
     onError: (e) =>
       toast.error("Couldn't generate", e instanceof ApiError ? e.message : "Please try again."),
   });
@@ -218,15 +231,26 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
 
       {applicationId && <ApplicationSkillFit applicationId={applicationId} />}
 
-      {questions && (
+      {loadingSaved ? (
+        <p className="text-sm text-subtle">Loading your saved questions…</p>
+      ) : questions.length > 0 ? (
         <div className="space-y-3">
-          {questions.map((q, i) => (
-            // Key by question text (not index) so regenerating remounts the cards
-            // and clears each card's drafted STAR answer.
-            <QuestionCard key={`${i}:${q.question}`} question={q} resumeId={resumeId} useVoice={useVoice} catLabel={CAT_LABEL[q.category]} />
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-subtle">
+              {questions.filter((q) => q.answer).length} of {questions.length} answered · saved automatically
+            </p>
+          </div>
+          {questions.map((q) => (
+            <QuestionCard
+              key={q.id}
+              question={q}
+              useVoice={useVoice}
+              applicationId={applicationId}
+              catLabel={CAT_LABEL[q.category]}
+            />
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -312,41 +336,69 @@ function ApplicationSkillFit({ applicationId }: { applicationId: string }) {
   );
 }
 
+/** One saved question. Answered and unanswered questions live side by side, so
+ *  the actions differ: a question with no answer offers "Draft a STAR answer",
+ *  one that already has an answer offers "Redraft" (when the stored answer isn't
+ *  good enough) — the redraft replaces it. Both persist. */
 function QuestionCard({
   question,
-  resumeId,
   useVoice,
+  applicationId,
   catLabel,
 }: {
-  question: InterviewQuestion;
-  resumeId: string;
+  question: SavedQuestion;
   useVoice: boolean;
+  applicationId: string;
   catLabel: string;
 }) {
   const toast = useToast();
-  const [answer, setAnswer] = useState<AnswerResponse | null>(null);
+  const qc = useQueryClient();
+  const answer = question.answer;
 
   const draft = useMutation({
     mutationFn: () =>
-      api.post<AnswerResponse>("/interview/answer", {
-        resume_profile_id: resumeId,
-        question: question.question,
+      api.post<SavedQuestion>(`/interview/saved/${question.id}/answer`, {
         use_voice: useVoice,
       }),
-    onSuccess: setAnswer,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["interview-saved", applicationId] });
+      toast.success(answer ? "Answer redrafted" : "Answer drafted and saved");
+    },
     onError: (e) =>
       toast.error("Couldn't draft", e instanceof ApiError ? e.message : "Please try again."),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.delete(`/interview/saved/${question.id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["interview-saved", applicationId] }),
+    onError: (e) =>
+      toast.error("Couldn't remove", e instanceof ApiError ? e.message : undefined),
   });
 
   return (
     <div className="card p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <span className="badge-muted mb-2">{catLabel}</span>
-          <p className="text-sm font-medium text-content">{question.question}</p>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="badge-muted">{catLabel}</span>
+            {answer ? (
+              <span className="badge-emerald text-[10px]">Answered</span>
+            ) : (
+              <span className="badge-muted text-[10px]">No answer yet</span>
+            )}
+          </span>
+          <p className="mt-2 text-sm font-medium text-content">{question.question}</p>
           {question.why && <p className="mt-1.5 text-xs text-subtle">Why they ask: {question.why}</p>}
           {question.tip && <p className="mt-1 text-xs text-brand-300">💡 {question.tip}</p>}
         </div>
+        <button
+          onClick={() => remove.mutate()}
+          disabled={remove.isPending}
+          className="btn-ghost btn-sm shrink-0 text-subtle hover:text-coral"
+          title="Remove this question"
+        >
+          Remove
+        </button>
       </div>
 
       {!answer && (
@@ -361,22 +413,32 @@ function QuestionCard({
 
       {answer && (
         <div className="mt-4 space-y-2 rounded-xl border border-white/[0.06] bg-surface-2 p-4">
-          {answer.warnings.map((w, i) => (
+          {question.answer_warnings.map((w, i) => (
             <div key={i} className="rounded-lg border border-coral/30 bg-coral/10 px-3 py-2 text-xs text-coral">
               {w}
             </div>
           ))}
-          <StarField label="Situation" text={answer.star.situation} />
-          <StarField label="Task" text={answer.star.task} />
-          <StarField label="Action" text={answer.star.action} />
-          <StarField label="Result" text={answer.star.result} />
-          <div className="flex items-center justify-between pt-1">
-            {answer.used_voice ? (
+          <StarField label="Situation" text={answer.situation} />
+          <StarField label="Task" text={answer.task} />
+          <StarField label="Action" text={answer.action} />
+          <StarField label="Result" text={answer.result} />
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            {question.used_voice ? (
               <span className="text-[11px] text-subtle">In your voice</span>
             ) : <span />}
-            <CopyButton
-              text={`Situation: ${answer.star.situation}\nTask: ${answer.star.task}\nAction: ${answer.star.action}\nResult: ${answer.star.result}`}
-            />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => draft.mutate()}
+                disabled={draft.isPending}
+                className="btn-ghost btn-sm text-subtle hover:text-content"
+                title="Not happy with this one? Draft a different answer."
+              >
+                {draft.isPending ? "Redrafting…" : "Redraft"}
+              </button>
+              <CopyButton
+                text={`Situation: ${answer.situation}\nTask: ${answer.task}\nAction: ${answer.action}\nResult: ${answer.result}`}
+              />
+            </div>
           </div>
         </div>
       )}
