@@ -1,5 +1,12 @@
 # HireCraft — Full Testing Guide
 
+> **Fresh run — reset 2026-08-22.** The database was wiped back to a clean slate
+> (new résumés, brag bank, and master docs go in from scratch); the account,
+> Anthropic key, Claude Sonnet 5 selection, and the scraped job feed were kept.
+> Every case below is unchecked. Notes from the previous run are preserved as
+> reference for what was found and fixed last time — treat them as history, not
+> as current results.
+
 > A living, click-by-click test plan for the whole product. Work top to bottom,
 > mark each case, and jot findings inline. We'll update this doc as we fix things.
 
@@ -27,7 +34,7 @@
 
 Confirms the app is up before deep testing.
 
-- ✅ **T-SMOKE-01** Load http://localhost:5173 — you land on Login or Dashboard, no console errors (open DevTools console).
+- ⬜ **T-SMOKE-01** Load http://localhost:5173 — you land on Login or Dashboard, no console errors (open DevTools console).
   - Notes: PASS. Unauthenticated → auto-redirects to `/login`; page loads; no JS errors/warnings (only the default DevTools info message).
 - ⬜ **T-SMOKE-02** Sign in — Dashboard renders with your name and stat cards.
   - Notes:
@@ -45,55 +52,55 @@ Confirms the app is up before deep testing.
 > the app or can be skipped.
 
 ### 1.1 Sign up
-- ✅ **T-AUTH-01** From Login, switch to **Sign up**. Register with a new email + password + name.
+- ⬜ **T-AUTH-01** From Login, switch to **Sign up**. Register with a new email + password + name.
   - *Expected:* lands on the Dashboard (empty state); no forced email-verification wall.
   - Notes: PASS. Throwaway registered → straight to Dashboard empty state ("No applications yet"); no verification wall; "Confirm your email" banner shown (expected). Server-side verified: user row created, `is_active=true`, `is_verified=false`.
-- ✅ **T-AUTH-02** Try registering the **same email again** → clear "already exists" style error, no crash.
+- ⬜ **T-AUTH-02** Try registering the **same email again** → clear "already exists" style error, no crash.
   - Notes: PASS. Duplicate email → "An account with that email already exists." (matches code `auth.py:134`); registration blocked, form state preserved, no crash.
-- ✅ **T-AUTH-03** Weak/short password and malformed email are rejected with a readable message.
+- ⬜ **T-AUTH-03** Weak/short password and malformed email are rejected with a readable message.
   - Notes: PASS (re-tested after fix). Invalid email → browser HTML5 message ✅. Weak password → now shows the specific reason (was generic "Validation failed." — Issue #1, fixed via `parseError` humanizing field errors + `minLength` on the register field). Resolved.
-- ✅ **T-AUTH-04** A yellow **"Confirm your email"** banner appears at the top. Click **Resend link** → success toast; **Dismiss (×)** hides it.
+- ⬜ **T-AUTH-04** A yellow **"Confirm your email"** banner appears at the top. Click **Resend link** → success toast; **Dismiss (×)** hides it.
   - Notes: PASS. Banner shown; Resend → "Verification sent / Check your inbox" toast; × dismisses cleanly without affecting the page.
 
 ### 1.2 Login / logout / session
-- ✅ **T-AUTH-05** Log out (top-right avatar → Log out) → back to Login.
+- ⬜ **T-AUTH-05** Log out (top-right avatar → Log out) → back to Login.
   - Notes: PASS. Avatar → Log out → redirected to Login; session terminated, no errors.
-- ✅ **T-AUTH-06** Log back in with correct credentials → Dashboard.
+- ⬜ **T-AUTH-06** Log back in with correct credentials → Dashboard.
   - Notes: PASS. Valid credentials → authenticated → Dashboard loads; session established, no errors.
-- ✅ **T-AUTH-07** Wrong password → clear error, no crash; repeated wrong attempts don't lock you out permanently.
+- ⬜ **T-AUTH-07** Wrong password → clear error, no crash; repeated wrong attempts don't lock you out permanently.
   - Notes: PASS. Wrong password → "Incorrect email or password." (same message whether or not the email exists — no user enumeration, verified in code `auth.py:164/171`); UI stable, no crash.
-- ✅ **T-AUTH-08** Refresh the page while logged in → stays logged in (no bounce to Login).
+- ⬜ **T-AUTH-08** Refresh the page while logged in → stays logged in (no bounce to Login).
   - Notes: PASS. Both normal (Ctrl+R) and hard (Cmd+Shift+R) refresh keep the session; Dashboard reloads, no redirect to Login.
 
 ### 1.3 Password reset & email verify
-- ✅ **T-AUTH-09** Login → **Forgot password** → submit your email → confirmation message (no leak of whether the email exists).
+- ⬜ **T-AUTH-09** Login → **Forgot password** → submit your email → confirmation message (no leak of whether the email exists).
   - Notes: PASS. "If an account exists for … a reset link is on its way. It expires in 30 minutes." — no enumeration; "Back to sign in" provided. Verified server-side: a reset token was generated in the logs.
-- ✅ **T-AUTH-10** (Optional) Grab the reset link from the API logs and open it → set a new password → can log in with it.
+- ⬜ **T-AUTH-10** (Optional) Grab the reset link from the API logs and open it → set a new password → can log in with it.
   - Notes: PASS — verified E2E by Claude on a throwaway (to avoid resetting the active test account): register→forgot→token-from-logs→reset-password (200) → **old password now 401, new password 200**. Full reset flow works.
-- ✅ **T-AUTH-11** (Optional) Open a `verify-email?token=…` link → badge flips to verified / banner disappears.
+- ⬜ **T-AUTH-11** (Optional) Open a `verify-email?token=…` link → badge flips to verified / banner disappears.
   - Notes: PASS — verified E2E by Claude on the active throwaway: resend (200) → verify-email (200, "Your email is verified.") → DB `is_verified=true`. **UI check for user:** reload Dashboard → the "Confirm your email" banner is gone.
 
 ### 1.4 Devices / sessions (Settings → Devices)
-- ✅ **T-AUTH-12** Settings → **Devices** lists your active session(s) with device/time.
+- ⬜ **T-AUTH-12** Settings → **Devices** lists your active session(s) with device/time.
   - Notes: PASS. Shows browser (Chrome) + OS (macOS), "current device" badge, IP (172.20.0.1 = Docker gateway), last-used timestamp, and a "Sign out of all devices" button.
-- ✅ **T-AUTH-13** **Log out everywhere** → you're signed out; old session no longer valid.
+- ⬜ **T-AUTH-13** **Log out everywhere** → you're signed out; old session no longer valid.
   - Notes: PASS. "Sign out of all devices" → immediately signed out, session invalidated, redirected to Login; authed pages require re-login.
 
 ---
 
 ## 2. Dashboard
 
-- ⏳ **T-DASH-01** Top stat cards read sensibly: **Total applications**, **In progress**, **Interviewing**, **Offers**.
+- ⬜ **T-DASH-01** Top stat cards read sensibly: **Total applications**, **In progress**, **Interviewing**, **Offers**.
   - Notes: DEFERRED until data exists (revisit after Section 7 tailoring).
-- ⏳ **T-DASH-02** **Application pipeline** widget shows columns **Preparing · Applied · Screening · Interviewing · Offer · Closed** and your app appears in the *correct* column for its stage (a fresh tailoring = **Preparing**, not Applied).
+- ⬜ **T-DASH-02** **Application pipeline** widget shows columns **Preparing · Applied · Screening · Interviewing · Offer · Closed** and your app appears in the *correct* column for its stage (a fresh tailoring = **Preparing**, not Applied).
   - Notes: DEFERRED until an application exists (revisit after Section 7).
-- ⏳ **T-DASH-03** **Recent activity** lists real events (tailoring started/ready) with times.
+- ⬜ **T-DASH-03** **Recent activity** lists real events (tailoring started/ready) with times.
   - Notes: DEFERRED until data exists.
-- ⏳ **T-DASH-04** **Quick actions** (Tailor résumé, My résumés, Applications, Analytics) each navigate correctly.
+- ⬜ **T-DASH-04** **Quick actions** (Tailor résumé, My résumés, Applications, Analytics) each navigate correctly.
   - Notes: DEFERRED (populated-dashboard card; revisit with data).
-- ✅ **T-DASH-05** Empty account: Dashboard shows a friendly empty state, not zeros-everywhere confusion.
+- ⬜ **T-DASH-05** Empty account: Dashboard shows a friendly empty state, not zeros-everywhere confusion.
   - Notes: PASS. Clear empty state — "No applications yet" + "Add your master résumé, then paste a job posting…" with **Add résumé** / **New application** CTAs. No confusing zero-stats or broken UI.
-- ✅ **T-DASH-06** "Good morning/afternoon/evening" greeting matches the time of day.
+- ⬜ **T-DASH-06** "Good morning/afternoon/evening" greeting matches the time of day.
   - Notes: PASS. "Good morning, Hasnain 👋" — matches the time and is personalized.
 - ⬜ **T-DASH-07** **Stat-card styling** (polish): each card has a **prominent glowing icon tile** (tone-colored — purple/orange/pink/teal), an ambient glow, and a large bold value. (An animated sparkline was trialled and **removed** — it rendered unevenly; cards should show **no** trend line.)
   - Notes:
@@ -103,52 +110,52 @@ Confirms the app is up before deep testing.
 ## 3. Career Profile  (`/profile`)
 
 ### 3.1 Basics & links
-- ✅ **T-PROF-01** Edit **Professional headline**, **Location** → **Save changes** → success toast; reload → values persisted.
+- ⬜ **T-PROF-01** Edit **Professional headline**, **Location** → **Save changes** → success toast; reload → values persisted.
   - Notes: PASS. Saves + persists across reload.
-- ✅ **T-PROF-02** Fill **LinkedIn / GitHub / Portfolio / Website** with valid URLs → saves. A clearly-invalid URL is rejected with a readable error.
+- ⬜ **T-PROF-02** Fill **LinkedIn / GitHub / Portfolio / Website** with valid URLs → saves. A clearly-invalid URL is rejected with a readable error.
   - Notes: PASS. Valid URLs persist; invalid URL blocked with "Portfolio URL should be a valid URL…". **UX note → Issue #3 (P3):** message is accurate but techy ("relative URL without a base") — could be "Please enter a valid URL (e.g. https://example.com)".
 
 ### 3.2 Phone with country code (new)
-- ✅ **T-PROF-03** Click the **country button** (flag + dial code) → dropdown opens with a search box and a long country list.
+- ⬜ **T-PROF-03** Click the **country button** (flag + dial code) → dropdown opens with a search box and a long country list.
   - Notes: PASS. Dropdown opens with search box + scrollable list of flags/dial codes.
-- ✅ **T-PROF-04** Search **"india"** → select India → button shows 🇮🇳 **+91**. Search **"+44"** → United Kingdom appears.
+- ⬜ **T-PROF-04** Search **"india"** → select India → button shows 🇮🇳 **+91**. Search **"+44"** → United Kingdom appears.
   - Notes: PASS (re-tested). WAS ❌ (Issue #2) — two bugs fixed: unreliable `autoFocus` (search never focused) + `dial.includes("")` matching every country on text queries. Now filters by name and by +code, and selection updates flag/dial. Issue #2 closed.
-- ✅ **T-PROF-05** Type a phone number → Save → reload → the **country + number both restore** correctly (e.g. `+1 2139945086` shows US selected + the number).
+- ⬜ **T-PROF-05** Type a phone number → Save → reload → the **country + number both restore** correctly (e.g. `+1 2139945086` shows US selected + the number).
   - Notes: PASS. Country + number both restore after reload; no formatting loss.
-- ✅ **T-PROF-06** Clicking outside the dropdown closes it; keyboard/tab reaches the field.
+- ⬜ **T-PROF-06** Clicking outside the dropdown closes it; keyboard/tab reaches the field.
   - Notes: PASS. Click-outside closes; Tab reaches the phone field + dropdown controls.
 
 ### 3.3 Eligibility dropdowns (new)
-- ✅ **T-PROF-07** **Work authorization** is now a dropdown (US Citizen / Green Card / sponsorship options / EU-UK / Other) — pick one, save, reload → persists.
+- ⬜ **T-PROF-07** **Work authorization** is now a dropdown (US Citizen / Green Card / sponsorship options / EU-UK / Other) — pick one, save, reload → persists.
   - Notes: PASS. Dropdown; selection saves + persists on reload.
-- ✅ **T-PROF-08** **Visa status** dropdown is exhaustive (F-1, OPT, **STEM OPT**, CPT, H-1B, H-4 EAD, L-1/L-2, J-1, O-1, TN, E-3, Green Card, Asylum, DACA, Other) — select **F-1 STEM OPT**, save, reload.
+- ⬜ **T-PROF-08** **Visa status** dropdown is exhaustive (F-1, OPT, **STEM OPT**, CPT, H-1B, H-4 EAD, L-1/L-2, J-1, O-1, TN, E-3, Green Card, Asylum, DACA, Other) — select **F-1 STEM OPT**, save, reload.
   - Notes: PASS. Selected F-1 (Student); saved + persisted on reload.
 
 ### 3.4 Preferences, salary & pay period (new)
-- ✅ **T-PROF-09** **Preferred roles / industries / locations** tag inputs: add with Enter, remove with ×, persist on save.
+- ⬜ **T-PROF-09** **Preferred roles / industries / locations** tag inputs: add with Enter, remove with ×, persist on save.
   - Notes: PASS. Add (Enter) / remove (×) / save / persist all work across the three tag fields.
-- ✅ **T-PROF-10** **Salary min/max** + new **Pay period** dropdown (Per year / month / week / hour). Set 120k–160k, **Per year**, save, reload → persists.
+- ⬜ **T-PROF-10** **Salary min/max** + new **Pay period** dropdown (Per year / month / week / hour). Set 120k–160k, **Per year**, save, reload → persists.
   - Notes: PASS. Range + pay period persist on reload; no formatting issues.
-- ✅ **T-PROF-11** Set salary **max < min** → clear validation error, save blocked.
+- ⬜ **T-PROF-11** Set salary **max < min** → clear validation error, save blocked.
   - Notes: PASS. Save blocked with a validation error. **UX (Issue #4, P3):** message exposed internal field names + "Body error" prefix → FIXED (backend message now "Maximum salary cannot be less than minimum salary"; frontend strips the "Value error," prefix and skips the field label for model-level errors). Re-test message wording after deploy.
-- ✅ **T-PROF-12** **Work arrangement** (remote/hybrid/onsite/flexible) + **Open to relocation** checkbox persist.
+- ⬜ **T-PROF-12** **Work arrangement** (remote/hybrid/onsite/flexible) + **Open to relocation** checkbox persist.
   - Notes: PASS. Both persist on reload. Two UI issues spotted in the screenshot & FIXED: (Issue #5) the footer "Save changes" glow overlapped the Brag Bank card → added bottom margin; (Issue #6) work-arrangement options rendered lowercase (native `<option>` ignores CSS `capitalize`) → capitalize the label text. Bundle `index-JII0EG0-.js`.
 
 ### 3.5 Brag Bank (bottom of Career Profile)
 > This is the substrate for "grounded persuasion" — everything the AI is *allowed*
 > to say. Your account is pre-seeded with **26 facts**.
 
-- ✅ **T-BRAG-01** The Brag Bank section lists facts **grouped by role/project** (Deloitte · DRDO · Prana.ai · USC Ledger · Team Antariksh · …) each with a **kind badge** (Impact / Scope / Skill / Achievement / Context) and a count.
+- ⬜ **T-BRAG-01** The Brag Bank section lists facts **grouped by role/project** (Deloitte · DRDO · Prana.ai · USC Ledger · Team Antariksh · …) each with a **kind badge** (Impact / Scope / Skill / Achievement / Context) and a count.
   - Notes: PASS (empty state). Clear "No evidence yet…" empty state with description + Add fact. Grouping/badges/counts confirmed in T-BRAG-02. DESIGN NOTE: added a clarifying line that facts auto-save (the profile "Save changes" is only for the form fields) — answers "should it be above/below the save button" (below is correct; save applies to the form above).
-- ✅ **T-BRAG-02** **Add fact** → pick a kind, type a role label + text → Add → appears under the right group instantly.
+- ⬜ **T-BRAG-02** **Add fact** → pick a kind, type a role label + text → Add → appears under the right group instantly.
   - Notes: PASS. Added Impact/Deloitte → appeared instantly, grouped under Deloitte, Impact badge, count → 1. No refresh needed.
-- ✅ **T-BRAG-03** **Edit** a fact (hover on desktop, always-visible on touch) → change text → Save → updates.
+- ⬜ **T-BRAG-03** **Edit** a fact (hover on desktop, always-visible on touch) → change text → Save → updates.
   - Notes: PASS. Edited text reflected immediately, no refresh.
-- ✅ **T-BRAG-04** **Delete** a fact → it's removed.
+- ⬜ **T-BRAG-04** **Delete** a fact → it's removed.
   - Notes: PASS. Removed instantly; the emptied group disappeared and empty-state returned correctly.
-- ✅ **T-BRAG-05** Add the **metrics / recent-USC / leadership** facts you flagged earlier — these should later lift tailoring/interview quality (verify in Sections 7 & 10).
+- ⬜ **T-BRAG-05** Add the **metrics / recent-USC / leadership** facts you flagged earlier — these should later lift tailoring/interview quality (verify in Sections 7 & 10).
   - Notes: PASS. Brag bank seeded with **27 grounded facts** (Deloitte 6, DRDO 4, Prana.ai 4, Vimaan 3, USC Ledger 3, + Team Antariksh, BraTS, Manzil, USC, undergrad, Career). Every metric traces to the résumés / interview Q&A / candidate-attested draft — nothing invented. Facts grouped under the right Role/Project with the correct Kind badges; appeared immediately. Sufficient evidence now in place for Sections 7 (Tailoring), 9 (Cover Letters), 10 (Interview STAR), 12 (Copilot).
-- ✅ **T-BRAG-06** Very short text (< 3 chars) is rejected; long text is accepted.
+- ⬜ **T-BRAG-06** Very short text (< 3 chars) is rejected; long text is accepted.
   - Notes: PASS. < 3-char fact keeps the **Add** button disabled (submission blocked). Long-form fact accepted successfully.
 
 ---
@@ -156,41 +163,41 @@ Confirms the app is up before deep testing.
 ## 4. Résumés  (`/resumes`)
 
 ### 4.1 Import / parse
-- ✅ **T-RES-01** **New / Import** → upload `~/Downloads/MHR_ML.pdf`. Parsing runs (~a few seconds, one LLM call) → lands in the **builder** pre-filled.
+- ⬜ **T-RES-01** **New / Import** → upload `~/Downloads/MHR_ML.pdf`. Parsing runs (~a few seconds, one LLM call) → lands in the **builder** pre-filled.
   - Notes: PASS. Upload → parse → auto-redirect to builder, pre-filled (basics, contact, links, headline/summary, sections).
 - 🔧 **T-RES-02 (P0 check)** In the builder, **Experience dates are present** (e.g. Deloitte 2022-08 → 2024-11) — the previously-broken case. Education + project dates too.
   - Notes: **FAIL → FIXED (P0).** Experience came back **empty (0 entries)** while education parsed. Root cause: the Gemini schema marked only `basics` as `required`, so Gemini treated every section array (`experience`, `projects`, …) as optional and **intermittently omitted** them. Fix: `to_gemini_schema` now forces every array property into `required` (worst case = explicit `[]`, never invented content). Verified server-side **3/3 runs → experience=3** (Deloitte 2022-08→2024-11, DRDO, Prana.ai), projects=2 with dates, education=2. Also fixed: Gemini was inventing entry ids (`exp-1`) — import now strips them so stable hashes are recomputed (protects the guardrail index). **Re-import MHR_ML.pdf to confirm in the UI.**
 - ⬜ **T-RES-03** Parsed structure is complete: 3 experience, 2 education, 2 projects, skills groups; bullets not clipped.
   - Notes:
-- ✅ **T-RES-04** Upload a **non-résumé / garbage file** or a corrupt PDF → friendly error, no crash.
+- ⬜ **T-RES-04** Upload a **non-résumé / garbage file** or a corrupt PDF → friendly error, no crash.
   - Notes: PASS. Friendly toast — "Import failed: We read your file but couldn't structure all of it automatically. Try the builder to finish it, or paste the text instead." App stayed responsive; no crash; actionable next steps, no technical leakage.
 - ⏭️ **T-RES-05** (Optional) Upload a **.docx** and a **.json** résumé — both import.
   - Notes: SKIPPED (optional; no .docx/.json résumé on hand this session).
 
 ### 4.2 Builder (structured editing)
-- ✅ **T-RES-06** Sections are **collapsible cards** with entry counts; expand/collapse works.
+- ⬜ **T-RES-06** Sections are **collapsible cards** with entry counts; expand/collapse works.
   - Notes: PASS. All sections render as collapsible cards with entry counts; expand/collapse smooth; no rendering/layout/animation issues.
-- ✅ **T-RES-07** Long **bullets auto-grow** to show full text (no mid-sentence clipping).
+- ⬜ **T-RES-07** Long **bullets auto-grow** to show full text (no mid-sentence clipping).
   - Notes: PASS. Long bullets fully visible; textareas auto-grow to fit; no clipping/truncation/scroll issues while editing.
-- ✅ **T-RES-08** Add / remove / reorder (↑↓) an experience entry and a bullet; add a skill group.
+- ⬜ **T-RES-08** Add / remove / reorder (↑↓) an experience entry and a bullet; add a skill group.
   - Notes: PASS. Added/removed/reordered (↑↓) experience entries; added/removed bullets; added a skill group. No UI or persistence issues.
-- ✅ **T-RES-09** **Basics → ✨ Generate with AI** fills **Headline + Summary** from your experience. Read them: are they truthful (no invented metrics/tools)? Editable after.
+- ⬜ **T-RES-09** **Basics → ✨ Generate with AI** fills **Headline + Summary** from your experience. Read them: are they truthful (no invented metrics/tools)? Editable after.
   - Notes: PASS. ✨ Generate filled Headline + Summary, both editable after. Truthfulness review by tester: all claims grounded (Deloitte Technology Analyst, LLM-assisted workflows, REST orchestration, data-prep pipelines, Pega/Informatica MDM, Prana.ai). "Real-time ML deployment" judged a fair generalization of <0.8s medical & <500ms X-Plane inference — grounded, not fabricated. No invented employers/tools/metrics/achievements.
-- ✅ **T-RES-10** Generate-intro with an almost-empty résumé → graceful "add experience first" message (no crash).
+- ⬜ **T-RES-10** Generate-intro with an almost-empty résumé → graceful "add experience first" message (no crash).
   - Notes: **FAIL → FIXED → re-tested PASS (P2).** Friendly message now shows ("Add some experience, projects, or education first — the AI writes your intro from what's already on your résumé.") instead of raw pydantic errors. Cause: endpoint took `payload: MasterResume`, so FastAPI's strict body validation failed *before* the friendly guard ran. Fix: endpoint accepts raw content, substitutes placeholder basics (never used/echoed), salvages blank/partial entries like import, and returns the friendly message only when there's no real experience/projects/education; empty bullets pruned client- + server-side so a stray row can't drop a real entry. **UX follow-up (also fixed):** the message first rendered cramped in a narrow column left of the button — restructured the Headline & summary block so the heading + button share one row and the message spans full-width below a hairline divider.
-- ✅ **T-RES-11** **Save** → success; new résumé appears in the list; set as **Default** works.
+- ⬜ **T-RES-11** **Save** → success; new résumé appears in the list; set as **Default** works.
   - Notes: PASS. Save → success; appears in list; first résumé auto-marked Default with the badge shown correctly.
 
 ### 4.3 Analyze / score / versions / render
-- ✅ **T-RES-12** Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
+- ⬜ **T-RES-12** Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
   - Notes: PASS. Modal showed overall 88/100, grade Excellent, ATS 100, per-metric breakdown (quantified impact, action verbs, impact statements, concise bullets, readability, completeness, recruiter-friendly) + findings. **UX backlog (not failures):** modal feels narrow so suggestions don't fully breathe / some suggestion cards look cut off; add a collapsible explanation under each breakdown item. → Issue #12.
-- ✅ **T-RES-13** **Rewrite** (job-agnostic AI improvement) → shows before/after + diff + guardrail report; **nothing saved** until you accept; save as a new **version**.
+- ⬜ **T-RES-13** **Rewrite** (job-agnostic AI improvement) → shows before/after + diff + guardrail report; **nothing saved** until you accept; save as a new **version**.
   - Notes: PASS. Before/after section-by-section, bullet-by-bullet confidence report (Verified / Likely), nothing auto-applied, Discard vs "Accept & save version" with a cost estimate. **UX backlog (P3, Issue #13):** widen the modal (75–85% vp); word-level diff highlighting (insert/remove/modify); tooltip explaining Verified vs Likely; explain the score change (e.g. 88→84 "prioritised readability/action verbs over quantified impact").
-- ✅ **T-RES-14** **Versions** list; open a past version; **restore** it.
+- ⬜ **T-RES-14** **Versions** list; open a past version; **restore** it.
   - Notes: PASS (functional) + **fixed a real labeling bug**. Restore is correctly **append-only** — verified in DB: nothing deleted, version numbers immutable. BUT labels were attached to the wrong version: `snapshot_current` stamped the *outgoing* content with the *incoming* change's label, so the original import showed as "AI rewrite". **Fixed:** added `ResumeProfile.label` (live-content label, migration `d3e4f5a6b7c8`); snapshots now inherit the label of the content they freeze; create → "Imported résumé"/"Original draft", rewrite → "AI rewrite", restore → "Restored from vN"; history modal now shows the live version's label. Verified replay → v1 "Imported résumé", v2 "AI rewrite", live v3 "Restored from v1". (Your existing MHR_ML résumé keeps its old legacy labels — re-import + redo rewrite/restore to see the corrected history.)
-- ✅ **T-RES-15** **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
+- ⬜ **T-RES-15** **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
   - Notes: PASS. PDF/DOCX/LaTeX all valid; PDF opens clean; content complete (p1 summary/education/experience, p2 projects/skills). **On the 2 pages:** expected — the résumé is now *longer because the P0 fix restored all 3 experience entries + 2 projects* (before, experience was dropped, so it fit on 1 page). Complete content > 1 page. Not a regression; noted as P3 layout-tuning backlog (Issue #14) if a 1-page density is desired.
-- ✅ **T-RES-16** Long résumé name **truncates** in the list (doesn't break the row).
+- ⬜ **T-RES-16** Long résumé name **truncates** in the list (doesn't break the row).
   - Notes: PASS. Runtime row layout intact (buttons aligned, no wrap/overflow). Confirmed at code level too: name span is `max-w-[16rem] truncate` inside a `min-w-0` parent (so truncate actually engages in the flex row), card is `flex-wrap` (buttons wrap rather than overflow), and names are capped at 120 chars server-side — so even a max-length name truncates with an ellipsis and can't break the row.
 - ⬜ **T-RES-17** **One-page fit is the default** (resolves backlog #14): a new/edited résumé fits a **single page** by default — the renderer auto-tightens spacing (escalating a compaction density to a readable floor) across **preview, exports, and tailored versions**. The editor checkbox is now **"Allow more than one page"** (checked = let it run onto a second page), default **off**. Existing résumés were migrated on. *(Verified: the real master résumé compacts 2 pages → 1 under one-page fit.)*
   - Notes:
@@ -203,11 +210,11 @@ Confirms the app is up before deep testing.
 
 ## 5. Templates  (`/templates`)
 
-- ✅ **T-TMPL-01** Four templates shown: **Modern · ATS · Minimal · Academic**.
+- ⬜ **T-TMPL-01** Four templates shown: **Modern · ATS · Minimal · Academic**.
   - Notes: PASS. All four render with preview thumbnail, name, and description; consistent, no layout issues.
-- ✅ **T-TMPL-02** Click a template → **preview modal** renders *your default résumé* in that template as a PDF.
+- ⬜ **T-TMPL-02** Click a template → **preview modal** renders *your default résumé* in that template as a PDF.
   - Notes: PASS. Modal opens, default résumé renders in an embedded PDF viewer (thumbnails, zoom/print/download, Download PDF). **UX backlog (P3, Issue #16):** modal too narrow (want 85–90% vp); PDF-viewer chrome dominates → collapsible thumbnail pane + higher default zoom; backdrop blur inconsistent near top.
-- ✅ **T-TMPL-03** Preview each of the four; the modal caps to the viewport and scrolls (no lost close button).
+- ⬜ **T-TMPL-03** Preview each of the four; the modal caps to the viewport and scrolls (no lost close button).
   - Notes: PASS. All four preview correctly; modal stable; no crashes/render failures.
 - 🔧 **T-TMPL-04** Apply/select a template for a résumé → subsequent renders use it.
   - Notes: **FAIL → FIXED (P2).** "Use in builder" was a dead `<Link to="/resumes">` — it navigated away and never applied the template, so the résumé kept Modern. Fix: replaced with a **"Use this template"** button that PATCHes the résumé's `template` (presentation-only → no version churn), shows a success toast, invalidates the résumé list (badge updates), and closes the modal; shows "Current template" (disabled) when already applied. Backend confirmed: `render_resume_file` defaults to `profile.template`, so subsequent Preview/Export use it. **Re-test.**
@@ -219,7 +226,7 @@ Confirms the app is up before deep testing.
 ### 6.1 Recommended feed & search
 - 🔧 **T-JOB-01** Land on Job Search with an **empty search box** → a **"Recommended for your profile"** banner + roles matched to your résumé (e.g. Machine Learning Engineer), not random jobs.
   - Notes: **FAIL → FIXED (P1).** Feed was empty ("No matching roles right now"). Two causes: (a) `search_jobs` filtered by a **verbatim substring** of the whole query, so the résumé-derived seed "technology analyst machine learning" matched 0 postings; (b) a narrow seed could strand the feed empty. Fixes: (1) token-aware filter — a posting matches the full phrase **or** all significant query tokens; (2) recommended feed now **seeds from career-profile `preferred_roles`** (what you're targeting) → résumé positioning → broad recent pool, picking the first that the boards actually carry, never empty. Verified live: feed now opens on **Machine Learning Engineer @ Qualcomm (79%)** + ML Grad roles @ TikTok (68/67%), fit-ranked, granular scores. **Re-test.**
-- ✅ **T-JOB-02** Search **"machine learning engineer"** → relevant results; the grid **does not blank to a spinner** — old results stay with a subtle fade while loading.
+- ⬜ **T-JOB-02** Search **"machine learning engineer"** → relevant results; the grid **does not blank to a spinner** — old results stay with a subtle fade while loading.
   - Notes: PASS. "machine learning engineer" → relevant results (Qualcomm ML Engineer, TikTok ML Grad roles) with company/location/match score/tags/source/Tailor action; grid faded rather than blanking to a spinner.
 - ⬜ **T-JOB-03** Footer shows **"Aggregated from GitHub · Arbeitnow · …"** (multiple real sources).
   - Notes:
@@ -227,23 +234,23 @@ Confirms the app is up before deep testing.
   - Notes:
 
 ### 6.2 Cards & interactions
-- ✅ **T-JOB-05** Each card: **company logo** (or clean initials fallback), title, company, location, **match ring** (color by score, verdict), skill chips, "Posted · source".
+- ⬜ **T-JOB-05** Each card: **company logo** (or clean initials fallback), title, company, location, **match ring** (color by score, verdict), skill chips, "Posted · source".
   - Notes: PASS. Cards show company logo (initials fallback), title, company, location, match ring + verdict, skill chips, and "Posted · source".
 - ⬜ **T-JOB-06** **Flip** a card (↻ top-right) → quick analysis (strengths ✓ / gaps ⚠ / interview chance); flip back.
   - Notes:
-- ✅ **T-JOB-07** **Save** (bookmark) a job → persists across reloads; saving one job doesn't mark others saved.
+- ⬜ **T-JOB-07** **Save** (bookmark) a job → persists across reloads; saving one job doesn't mark others saved.
   - Notes: PASS. Save → bookmark persists across reopen/reload; saving one job doesn't mark others (keyed by job identity, not shared ""). **Saved-state visibility improved**: card bookmark and modal button now use a filled brand accent + filled icon when saved, so bookmarked roles are easy to scan.
-- ✅ **T-JOB-08** **View More** → centered modal with tabs **Overview · Match Analysis · Requirements · Recruiters**; each renders; ✕ / Esc / click-outside close it.
+- ⬜ **T-JOB-08** **View More** → centered modal with tabs **Overview · Match Analysis · Requirements · Recruiters**; each renders; ✕ / Esc / click-outside close it.
   - Notes: PASS. View More modal with tabs Overview · Match Analysis · Requirements · Recruiters (each renders); Tailor/Save/Interview-chance; ✕/Esc/click-outside close; search state preserved. **Backdrop fixed**: this modal is bespoke and had missed the shared-Modal backdrop fix — now `bg-black/70 backdrop-blur-md`, z-90, consistent with the rest. **UX backlog #19**: convert to a right-side drawer (list + details side-by-side).
 - ⬜ **T-JOB-09** No fake data: cards/modal should **not** show a hardcoded "Full Time" or invented fields.
   - Notes:
-- ✅ **T-JOB-10** Filters: **Remote only** toggle and **Sort: Best match / Newest** change the list.
+- ⬜ **T-JOB-10** Filters: **Remote only** toggle and **Sort: Best match / Newest** change the list.
   - Notes: PASS. Remote-only toggle filters to remote roles (Quora/Ancestry ML roles); Sort Best match/Newest reorders instantly; smooth, no reload or flicker.
 - ⬜ **T-JOB-12** **Feed filters** (new): the **Filters** pill opens a panel with **Must include** and **Exclude from title** (comma-separated). Add `must include: python, remote` → only postings with both survive; add `exclude: senior, staff` → those titles drop. The pill shows a dot (•) while a filter is active. (Salary floor is intentionally absent — the free boards don't expose salary.)
   - Notes:
 
 ### 6.3 Hand-off to tailoring
-- ✅ **T-JOB-11** Click **Tailor Resume** (card or modal) → routes to New Application pre-filled with that job. (Continue in Section 7.)
+- ⬜ **T-JOB-11** Click **Tailor Resume** (card or modal) → routes to New Application pre-filled with that job. (Continue in Section 7.)
   - Notes: PASS. Tailor Resume (card/modal) → routes to New Application pre-filled: default résumé (MHR_ML), From-URL mode with the job URL inserted; Paste-text + optional cover-letter options present. Context preserved through navigation. (Continues in Section 7.)
 
 ---
@@ -253,9 +260,9 @@ Confirms the app is up before deep testing.
 ### 7.1 Create
 - ⬜ **T-TLR-01** `/new`: **Master résumé** dropdown shows your default; **From URL / Paste text** toggle; **Also draft a cover letter** checkbox.
   - Notes:
-- ✅ **T-TLR-02** Paste an **Ashby/Greenhouse/Lever** job URL (e.g. `jobs.ashbyhq.com/…`) → **Tailor my résumé** → it fetches via the ATS API (no "couldn't read" error) and starts the run.
+- ⬜ **T-TLR-02** Paste an **Ashby/Greenhouse/Lever** job URL (e.g. `jobs.ashbyhq.com/…`) → **Tailor my résumé** → it fetches via the ATS API (no "couldn't read" error) and starts the run.
   - Notes: PASS. Ashby/Quora job URL fetched via the ATS API (no "couldn't read" error); tailoring run started.
-- ✅ **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
+- ⬜ **T-TLR-03** Paste a **JS-heavy board** URL (e.g. `jobs.bytedance.com/…`) → friendly **"couldn't read that link — paste the text instead"** (graceful, no junk application).
   - Notes: **PASS (re-tested after fix).** Unavailable/unsupported postings now hit the graceful failure path — no misleading application is created. **Was FAIL (P2):** A ByteDance URL to an unavailable posting still created an application + tailored — the scraper only rejected pages under 120 chars, and the expired/JS-shell stub cleared that. **Fix:** `scraper._reject_reason` now blocks a fetched page **before** any Job/Application is created when it (a) says "enable JavaScript", (b) is under ~50 words, or (c) is a short page carrying a closed/expired/"no longer available"/404 notice — returning *"We couldn't read a usable job description from that link — … Open the posting to check it's still live, or paste the text here instead."* A full, real JD that merely mentions "no longer" is not falsely rejected. Pending re-test with the ByteDance link.
 - ⬜ **T-TLR-04** **Paste text** mode with a real JD → run.
   - Notes:
@@ -265,25 +272,25 @@ Confirms the app is up before deep testing.
   - Notes:
 
 ### 7.2 Run & progress
-- ✅ **T-TLR-06** After submit → redirect to the Application page showing **live progress** (Reading job → Tailoring → Typesetting). Completes in ~30–60s.
+- ⬜ **T-TLR-06** After submit → redirect to the Application page showing **live progress** (Reading job → Tailoring → Typesetting). Completes in ~30–60s.
   - Notes: PASS. Submit → redirect to Application page; tailoring completed; result shows tailored résumé, match score, guardrails, keyword analysis, quality breakdown, change diff, and downloads (PDF/LaTeX/package) + regenerate.
-- ✅ **T-TLR-07** During the run the page doesn't flash blank "Loading…" repeatedly.
+- ⬜ **T-TLR-07** During the run the page doesn't flash blank "Loading…" repeatedly.
   - Notes: PASS. Progress transitioned smoothly through the stages; no blank loading screen, no page flashes/navigation glitches; landed directly in the completed workspace.
 
 ### 7.3 Result & review
-- ✅ **T-TLR-08** **Résumé quality scorecard** appears: overall /100 + bars (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness · Truthfulness). Numbers make sense for the role's fit.
+- ⬜ **T-TLR-08** **Résumé quality scorecard** appears: overall /100 + bars (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness · Truthfulness). Numbers make sense for the role's fit.
   - Notes: PASS. Scorecard shown (overall 58, keyword match 53%, per-metric bars). **Keyword match is honest, not a bug**: guardrails block any keyword the résumé doesn't support, so 53% = ~half the job's ATS keywords genuinely in your background; the rest are real gaps (listed in Match/Requirements). It can't be inflated by stuffing.
-- ✅ **T-TLR-09** **Changes** tab: before→after diff is accurate; a harmless skill *regroup* is not reported as "deleted everything".
+- ⬜ **T-TLR-09** **Changes** tab: before→after diff is accurate; a harmless skill *regroup* is not reported as "deleted everything".
   - Notes: PASS. Changes tab is strong — original vs tailored, **word-level highlighting**, experience reordering, skills added/removed, guardrail transparency. **New:** added a **"Final résumé"** 5th tab so you can review the finished PDF inline without downloading (user request).
-- ✅ **T-TLR-10 (P0 check)** **Guardrails** tab: locks shown; any flagged/removed claims are genuinely unsupported. **Read the tailored bullets** — every claim traces to your résumé or brag bank. If a brag-bank fact (e.g. **$50K pre-seed**, leadership, containerized deployment) is surfaced, confirm it's *yours* and not invented.
+- ⬜ **T-TLR-10 (P0 check)** **Guardrails** tab: locks shown; any flagged/removed claims are genuinely unsupported. **Read the tailored bullets** — every claim traces to your résumé or brag bank. If a brag-bank fact (e.g. **$50K pre-seed**, leadership, containerized deployment) is surfaced, confirm it's *yours* and not invented.
   - Notes: PASS (P0). Confidence: 14 Likely / 1 Review; each bullet carries level + explanation + source role. The one flagged bullet ("LLM-driven categorization…") was correctly surfaced (not in master). Locks enforced (employers/titles/dates/schools/GPA/project names/contacts/awards). No fabricated employers/dates/metrics/credentials/tech. **UX backlog (P3):** the "Likely" label is overloaded — covers both stylistic rewording ("Built"→"Engineered") and semantic rewrites. Consider splitting into **Verified** (unchanged/directly traceable) · **Reworded** (style only) · **Review** (semantic addition).
-- ✅ **T-TLR-11** **Match / Requirements** tabs render coverage sensibly.
+- ⬜ **T-TLR-11** **Match / Requirements** tabs render coverage sensibly.
   - Notes: PASS. Match/Requirements render coverage sensibly; keyword 53% is honest coverage (see T-TLR-08).
-- ✅ **T-TLR-12** **Download** the tailored **PDF** and the **package** (zip) — open the PDF, it's clean and reflects the changes.
+- ⬜ **T-TLR-12** **Download** the tailored **PDF** and the **package** (zip) — open the PDF, it's clean and reflects the changes.
   - Notes: PASS. PDF + zip download cleanly; PDF reflects the tailoring. **Enhanced (per suggestion):** the package is now a **true session export** — `resume.pdf`, `resume.tex`, `cover_letter.{pdf,tex}` (when present), `resume.json`, `job_description.txt`, `report.txt`, `guardrails.json`, `changes.diff`, and `match_analysis.json` (scorecard + job signals). Structured files are best-effort so a bad blob never breaks the download.
-- ✅ **T-TLR-13** **Two-stage lift:** tailor to a role slightly outside your core (e.g. a backend/distributed-systems JD). The engine should surface your genuinely-relevant backend evidence (REST, distributed, Postgres) — relevance/keywords higher than a naive pass, still truthful.
+- ⬜ **T-TLR-13** **Two-stage lift:** tailor to a role slightly outside your core (e.g. a backend/distributed-systems JD). The engine should surface your genuinely-relevant backend evidence (REST, distributed, Postgres) — relevance/keywords higher than a naive pass, still truthful.
   - Notes: PASS (★★★★★ truthfulness/alignment/guardrails). Backend JD → headline + Deloitte/DRDO/USC bullets re-emphasized to REST APIs, distributed systems, ETL/pipelines, Node.js/MongoDB — all genuinely present. Guardrails **blocked** invented AWS/NoSQL/new entries and reverted unsupported summary adds; **flagged** "Cloud Infrastructure"/"LLM-driven"/skill renames for review. **Observation → RESOLVED (option b, see T-TLR-18):** the flagged **headline/summary** now **strips** unsupported terms outright (in strict mode) instead of surfacing them — so "Cloud Infrastructure" is removed and the line stays fully supported.
-- ✅ **T-TLR-14** **Retry** on a failed/blocked run re-runs; **Delete** an application removes it (and it disappears from the board + dashboard funnel).
+- ⬜ **T-TLR-14** **Retry** on a failed/blocked run re-runs; **Delete** an application removes it (and it disappears from the board + dashboard funnel).
   - Notes: PASS. "Regenerate this tailoring" re-ran the pipeline cleanly; deleting the disposable app removed it from the list with no orphaned entries. No UI/persistence/sync issues.
 - ⬜ **T-TLR-18** **Headline/summary term-strip** (strict mode, option b): tailor to a JD that tempts an unsupported buzzword (e.g. "Cloud Infrastructure") → the **headline and summary come out with that term removed** and the separators tidied (no dangling "&"/"|"), rather than showing it with a review flag. A term you *do* support stays. (Bullets and cover letters keep the softer flag-and-keep.)
   - Notes:
@@ -293,27 +300,27 @@ Confirms the app is up before deep testing.
   - Notes:
 
 ### 7.4 Application workspace  (Application detail → tabs: Overview · Documents · Activity · Notes · Emails · Analytics)  ⭐ new engine
-- ✅ **T-WS-01** **Overview → Workflow** card: vertical status stepper (funnel) shows the current stage; **mark a new status** (e.g. Applied → Interviewing) and it **persists on reload** and updates the tracker board + dashboard funnel.
+- ⬜ **T-WS-01** **Overview → Workflow** card: vertical status stepper (funnel) shows the current stage; **mark a new status** (e.g. Applied → Interviewing) and it **persists on reload** and updates the tracker board + dashboard funnel.
   - Notes: PASS. Status change updated the stepper; persisted across refresh; reflected in both the Applications board and the Dashboard funnel. Smooth, no data-consistency issues.
-- ✅ **T-WS-01a** **Overview docs → Résumé (Tailored) "Preview"**: opens the tailored résumé (matches the downloadable PDF). *(Currently routes to the **Résumé** tab, then shows the preview — functional; P3 backlog: open the preview directly / smooth-scroll to it instead of the visible tab hop.)*
+- ⬜ **T-WS-01a** **Overview docs → Résumé (Tailored) "Preview"**: opens the tailored résumé (matches the downloadable PDF). *(Currently routes to the **Résumé** tab, then shows the preview — functional; P3 backlog: open the preview directly / smooth-scroll to it instead of the visible tab hop.)*
   - Notes: PASS (with P3 UX note above).
-- ✅ **T-WS-01b** **Overview docs → Job description "View"** (FIXED, was P2): opens the **stored JD in an in-app modal** (title · company · location · full text) with an **"Open original ↗"** link — it no longer navigates away to the external posting. Works for paste-text apps (no URL) too; Esc/backdrop/× close it.
+- ⬜ **T-WS-01b** **Overview docs → Job description "View"** (FIXED, was P2): opens the **stored JD in an in-app modal** (title · company · location · full text) with an **"Open original ↗"** link — it no longer navigates away to the external posting. Works for paste-text apps (no URL) too; Esc/backdrop/× close it.
   - Notes: **Was ⚠️ partial (opened external URL, left the app).** Now in-context.
-- ✅ **T-WS-01c** **Overview docs → Résumé source "Open"** (FIXED, was P3): opens the **master résumé in an in-app modal** (name · headline · summary · experience/projects/skills/education, read-only) with an **"Edit in Résumés"** link — it no longer yanks you to the Résumés list. Esc/backdrop/× close it, returning to the workspace.
+- ⬜ **T-WS-01c** **Overview docs → Résumé source "Open"** (FIXED, was P3): opens the **master résumé in an in-app modal** (name · headline · summary · experience/projects/skills/education, read-only) with an **"Edit in Résumés"** link — it no longer yanks you to the Résumés list. Esc/backdrop/× close it, returning to the workspace.
   - Notes: **Was ⚠️ partial (navigated to the Résumés page, lost context).** Now in-context.
-- ✅ **T-WS-02** **AI Résumé Quality** card (redesigned): large **gradient score ring** (draws clockwise on load) + a verdict pill (**Needs work → Fair → Good → Excellent**, colored by tier) + a friendly one-liner. A **2×2 metric grid** (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness), each tile with an icon, a score-colored **progress bar** (fills from 0 on load), the real detail line, and a status pill. **"Every claim verified"** shows under the ring when guardrails are clean. **How we score** toggles an honest explanation.
+- ⬜ **T-WS-02** **AI Résumé Quality** card (redesigned): large **gradient score ring** (draws clockwise on load) + a verdict pill (**Needs work → Fair → Good → Excellent**, colored by tier) + a friendly one-liner. A **2×2 metric grid** (Job-fit keywords · Quantified impact · Action-verb strength · Conciseness), each tile with an icon, a score-colored **progress bar** (fills from 0 on load), the real detail line, and a status pill. **"Every claim verified"** shows under the ring when guardrails are clean. **How we score** toggles an honest explanation.
   - Notes: PASS. Ring 94/100 → "Excellent" pill + "Outstanding — tuned tightly to the role"; "Every claim verified" shown; 2×2 grid with icon/bar/detail/pill (incl. "Not measured" for keywords). **Backlog (P3):** (1) make the score ring clickable → scroll to metric detail; (2) hover tooltips on metric tiles (why it matters / how recruiters read it); (3) **metric trend** after regenerations (↑ +8 Job-fit, ↓ -2 Verbs).
-- ✅ **T-WS-02a** **Micro-interactions:** hovering a metric tile **lifts** it and swaps the detail line for **"Improve with AI →"**; tiles are keyboard-focusable (visible ring). With OS "reduce motion" on, animations don't play.
+- ⬜ **T-WS-02a** **Micro-interactions:** hovering a metric tile **lifts** it and swaps the detail line for **"Improve with AI →"**; tiles are keyboard-focusable (visible ring). With OS "reduce motion" on, animations don't play.
   - Notes: PASS. Hover lifts/highlights; detail swaps to "Improve with AI →"; Tab focus shows a visible ring; no interaction glitches.
-- ✅ **T-WS-02b** **Improve your score** panel: real gaps from *this* résumé (names actual clichés / missing keywords / bullet counts), each with a hue-matched **"Improve with AI →"**. Stacks vertically on a narrow window.
+- ⬜ **T-WS-02b** **Improve your score** panel: real gaps from *this* résumé (names actual clichés / missing keywords / bullet counts), each with a hue-matched **"Improve with AI →"**. Stacks vertically on a narrow window.
   - Notes: PASS. Suggestions were genuine (e.g. résumé clichés), not generic; each had "Improve with AI →"; clean, scannable, no layout issues. *(Design note: earlier "divided-row" layout was replaced by the compact row list.)*
-- ✅ **T-WS-02c** **Metric fix panel (⭐ per-metric workspace):** click a metric tile (or a suggestion) → a **right-side slide-over** opens listing the exact items behind that score — e.g. **Quantified impact** lists your un-quantified bullets (with their role); **Job-fit keywords** lists the real missing terms. **Esc** or clicking the backdrop closes it; a strong metric shows *"Nothing to fix here."*
+- ⬜ **T-WS-02c** **Metric fix panel (⭐ per-metric workspace):** click a metric tile (or a suggestion) → a **right-side slide-over** opens listing the exact items behind that score — e.g. **Quantified impact** lists your un-quantified bullets (with their role); **Job-fit keywords** lists the real missing terms. **Esc** or clicking the backdrop closes it; a strong metric shows *"Nothing to fix here."*
   - Notes: PASS. Panel opened with concrete per-metric items; Esc / backdrop / × all close it; strong metrics show nothing to fix.
-- ✅ **T-WS-02d** **Fix in place:** in the panel, hit the action (**Add metric / Strengthen / Shorten / Insert**) on an item → it drafts a **grounded diff** shown inline → **Apply** updates the résumé + PDF (toast), and the score/ring behind the panel moves; **Discard** leaves it. Re-open the panel → applied items drop off the list.
+- ⬜ **T-WS-02d** **Fix in place:** in the panel, hit the action (**Add metric / Strengthen / Shorten / Insert**) on an item → it drafts a **grounded diff** shown inline → **Apply** updates the résumé + PDF (toast), and the score/ring behind the panel moves; **Discard** leaves it. Re-open the panel → applied items drop off the list.
   - Notes: PASS. Inline Original → Proposed diff with word-level highlighting (can span Headline/Summary/Projects); Apply + Discard both present. "PR / Suggested-Edits" review model felt trustworthy. **Backlog (P3):** (1) a **"Changes proposed" summary** at the top of long proposals (✓ Headline · ✓ Summary · ✓ USC Ledger) that jumps to each section; (2) **per-section accept/reject** instead of all-or-nothing Apply/Discard.
-- ✅ **T-WS-02e (P0 check)** **Panel stays truthful:** try **Insert** on a keyword you have no experience for → the AI returns **"no truthful change"** (or the claim is listed **blocked**), never a fabricated bullet. "Add metric" never invents a number.
+- ⬜ **T-WS-02e (P0 check)** **Panel stays truthful:** try **Insert** on a keyword you have no experience for → the AI returns **"no truthful change"** (or the claim is listed **blocked**), never a fabricated bullet. "Add metric" never invents a number.
   - Notes: PASS (P0). "Improve with AI" proposed a *wording* strengthening (Original→Proposed diff, inline highlights) — no fabricated employer/tool/cert/metric introduced. **P3 idea:** show a small **provenance badge** on each AI-inserted phrase ("Supported by: USC Ledger" / "Brag Bank #12") so the source of every addition is transparent. **Regression candidate:** watch that an added *outcome* clause (e.g. "eliminating manual risk triage") is itself supported by the résumé/brag bank, not just free of new nouns/numbers.
-- ✅ **T-WS-02f** **Keyword honesty:** the header **"Keyword match"** and the **Job-fit keywords** tile never treat the **company name** as a missing keyword. If a posting yields no real ATS keywords, keyword fit shows **"Not measured"** (grey, not a red 0) and is **excluded from the overall** — and the AI chat doesn't claim you're "missing" the employer's name.
+- ⬜ **T-WS-02f** **Keyword honesty:** the header **"Keyword match"** and the **Job-fit keywords** tile never treat the **company name** as a missing keyword. If a posting yields no real ATS keywords, keyword fit shows **"Not measured"** (grey, not a red 0) and is **excluded from the overall** — and the AI chat doesn't claim you're "missing" the employer's name.
   - Notes: PASS. Job-fit keywords → "Not measured" / "No job keywords found in this posting" (not a red 0); company name not treated as a missing keyword; with no real issues left, the improve panel showed "Your résumé is in great shape — nothing to fix right now."
 - ⬜ **T-WS-02g** **Panel close animation:** the fix panel **slides out** to the right on close (Esc / backdrop / ✕), not an instant disappear. With OS "reduce motion" on, it closes instantly.
   - Notes:
@@ -329,21 +336,21 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-WS-06 (P0 check)** Apply only ever writes **truthful** content: the applied résumé contains nothing the guardrails would block — every surviving claim traces to your résumé or brag bank.
   - Notes:
-- ✅ **T-WS-07** **Cover letter** card (Overview): shows **Open** + **Download**; **Open** goes to the Cover Letter tab (stays on this application). Generate/regenerate works; reads as a real letter.
+- ⬜ **T-WS-07** **Cover letter** card (Overview): shows **Open** + **Download**; **Open** goes to the Cover Letter tab (stays on this application). Generate/regenerate works; reads as a real letter.
   - Notes: PASS. Open → Cover Letter tab; Download works; stays associated with the application. **P3 (UX):** like the résumé Preview, "Open" changes tabs — consider opening in a modal, or renaming to "Go to Cover Letter" so it reads as navigation. *(Same P3 tracked for the résumé Preview tab-hop.)*
-- ✅ **T-WS-08** **Emails** tab (Draft Outreach workspace): pick a **kind** (recruiter email / follow-up / referral) + a **connection source** (Cold / Referral / Community / Met at event / They reached out) + optional recipient/context → **Draft message** → short, specific, truthful; right panel shows an empty state until drafted. Draft actions: **Copy**, **Gmail ↗**, **Outlook ↗** (compose prefilled).
+- ⬜ **T-WS-08** **Emails** tab (Draft Outreach workspace): pick a **kind** (recruiter email / follow-up / referral) + a **connection source** (Cold / Referral / Community / Met at event / They reached out) + optional recipient/context → **Draft message** → short, specific, truthful; right panel shows an empty state until drafted. Draft actions: **Copy**, **Gmail ↗**, **Outlook ↗** (compose prefilled).
   - Notes: PASS. The guide's old "list of stored emails" is superseded by this generate-in-context workspace (better). **Done (P3):** Gmail/Outlook one-click compose added next to Copy. **P3 backlog:** (1) a **draft history** (keep past drafts instead of replacing) with date/kind; (2) **live preview** as you type recipient/context.
-- ✅ **T-WS-09** **Analytics** tab (rebuilt into a cost dashboard): four **headline stats** — Total cost, Total tokens, **AI calls**, **Avg cost / call**. Then a two-up row: **Cost by category** bars (Résumé tailoring & edits · Cover letter · Outreach, each `$cost · tokens` + proportional bar) and a **Token distribution donut** (input-read vs. output-written, with `≈ $/1K tokens`). Below: a **By model** breakdown (model + provider chip, calls, in/out tokens, cost, share bar) and an **AI activity** timeline — every AI call charged to the app, newest-first, with step label, model, tokens, cost, latency. All from per-call `LlmUsage` rows via `GET /applications/{id}/usage`; deterministic, no LLM.
+- ⬜ **T-WS-09** **Analytics** tab (rebuilt into a cost dashboard): four **headline stats** — Total cost, Total tokens, **AI calls**, **Avg cost / call**. Then a two-up row: **Cost by category** bars (Résumé tailoring & edits · Cover letter · Outreach, each `$cost · tokens` + proportional bar) and a **Token distribution donut** (input-read vs. output-written, with `≈ $/1K tokens`). Below: a **By model** breakdown (model + provider chip, calls, in/out tokens, cost, share bar) and an **AI activity** timeline — every AI call charged to the app, newest-first, with step label, model, tokens, cost, latency. All from per-call `LlmUsage` rows via `GET /applications/{id}/usage`; deterministic, no LLM.
   - Notes: PASS. **Built all four P3 power-user items** (timeline · cost-efficiency `$/call` + `$/1K` · per-model · token donut). Also linked synchronous calls (cover letter / revise / outreach) to their application so they appear in the timeline (were previously unlinked). **Bugfix surfaced by tests:** `category_for` matched a bare `cover` substring, so `plan_coverage` (a résumé step) was mis-bucketed under **Cover letter** — now matched precisely; stored breakdowns self-correct on the next re-tailor.
 - ⬜ **T-WS-10** **Analytics is additive & categorized:** note the total, then run an action — generate outreach (T-WS-08) or a cover letter (T-WS-07). Re-open Analytics → the **total grew** *and* the **matching category** (Outreach / Cover letter) increased by that action's cost; other categories unchanged. Re-tailoring the résumé **resets** the Résumé category (fresh run), not the others.
   - Notes:
-- ✅ **T-WS-11** **Activity** tab (FIXED, was FAIL): a **real event log**, newest-first with an icon + timestamp per event — **Application created**, **Résumé tailored / regenerated**, **Résumé improved** (with a ▲/▼ overall-score delta), **Cover letter generated/updated**, and **Status changed** (from→to). Not just "created / last updated".
+- ⬜ **T-WS-11** **Activity** tab (FIXED, was FAIL): a **real event log**, newest-first with an icon + timestamp per event — **Application created**, **Résumé tailored / regenerated**, **Résumé improved** (with a ▲/▼ overall-score delta), **Cover letter generated/updated**, and **Status changed** (from→to). Not just "created / last updated".
   - Notes: **Was ❌ FAIL** (only showed created + last-updated). Now records the real history. *(Apps tailored before the log fall back to their created timestamp.)*
-- ✅ **T-WS-12** **Notes** tab (FIXED, was PARTIAL): a **timestamped notes log**, not one overwrite-everything textarea. **Add** a note → it appears with a date/time; each note has **Edit** and **Delete**; multiple notes accumulate newest-first and persist on reload. Any pre-existing single note was **migrated** into the first entry.
+- ⬜ **T-WS-12** **Notes** tab (FIXED, was PARTIAL): a **timestamped notes log**, not one overwrite-everything textarea. **Add** a note → it appears with a date/time; each note has **Edit** and **Delete**; multiple notes accumulate newest-first and persist on reload. Any pre-existing single note was **migrated** into the first entry.
   - Notes: **Was ⚠️ partial** (single textarea, no history). Now add/edit/delete individual timestamped entries.
-- ✅ **T-WS-13** **Provenance badge** (backlog, done): in **Résumé → Guardrails**, each kept bullet shows its **source entry** label + a grounding badge — **✓ Résumé** or **✦ Brag bank** (the latter when it surfaces a number you attested in the brag bank) — so the origin of every line is explicit.
+- ⬜ **T-WS-13** **Provenance badge** (backlog, done): in **Résumé → Guardrails**, each kept bullet shows its **source entry** label + a grounding badge — **✓ Résumé** or **✦ Brag bank** (the latter when it surfaces a number you attested in the brag bank) — so the origin of every line is explicit.
   - Notes:
-- ✅ **T-WS-14** **Dates & reminders** (Notes tab): set an **Interview date** and **Follow-up reminder** (save on blur) → both **persist on reload** and stay tied to the application. A non-blocking **warning** appears if the reminder is set *after* the interview (catches a date swap; post-interview follow-ups are still allowed).
+- ⬜ **T-WS-14** **Dates & reminders** (Notes tab): set an **Interview date** and **Follow-up reminder** (save on blur) → both **persist on reload** and stay tied to the application. A non-blocking **warning** appears if the reminder is set *after* the interview (catches a date swap; post-interview follow-ups are still allowed).
   - Notes: PASS. Both persist across refresh; picker works. **Done (P3):** reminder-after-interview warning added.
 
 ---
@@ -392,16 +399,16 @@ Confirms the app is up before deep testing.
   - Notes: **Bugfix (was silently broken):** the guardrail ran the *résumé* injected-keyword check on cover-letter paragraphs, and the **company name is itself an ATS keyword** — so every paragraph naming the company (the hook **and** the close, which exist to do exactly that) was **dropped**, leaving only résumé-restating middle paragraphs. Now cover-letter paragraphs **keep + flag** posting terms (invented *numbers* still hard-drop; résumé fields unchanged). Verified on the real Qualcomm app: hook/close now survive.
 
 ### 9.2 Cover Letter workspace  (Application → **Cover Letter** tab)
-- ✅ **T-CLW-01** **Generate** a cover letter from the tab: grounded in the tailored résumé + the job, associated with the application, no errors.
+- ⬜ **T-CLW-01** **Generate** a cover letter from the tab: grounded in the tailored résumé + the job, associated with the application, no errors.
   - Notes: PASS (user run). Grounded in real experience (Prana.ai, Deloitte, 5M+ volumes, 35+ countries, 10×, 92%). **Quality fix shipped:** stronger opening + proper closing + explicit "why this team" connections now come through (they were being stripped — see T-CL-09), and the value paragraphs are prompted to read as narrative, not a résumé restatement.
 - ⬜ **T-CLW-02** **Review**: the preview reads as a real letter (hook → value → close), addressed to the real company.
   - Notes:
-- ✅ **T-CLW-03** **Edit model** (partial → by design): there is no manual rich-text editor; editing is **AI-assisted via natural-language feedback** in the Refine panel. Deliberate product choice, not a defect — the guide's "edit manually" wording is what's stale.
+- ⬜ **T-CLW-03** **Edit model** (partial → by design): there is no manual rich-text editor; editing is **AI-assisted via natural-language feedback** in the Refine panel. Deliberate product choice, not a defect — the guide's "edit manually" wording is what's stale.
   - Notes: Accepted as intended. (If we ever want literal inline editing, that's a separate feature — not required for pass.)
-- ✅ **T-CLW-04** **Refine with feedback** (was **FAIL** ×2): typing feedback rewrites the letter, grounded, and the preview now **actually refreshes** to show it.
+- ⬜ **T-CLW-04** **Refine with feedback** (was **FAIL** ×2): typing feedback rewrites the letter, grounded, and the preview now **actually refreshes** to show it.
   - Notes: **FIXED — real root cause was a stale PDF cache, not the model.** Verified server-side on the real Qualcomm app: refinement genuinely reworks the letter (the reworked intro was **0/4 paragraphs identical**, reframed to "Qualcomm's Machine Learning team requires…"). But artifacts are regenerated **in place** at a fixed path and `FileResponse` sent ETag/Last-Modified with **no `Cache-Control`**, so the browser served the **old cached PDF** after every regenerate/refine — it only *looked* unchanged. Fix: `Cache-Control: no-store` on downloads + `fetch(cache:'no-store')` + cache-bust the preview URL per refresh. Also made the revision prompt **fully rewrite** the targeted paragraph so the change is unmistakable, and kept the honest no-op message for genuine "nothing to change" cases. **One-time:** hard-refresh (⌘⇧R) once to drop any already-cached PDF; fresh headers keep it current after that.
 
-- ✅ **T-CL-VERIFY** **Truthfulness audit** of the flagged phrases (user asked): checked each against the master résumé **+ brag bank**.
+- ⬜ **T-CL-VERIFY** **Truthfulness audit** of the flagged phrases (user asked): checked each against the master résumé **+ brag bank**.
   - **Grounded (correctly kept):** `Docker` ✓, `Welch's two-sample t-tests` ✓, `44%` ✓, `2,500 samples` ✓, `chain-of-thought` ✓, `few-shot` ✓ — all present in the docs, so the letter is standing on real evidence (the 44% / t-test / 2,500 claim traces straight to the brag bank).
   - **One interpretive phrase:** `hardware-aware optimizations` is **not** in the docs verbatim. It's framing of real work (INT8 quantization, low-latency inference), not a fabricated fact — no invented number/tool/employer — so the guardrails (which deliberately allow cover-letter *reframing*) keep it. Fair characterization; the user's call before sending.
   - **Gap found + closed:** cover-letter guardrail flags weren't surfaced anywhere (the Guardrails panel shows the *résumé* report). Saved letters now **store + show** the cover-letter guardrail report, so kept-as-context terms are visible.
@@ -442,17 +449,17 @@ Confirms the app is up before deep testing.
   - Notes:
 - ⬜ **T-INT-01b** **Prepare for: [application]** selector (new): the top of the question generator lists your applications. Choosing one (e.g. **Qualcomm · Machine Learning Engineer**) **auto-fills role & company, borrows that app's résumé**, and **grounds the questions in the job posting's keywords**; a **Custom — standalone prep** option keeps manual entry. (Backend already accepted `application_id`; this exposes it — the P2 you logged.)
   - Notes:
-- ✅ **T-INT-02** Ask for a **STAR answer** (incl. technical/hypothetical) → returns **Situation / Task / Action / Result**, anchored in your real experience.
+- ⬜ **T-INT-02** Ask for a **STAR answer** (incl. technical/hypothetical) → returns **Situation / Task / Action / Result**, anchored in your real experience.
   - Notes: PASS. Connected Prana.ai 3D-CNN + Vimaan INT8 work to a plausible Snapdragon/NPU deployment approach. Per the coaching standard, a *constructed* hypothetical scenario is acceptable. **Prompt now prefers natural "If I were deploying this…" framing** for hypotheticals (the answer-quality nit you raised).
-- ✅ **T-INT-03 (behavioral / brag-bank)** A behavioral STAR answer **anchors** in a genuine experience (DRDO team, CFD/PyFluent, Python/MATLAB, Z-score filtering, regression) and **constructs** the narrative fill (delegation, disagreement, validation, consensus) into an interview-ready story. Attested specifics stay truthful.
+- ⬜ **T-INT-03 (behavioral / brag-bank)** A behavioral STAR answer **anchors** in a genuine experience (DRDO team, CFD/PyFluent, Python/MATLAB, Z-score filtering, regression) and **constructs** the narrative fill (delegation, disagreement, validation, consensus) into an interview-ready story. Attested specifics stay truthful.
   - Notes: PASS. Desirable behavior under the coaching philosophy — real anchor + realistic constructed narrative.
-- ✅ **T-INT-04** **Answer in my voice** (was FAIL — missing control): the question generator now has an **"Answer in my voice"** toggle. When on, drafted STAR/technical answers keep their content and structure but adapt **wording, sentence shape, and tone** to your saved Writing Voice (facts unchanged). Labeled "Answer" (not "Write") since these are spoken. Backend already honored `use_voice`; the UI just hardcoded it — now it's a real, default-on toggle.
+- ⬜ **T-INT-04** **Answer in my voice** (was FAIL — missing control): the question generator now has an **"Answer in my voice"** toggle. When on, drafted STAR/technical answers keep their content and structure but adapt **wording, sentence shape, and tone** to your saved Writing Voice (facts unchanged). Labeled "Answer" (not "Write") since these are spoken. Backend already honored `use_voice`; the UI just hardcoded it — now it's a real, default-on toggle.
   - Notes:
 - ⬜ **T-INT-05** Answer to a question about experience you *don't* have → it stays honest (doesn't invent) or picks the closest real experience.
   - Notes:
 - ⬜ **T-INT-06** **Coaching standard (not résumé verification):** Interview Prep prioritizes strong, realistic, technically sound *practice* answers. It's free to **infer/construct/simulate** plausible detail (collaboration, delegation, reasoning, hypothetical approach) that would never appear in a résumé — anchored in your real background (real employers, projects, tech), never relocating the story to a fake employer or claiming a credential you lack. Hypotheticals get **more** latitude (reason about tools the question raises). The **only** advisory left is a light **"know your numbers"** nudge: a *standalone* figure the résumé/brag bank can't back is surfaced so you can defend it — and it **ignores digits inside tech names** (3D, INT8, S3, GPT-4), so it doesn't nag. *(Supersedes the earlier borrowed-tool guard, which was too strict for constructed hypotheticals.)*
   - Notes:
-- ⚠️→✅ **T-INT-07** **Skill-gap semantic matching** (was PARTIAL — too literal): the skill resolver now credits **demonstrated** skills even when the exact umbrella keyword is absent — **REST API orchestration → REST APIs**, **MongoDB → NoSQL**, **latency/throughput/quantization work → Performance optimization** — plus plural/word-form tolerance ("REST APIs" ← "REST API"). It does **not** over-credit: AWS/GCP/Azure, Kafka/RabbitMQ, Kubernetes, Microservices, CI/CD stay genuine gaps. Fix lives in `_claims`, so it improves the cross-job report **and** every per-job match. Verified on real data.
+- ⬜ **T-INT-07** **Skill-gap semantic matching** (was PARTIAL — too literal): the skill resolver now credits **demonstrated** skills even when the exact umbrella keyword is absent — **REST API orchestration → REST APIs**, **MongoDB → NoSQL**, **latency/throughput/quantization work → Performance optimization** — plus plural/word-form tolerance ("REST APIs" ← "REST API"). It does **not** over-credit: AWS/GCP/Azure, Kafka/RabbitMQ, Kubernetes, Microservices, CI/CD stay genuine gaps. Fix lives in `_claims`, so it improves the cross-job report **and** every per-job match. Verified on real data.
   - Notes:
 - ⬜ **T-INT-08** **Per-application skill fit** (new): with **Prepare for → an application** selected, a **"How you fit this role"** panel appears above the questions — overall match + verdict, **Strengths to lead with**, and **Gaps worth prepping** ranked by JD importance (● = high priority). Uses the deterministic match (now semantic). Thin postings with no extractable skills show a soft note pointing to the cross-job view; the existing **Skill gaps across your saved jobs** aggregate is retained below.
   - Notes:
