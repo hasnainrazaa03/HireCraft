@@ -789,10 +789,23 @@ class GuardrailEngine:
                 self.requirements.all_keywords() if self.requirements else []
             ),
             keywords_verified=self._verify_keywords(result),
-            keywords_reached=sorted(self.keywords_reached),
+            # Recorded while vetting, but a reach bullet can still be evicted
+            # afterwards by the per-entry bullet cap. Keep only the keywords that
+            # actually survive onto the final page — coverage must describe the
+            # document the candidate sends, not what the model proposed.
+            keywords_reached=self._surviving_reached(result),
             bullet_confidence=self.confidence,
         )
         return result, report
+
+    def _surviving_reached(self, resume: MasterResume) -> list[str]:
+        """Reach-kept keywords still present in the final résumé text."""
+        if not self.keywords_reached:
+            return []
+        haystack = _resume_text(resume).lower()
+        return sorted(
+            term for term in self.keywords_reached if _mentions(haystack, term.lower())
+        )
 
     def _backfill_verified(self, result: MasterResume) -> None:
         """Add a Verified verdict for every final bullet not already judged."""

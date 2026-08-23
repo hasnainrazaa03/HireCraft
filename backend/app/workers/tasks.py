@@ -131,8 +131,11 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
         application.guardrail_report = outcome.guardrail_report.model_dump(mode="json")
         # Store the cover-letter paragraphs (not just the rendered PDF) so the
         # Cover Letter tab's refine-with-feedback has the text to work from.
-        if outcome.cover_letter:
-            application.cover_letter = outcome.cover_letter
+        # Assigned unconditionally: this run's cover-letter artifacts replaced the
+        # previous run's (they were deleted above), so keeping old paragraphs when
+        # a re-tailor produces none would leave text with no matching PDF — and
+        # feed that stale text into the refine flow.
+        application.cover_letter = outcome.cover_letter
         # Reset the cost rollup: a fresh (or retried) tailoring replaces everything.
         accrue_usage(application, outcome.usage.entries, reset=True)
         application.pipeline_status = PipelineStatus.COMPLETED

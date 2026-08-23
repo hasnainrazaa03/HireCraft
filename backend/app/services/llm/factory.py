@@ -119,14 +119,18 @@ def client_for_user(user: User, *, provider: str | None = None, model: str | Non
 _FAST_GEMINI_MODEL = "gemini-flash-latest"
 
 
-def fast_client_for_user(user: User) -> LlmClient:
-    """A cheap client for mechanical steps. Prefers Gemini Flash on any available
-    Gemini key (the user's or the server's); falls back to the user's primary
-    client when no Gemini key exists — so callers can use it unconditionally.
+def fast_client_for_user(user: User) -> LlmClient | None:
+    """A cheap client for the pipeline's mechanical steps: Gemini Flash on any
+    available Gemini key (the user's or the server's).
 
-    When the primary provider is itself Gemini this returns an equivalent client,
-    so nothing changes; the split only kicks in for premium primaries (Claude/GPT)."""
+    Returns ``None`` when no Gemini key exists, so the caller falls back to the
+    primary client *itself* rather than an equivalent-but-distinct instance —
+    otherwise run_pipeline's "did the cheap step fail?" identity check can't tell
+    the two apart and retries the same provider pointlessly.
+
+    When the primary provider is itself Gemini the split is a no-op in practice;
+    it only changes behavior for premium primaries (Claude/GPT)."""
     key = user_key(user, "gemini") or _SERVER_KEY["gemini"]()
     if key:
         return build_client("gemini", model=_FAST_GEMINI_MODEL, api_key=key)
-    return client_for_user(user)
+    return None

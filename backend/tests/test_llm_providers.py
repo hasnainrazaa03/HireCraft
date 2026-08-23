@@ -206,3 +206,34 @@ def test_generate_structured_still_validates(make_client):
 
     with pytest.raises(LlmResponseError):
         make_client().generate_structured(prompt="x", schema=MasterResume)
+
+
+def test_fast_client_is_none_without_a_gemini_key(monkeypatch):
+    """Without a Gemini key the cheap client must be None, not an equivalent copy
+    of the primary — run_pipeline's `fast is client` check relies on identity to
+    avoid pointlessly retrying the same provider after a genuine failure."""
+    from app.services.llm import factory
+
+    monkeypatch.setattr(factory, "_SERVER_KEY", {**factory._SERVER_KEY, "gemini": lambda: None})
+    monkeypatch.setattr(factory, "user_key", lambda user, provider: None)
+
+    class U:
+        llm_provider = "anthropic"
+        llm_model = "claude-sonnet-5"
+
+    assert factory.fast_client_for_user(U()) is None
+
+
+def test_fast_client_uses_gemini_flash_when_a_key_exists(monkeypatch):
+    from app.services.llm import factory
+
+    monkeypatch.setattr(factory, "_SERVER_KEY", {**factory._SERVER_KEY, "gemini": lambda: "k"})
+    monkeypatch.setattr(factory, "user_key", lambda user, provider: None)
+
+    class U:
+        llm_provider = "anthropic"
+        llm_model = "claude-sonnet-5"
+
+    client = factory.fast_client_for_user(U())
+    assert client is not None
+    assert client.model == "gemini-flash-latest"

@@ -640,3 +640,26 @@ def test_keyword_coverage_counts_reach_kept():
         keywords_requested=["Docker"], keywords_verified=["Docker"], keywords_reached=[]
     )
     assert strict.keyword_coverage == 1.0
+
+
+def test_reach_keyword_evicted_by_bullet_cap_is_not_credited(master, experience_id):
+    """A reach bullet can be dropped afterwards by the per-entry bullet cap. Its
+    keyword must not still count toward coverage — the score has to describe the
+    résumé that actually gets sent."""
+    from app.schemas.job import JobRequirements
+    from app.schemas.tailoring import TailoredEntry, TailoringResult
+    from app.services.llm.guardrails import GuardrailEngine, _resume_text
+
+    entry = next(e for e in master.experience if e.id == experience_id)
+    reqs = JobRequirements.model_validate({"ats_keywords": ["Kubernetes"]})
+    # The master's own bullets (so they survive vetting) plus one extra carrying
+    # the unearned keyword — one more than the entry allows, so the cap evicts it.
+    highlights = [*entry.highlights, "Ran services on Kubernetes in production"]
+    result = TailoringResult(
+        experience=[TailoredEntry(id=experience_id, highlights=highlights)]
+    )
+    tailored, report = GuardrailEngine(master, reqs, reach=True).apply(result)
+
+    assert "kubernetes" not in _resume_text(tailored).lower()  # evicted by the cap
+    assert "Kubernetes" not in report.keywords_reached  # …so not credited
+    assert report.keyword_coverage == 0.0

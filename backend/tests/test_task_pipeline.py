@@ -245,3 +245,25 @@ def test_a_missing_api_key_fails_the_run_without_retrying(sessions, monkeypatch)
         application = db.get(Application, uuid.UUID(application_id))
         assert application.pipeline_status is PipelineStatus.FAILED
         assert "Anthropic" in application.error_message
+
+
+def test_retailoring_without_a_cover_letter_clears_the_old_one(sessions, stub_llm):
+    """Re-tailoring deletes the previous run's cover-letter artifacts, so stale
+    paragraphs must go too — otherwise the tab shows text with no matching PDF
+    and the refine flow revises a letter written for an older résumé."""
+    import app.workers.tasks as tasks
+
+    application_id = _seed(sessions, cover=True)
+    tasks.run_tailoring_task.run(application_id)
+    with sessions() as db:
+        application = db.get(Application, uuid.UUID(application_id))
+        assert application.cover_letter  # first run stored paragraphs
+        application.include_cover_letter = False  # user turns it off
+        db.commit()
+
+    tasks.run_tailoring_task.run(application_id)
+    with sessions() as db:
+        application = db.get(Application, uuid.UUID(application_id))
+        kinds = {a.kind.value for a in application.artifacts}
+        assert "cover_letter_pdf" not in kinds  # artifacts gone…
+        assert not application.cover_letter  # …and so are the paragraphs
