@@ -202,15 +202,41 @@ def _role_profile(resume: MasterResume) -> list[str]:
     """
     parts: list[str] = []
     for e in resume.experience:
-        parts += _content_tokens(e.title) * 3
+        # Seniority and employment-type words say nothing about the domain, and
+        # they crowd it out at x3: "Founding Engineer (Part-time)" contributed
+        # founding/part/time, and "AI Software Engineer Intern" contributed
+        # intern — so a generic "Junior Software Engineer" posting matched a
+        # machine-learning résumé perfectly while an ML posting did not.
+        parts += [t for t in _content_tokens(e.title) if t not in _ROLE_NOISE] * 3
     parts += _content_tokens(resume.basics.headline or "") * 2
     for g in resume.skills:
+        # The GROUP NAME carries the domain ("ML & Deep Learning", "CV & NLP");
+        # the items under it are mostly product names (PyTorch, YOLO11) that
+        # never appear in a job title. Without the categories a résumé could hold
+        # no trace of the words "machine learning" at all.
+        parts += _content_tokens(g.category) * 2
         parts += _content_tokens(" ".join(g.items))
     for e in resume.experience:
         parts += [t for tech in e.technologies for t in _content_tokens(tech)]
+    for pr in resume.projects:
+        parts += _content_tokens(pr.name)
     for ed in resume.education:
         parts += _content_tokens(ed.field_of_study or "")
     return parts
+
+
+# Role words so common across engineering postings that matching them says little
+# about domain fit. A title built only from these can't claim a perfect match.
+_GENERIC_ROLE_WORDS = frozenset({
+    "software", "engineer", "engineering", "developer", "development", "technology",
+    "technical", "programmer", "analyst", "specialist", "professional", "member",
+    "technologist", "consultant", "i", "ii", "iii", "1", "2", "3",
+})
+_GENERIC_TITLE_CEILING = 65.0
+
+
+# Words in a past job title that describe employment shape, not domain.
+_ROLE_NOISE = _SENIORITY_WORDS | frozenset({"part", "full", "time", "contract", "freelance", "co", "op"})
 
 
 # Job-title level → the candidate level it best fits, on a 0..4 ladder.
@@ -260,9 +286,22 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
     profile_set = set(profile)
     title_tokens = [t for t in _content_tokens(title) if t not in _SENIORITY_WORDS]
     if title_tokens:
-        overlap = sum(1 for t in set(title_tokens) if t in profile_set) / len(set(title_tokens))
+        # Score the DOMAIN words, not the filler. "Software Engineer" is two words
+        # nearly every engineering résumé contains, so counting them made a
+        # generic posting a perfect match for an ML candidate while "Machine
+        # Learning Engineer" — whose domain words are the whole point — scored a
+        # third of that. When a title carries domain words, they decide the
+        # alignment; a title made only of generic role words can reach at most
+        # _GENERIC_TITLE_CEILING, because it genuinely says little.
+        distinct = set(title_tokens)
+        domain = distinct - _GENERIC_ROLE_WORDS
         cos = _tf_cosine(title_tokens, profile)
-        title_align: float | None = max(overlap, cos) * 100
+        if domain:
+            overlap = sum(1 for x in domain if x in profile_set) / len(domain)
+            title_align: float | None = max(overlap, cos) * 100
+        else:
+            overlap = sum(1 for x in distinct if x in profile_set) / len(distinct)
+            title_align = min(_GENERIC_TITLE_CEILING, max(overlap, cos) * 100)
     else:
         title_align = None
 
@@ -275,7 +314,17 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
         skill_cov = None
 
     # --- Signal 3: full-text similarity over shared content vocabulary.
-    text_sim = min(100.0, _tf_cosine(_content_tokens(job_text), profile) * 260)
+    # Only when there is real body text. Aggregator feeds (the Simplify lists)
+    # carry title/company/location and no description at all, and then this
+    # "document" is just the title again: a three-token text trivially scores
+    # ~100 against any profile containing those words, double-counting Signal 1
+    # and handing description-less postings the highest scores in the feed.
+    body = (job_text or "")[len(title or "") :].strip()
+    text_sim: float | None = (
+        min(100.0, _tf_cosine(_content_tokens(job_text), profile) * 260)
+        if len(body) >= 200
+        else None
+    )
 
     # --- Signal 4: seniority fit.
     jl = _title_level(title)
@@ -306,12 +355,16 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
     # it never masquerades as a strong match. Graduated, not a step, so the final
     # score varies smoothly rather than snapping between bands.
     jd_len = len(_content_tokens(job_text))
+    # A description is what makes a score trustworthy, so it dominates. Previously
+    # the flat baseline plus the title bonus reached 0.72 with no description at
+    # all, so a bare title kept ~three-quarters of its (inflated) raw score and
+    # outranked real matches whose full posting honestly exposed gaps.
     evidence = min(
         1.0,
-        0.4
-        + (0.32 if title_tokens else 0.0)
-        + min(0.18, 0.06 * len(present))
-        + min(0.10, jd_len / 400),
+        0.25
+        + (0.15 if title_tokens else 0.0)
+        + min(0.25, 0.06 * len(present))
+        + min(0.35, jd_len / 900),
     )
     neutral = 42.0
     precise = max(6.0, min(98.0, neutral + (raw - neutral) * evidence))
@@ -335,7 +388,7 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
         factors={
             "title_alignment": round(title_align, 1) if title_align is not None else -1.0,
             "skill_coverage": round(skill_cov, 1) if skill_cov is not None else -1.0,
-            "text_similarity": round(text_sim, 1),
+            "text_similarity": round(text_sim, 1) if text_sim is not None else -1.0,
             "skill_breadth": round(breadth, 1),
             "seniority_fit": round(seniority, 1),
             "confidence": round(evidence, 2),

@@ -235,3 +235,60 @@ def test_claims_resolves_semantic_and_plural_skills():
     assert not _claims("Kubernetes", corpus, vocab)
     assert not _claims("Kafka", corpus, vocab)
     assert not _claims("AWS", corpus, vocab)
+
+
+def _ml_resume() -> MasterResume:
+    """An ML engineer whose past job TITLES are generic ("Software Engineer
+    Intern", "Technology Analyst") — the case that exposed the scoring bugs."""
+    import copy
+
+    data = copy.deepcopy(MASTER_RESUME_FIXTURE)
+    data["basics"]["headline"] = None
+    data["basics"]["summary"] = None
+    data["experience"][0]["title"] = "AI Software Engineer Intern"
+    data["skills"] = [
+        {"category": "ML & Deep Learning", "items": ["PyTorch", "YOLO11", "DistilBERT"]},
+        {"category": "CV & NLP", "items": ["Object Detection", "Slot Filling"]},
+    ]
+    return MasterResume.model_validate(data)
+
+
+def test_a_description_less_posting_cannot_top_a_real_match():
+    """Aggregator feeds carry title/company/location and no description. Scoring
+    the bare title as if it were the body made a generic 'Junior Software
+    Engineer' outrank every genuinely matching posting in the feed."""
+    from app.services.matching import analyze_job_fit
+
+    resume = _ml_resume()
+    ml_jd = (
+        "Machine Learning Engineer to build and deploy deep learning models with "
+        "PyTorch, computer vision, model training and evaluation, served in "
+        "production with Docker. Requires Python and strong ML fundamentals."
+    )
+    bare = analyze_job_fit(resume, "Junior Software Engineer", title="Junior Software Engineer")
+    real = analyze_job_fit(resume, f"Machine Learning Engineer\n{ml_jd}", title="Machine Learning Engineer")
+    assert real.score > bare.score
+    # And the thin one is explicitly low-confidence.
+    assert bare.factors["confidence"] < real.factors["confidence"]
+
+
+def test_generic_role_words_are_not_a_perfect_title_match():
+    """'Software Engineer' is two words nearly every engineering résumé contains,
+    so matching them must not read as a perfect domain alignment."""
+    from app.services.matching import analyze_job_fit
+
+    resume = _ml_resume()
+    generic = analyze_job_fit(resume, "Software Engineer", title="Software Engineer")
+    assert generic.factors["title_alignment"] <= 65.0
+
+
+def test_role_profile_knows_the_candidate_does_ml():
+    """The domain lives in the skill GROUP names and the títle's non-noise words;
+    without them an ML résumé held no trace of 'learning' at all."""
+    from app.services.matching import _role_profile
+
+    profile = _role_profile(_ml_resume())
+    assert "learning" in profile  # from the "ML & Deep Learning" group
+    assert "ai" in profile  # from the real part of the job title
+    # Employment-shape words must not crowd out the domain.
+    assert "intern" not in profile
