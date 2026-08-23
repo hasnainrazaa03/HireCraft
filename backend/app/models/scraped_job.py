@@ -66,13 +66,9 @@ class ScrapedJob(Base, TimestampMixin):
     track_scores: Mapped[dict[str, Any]] = mapped_column(JsonB, default=dict, nullable=False)
     reasons: Mapped[list[str]] = mapped_column(JsonB, default=list, nullable=False)
 
-    # --- HireCraft's own deterministic résumé match ------------------------
-    match_score: Mapped[int | None] = mapped_column(Integer)
-    match_verdict: Mapped[str | None] = mapped_column(String(32))
-    interview_chance: Mapped[str | None] = mapped_column(String(16))
-    match_summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    strengths: Mapped[list[str]] = mapped_column(JsonB, default=list, nullable=False)
-    gaps: Mapped[list[str]] = mapped_column(JsonB, default=list, nullable=False)
+    # NOTE: fit is deliberately not stored. A score written at scrape time is
+    # against whichever résumé was default then and goes stale the moment the
+    # user adds or edits one, so the feed computes it live per résumé instead.
 
     # --- lifecycle ---------------------------------------------------------
     first_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -445,15 +445,14 @@ def _utcnow():
 def scrape_job_feed_task() -> dict[str, int]:
     """Every few hours: pull public ATS boards and refresh each user's job feed.
 
-    Costs nothing — every source is a public JSON endpoint and the fit scoring is
-    deterministic, so no LLM call and no API key are involved. The scrape runs
-    once and its results are scored per user, rather than re-fetching per user.
+    Costs nothing: every source is a public JSON endpoint, no LLM involved. The
+    scrape runs once and its results are shared across users. Résumé fit is not
+    computed here — the feed scores live against whichever résumé is being
+    viewed, so a stored score can't go stale.
     """
     from sqlalchemy import select
 
-    from app.models.resume import ResumeProfile
     from app.models.user import User
-    from app.schemas.resume import MasterResume
     from app.services.jobfeed import persist, scrape
 
     try:
@@ -466,18 +465,7 @@ def scrape_job_feed_task() -> dict[str, int]:
     with session_scope() as db:
         users = db.execute(select(User).where(User.is_active.is_(True))).scalars().all()
         for user in users:
-            # Score against the user's default résumé so the feed's fit numbers
-            # mean something; without one the postings still land, unscored.
-            profile = db.execute(
-                select(ResumeProfile)
-                .where(ResumeProfile.user_id == user.id)
-                .order_by(ResumeProfile.is_default.desc())
-            ).scalars().first()
-            resume = None
-            if profile is not None:
-                with contextlib.suppress(Exception):
-                    resume = MasterResume.model_validate(profile.content)
-            counts = persist(db, user.id, jobs, resume=resume)
+            counts = persist(db, user.id, jobs)
             totals["users"] += 1
             for key in ("new", "updated", "deactivated"):
                 totals[key] += counts[key]

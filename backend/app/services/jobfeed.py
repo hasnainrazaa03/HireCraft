@@ -5,9 +5,11 @@ then upserts into ``scraped_jobs`` instead of writing SQLite/Excel. Postings tha
 stop appearing are marked inactive rather than deleted, so a role the user was
 looking at doesn't disappear mid-decision.
 
-Each posting also gets HireCraft's own deterministic résumé match, so the feed
-shows one number that agrees with the rest of the app alongside the scraper's
-track recommendation ("send MHR_ML").
+Fit is deliberately NOT computed here. A score stored at scrape time is against
+whichever résumé happened to be default then, and goes stale the moment the user
+adds or edits one — so the feed endpoint scores live against the résumé being
+viewed instead. This also keeps the scheduled run cheap: no per-user scoring pass
+over thousands of postings.
 """
 
 from __future__ import annotations
@@ -20,12 +22,10 @@ import yaml
 
 from app.core.logging import get_logger
 from app.models.scraped_job import ScrapedJob
-from app.schemas.resume import MasterResume
 from app.services.jobscraper.filters import SENIOR_RE, Filters
 from app.services.jobscraper.models import Job
 from app.services.jobscraper.scorer import Scorer
 from app.services.jobscraper.sources import collect, dedupe
-from app.services.matching import analyze_job_fit
 
 logger = get_logger(__name__)
 
@@ -99,33 +99,18 @@ def scrape(
     return kept, stats
 
 
-def _match(job: Job, resume: MasterResume | None):
-    """HireCraft's deterministic fit analysis for a posting (no LLM, no API key).
-
-    Uses ``analyze_job_fit`` rather than ``match_resume_to_job``: a scraped posting
-    has no structured requirements, and scoring against an empty requirement set
-    returns a vacuous 100 for everything. This reads the actual description.
-    """
-    if resume is None:
-        return None
-    try:
-        return analyze_job_fit(resume, f"{job.title}\n{job.description}", title=job.title)
-    except Exception:  # noqa: BLE001 - a scoring hiccup must not fail the run
-        return None
-
-
 def persist(
     db,  # noqa: ANN001 - Session; typed loosely to avoid an import cycle
     user_id,  # noqa: ANN001 - uuid.UUID
     jobs: list[Job],
     *,
-    resume: MasterResume | None = None,
     deactivate_missing: bool = True,
 ) -> dict[str, int]:
     """Upsert this run's postings for one user; returns {new, updated, deactivated}.
 
     A posting is identified by the scraper's own content fingerprint, so re-seeing
     it refreshes ``last_seen`` (and any changed detail) rather than duplicating.
+    Résumé fit is not stored — see the module docstring.
     """
     now = datetime.now(UTC)
     existing = {
@@ -138,7 +123,6 @@ def persist(
     for job in jobs:
         fingerprint = job.id
         seen.add(fingerprint)
-        fit = _match(job, resume)
         row = existing.get(fingerprint)
         if row is None:
             row = ScrapedJob(
@@ -171,13 +155,6 @@ def persist(
         row.track_score = int(job.score or 0)
         row.track_scores = dict(job.track_scores or {})
         row.reasons = list(job.reasons or [])
-        if fit is not None:
-            row.match_score = fit.score
-            row.match_verdict = fit.verdict
-            row.interview_chance = fit.interview_chance
-            row.match_summary = fit.summary
-            row.strengths = list(fit.strengths or [])[:12]
-            row.gaps = list(fit.gaps or [])[:12]
         row.last_seen = now
         row.active = True
 

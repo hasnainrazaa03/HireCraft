@@ -276,12 +276,12 @@ def _feed_row_to_result(row: ScrapedJob, fit: dict | None = None) -> JobSearchRe
         snippet=(row.description or "")[:400],
         source=row.source,
         created_at=int(row.posted_at.timestamp()) if row.posted_at else None,
-        match_score=fit["score"] if fit else row.match_score,
-        verdict=fit["verdict"] if fit else row.match_verdict,
-        interview_chance=fit["interview_chance"] if fit else row.interview_chance,
-        summary=(fit["summary"] if fit else row.match_summary) or None,
-        strengths=list((fit["strengths"] if fit else row.strengths) or []),
-        gaps=list((fit["gaps"] if fit else row.gaps) or []),
+        match_score=fit["score"] if fit else None,
+        verdict=fit["verdict"] if fit else None,
+        interview_chance=fit["interview_chance"] if fit else None,
+        summary=(fit["summary"] if fit else None) or None,
+        strengths=list((fit["strengths"] if fit else []) or []),
+        gaps=list((fit["gaps"] if fit else []) or []),
         level=row.level,
         bucket=row.bucket or None,
         terms=list(row.terms or []),
@@ -390,17 +390,27 @@ def job_feed(
 
     rows = db.execute(stmt).scalars().all()
 
-    resume: MasterResume | None = None
+    # Fall back to the user's default résumé rather than showing no score: fit is
+    # only computed here (nothing is stored at scrape time), so without this an
+    # unparameterised request would return unscored cards.
+    profile = None
     if resume_id is not None:
         profile = db.get(ResumeProfile, resume_id)
         if profile is None or profile.user_id != user.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Résumé not found.")
-        resume = MasterResume.model_validate(profile.content)
+    else:
+        profile = db.execute(
+            select(ResumeProfile)
+            .where(ResumeProfile.user_id == user.id)
+            .order_by(ResumeProfile.is_default.desc(), ResumeProfile.updated_at.desc())
+        ).scalars().first()
+    resume = MasterResume.model_validate(profile.content) if profile else None
+    scoring_key = str(profile.id) if profile else None
 
     results: list[JobSearchResult] = []
     for row in rows:
-        fit = _fit_cached(str(resume_id), row, resume) if resume else None
-        score = fit["score"] if fit else row.match_score
+        fit = _fit_cached(scoring_key, row, resume) if resume else None
+        score = fit["score"] if fit else None
         if min_score and (score or 0) < min_score:
             continue
         results.append(_feed_row_to_result(row, fit))
