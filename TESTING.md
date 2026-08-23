@@ -7,6 +7,27 @@
 > reference for what was found and fixed last time — treat them as history, not
 > as current results.
 
+## Automated sweep (`scripts/autotest.py`)
+
+An API-level regression sweep you can run any time against the running stack:
+
+```bash
+docker compose exec -T api python scripts/autotest.py --email you@example.com          # free
+docker compose exec -T api python scripts/autotest.py --email you@example.com --paid   # + LLM paths (~$0.20)
+```
+
+It drives the same HTTP endpoints the frontend calls, so it catches logic and
+data bugs — which is where every defect found by hand so far actually lived. It
+does **not** click the UI, so rendering and interaction still need a human: a
+case marked `⬜` below is still yours to verify even if the sweep covers its
+data. Cases whose *substance* the sweep verifies are marked **[auto]**; tick
+them yourself once you've also eyeballed the screen.
+
+Latest run: **22 passed · 0 real failures · 1 skipped**. (The sweep reports its
+own rate-limiting as a skip rather than a failure — a harness that cries wolf
+gets ignored.)
+
+
 > A living, click-by-click test plan for the whole product. Work top to bottom,
 > mark each case, and jot findings inline. We'll update this doc as we fix things.
 
@@ -110,7 +131,7 @@ Confirms the app is up before deep testing.
 ## 3. Career Profile  (`/profile`)
 
 ### 3.1 Basics & links
-- ⬜ **T-PROF-01** Edit **Professional headline**, **Location** → **Save changes** → success toast; reload → values persisted.
+- ⬜ **T-PROF-01** **[auto]** career profile persists and reads back. Edit **Professional headline**, **Location** → **Save changes** → success toast; reload → values persisted.
   - Notes: PASS. Saves + persists across reload.
 - ⬜ **T-PROF-02** Fill **LinkedIn / GitHub / Portfolio / Website** with valid URLs → saves. A clearly-invalid URL is rejected with a readable error.
   - Notes: PASS. Valid URLs persist; invalid URL blocked with "Portfolio URL should be a valid URL…". **UX note → Issue #3 (P3):** message is accurate but techy ("relative URL without a base") — could be "Please enter a valid URL (e.g. https://example.com)".
@@ -189,13 +210,13 @@ Confirms the app is up before deep testing.
   - Notes: PASS. Save → success; appears in list; first résumé auto-marked Default with the badge shown correctly.
 
 ### 4.3 Analyze / score / versions / render
-- ⬜ **T-RES-12** Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
+- ⬜ **T-RES-12** **[auto]** analysis returns overall 76/100, ATS 100, 14/15 bullets quantified. Open a résumé's **analysis** (score / grade / ATS checks / per-metric breakdown / findings). Numbers look reasonable.
   - Notes: PASS. Modal showed overall 88/100, grade Excellent, ATS 100, per-metric breakdown (quantified impact, action verbs, impact statements, concise bullets, readability, completeness, recruiter-friendly) + findings. **UX backlog (not failures):** modal feels narrow so suggestions don't fully breathe / some suggestion cards look cut off; add a collapsible explanation under each breakdown item. → Issue #12.
 - ⬜ **T-RES-13** **Rewrite** (job-agnostic AI improvement) → shows before/after + diff + guardrail report; **nothing saved** until you accept; save as a new **version**.
   - Notes: PASS. Before/after section-by-section, bullet-by-bullet confidence report (Verified / Likely), nothing auto-applied, Discard vs "Accept & save version" with a cost estimate. **UX backlog (P3, Issue #13):** widen the modal (75–85% vp); word-level diff highlighting (insert/remove/modify); tooltip explaining Verified vs Likely; explain the score change (e.g. 88→84 "prioritised readability/action verbs over quantified impact").
 - ⬜ **T-RES-14** **Versions** list; open a past version; **restore** it.
   - Notes: PASS (functional) + **fixed a real labeling bug**. Restore is correctly **append-only** — verified in DB: nothing deleted, version numbers immutable. BUT labels were attached to the wrong version: `snapshot_current` stamped the *outgoing* content with the *incoming* change's label, so the original import showed as "AI rewrite". **Fixed:** added `ResumeProfile.label` (live-content label, migration `d3e4f5a6b7c8`); snapshots now inherit the label of the content they freeze; create → "Imported résumé"/"Original draft", rewrite → "AI rewrite", restore → "Restored from vN"; history modal now shows the live version's label. Verified replay → v1 "Imported résumé", v2 "AI rewrite", live v3 "Restored from v1". (Your existing MHR_ML résumé keeps its old legacy labels — re-import + redo rewrite/restore to see the corrected history.)
-- ⬜ **T-RES-15** **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
+- ⬜ **T-RES-15** **[auto]** PDF render verified (35.8 KB, valid `%PDF`); DOCX/LaTeX still need a manual check. **Download** the résumé as **PDF**, **DOCX**, **LaTeX** — all produce valid files; PDF opens and looks clean.
   - Notes: PASS. PDF/DOCX/LaTeX all valid; PDF opens clean; content complete (p1 summary/education/experience, p2 projects/skills). **On the 2 pages:** expected — the résumé is now *longer because the P0 fix restored all 3 experience entries + 2 projects* (before, experience was dropped, so it fit on 1 page). Complete content > 1 page. Not a regression; noted as P3 layout-tuning backlog (Issue #14) if a 1-page density is desired.
 - ⬜ **T-RES-16** Long résumé name **truncates** in the list (doesn't break the row).
   - Notes: PASS. Runtime row layout intact (buttons aligned, no wrap/overflow). Confirmed at code level too: name span is `max-w-[16rem] truncate` inside a `min-w-0` parent (so truncate actually engages in the flex row), card is `flex-wrap` (buttons wrap rather than overflow), and names are capped at 120 chars server-side — so even a max-length name truncates with an ellipsis and can't break the row.

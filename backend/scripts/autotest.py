@@ -58,6 +58,24 @@ class Report:
         return 1 if f else 0
 
 
+def _throttled(res: "httpx.Response") -> bool:
+    """A 429 is the app protecting the user's quota, not a defect. Reported as a
+    skip: a sweep that flags its own rate limiting as a bug teaches you to ignore
+    the sweep."""
+    return res.status_code == 429
+
+
+def _why(res: "httpx.Response", ok_detail: str) -> str:
+    """On failure show what the server actually said, so a red line is
+    actionable instead of just restating the check's name."""
+    if res.status_code == 200:
+        return ok_detail
+    try:
+        return f"HTTP {res.status_code}: {str(res.json().get('detail'))[:110]}"
+    except Exception:  # noqa: BLE001
+        return f"HTTP {res.status_code}"
+
+
 def token_for(email: str) -> str:
     from app.core.security import create_token
     from app.db.session import SessionLocal
@@ -252,8 +270,10 @@ def main() -> int:
                     "include_cover_letter": True,
                 },
             )
+            if _throttled(got):
+                return None, "generation rate limit reached", None
             if got.status_code != 202:
-                return False, f"HTTP {got.status_code}", None
+                return False, _why(got, ""), None
             app_id = got.json()["id"]
             created.append(("/applications", app_id))
             for _ in range(60):
@@ -293,27 +313,35 @@ def main() -> int:
                 "/interview/questions",
                 json={"resume_profile_id": resumes[0]["id"], "count": 4, "categories": []},
             )
+            if _throttled(got):
+                return None, "generation rate limit reached", []
             d = got.json()
             saved = d.get("saved") or []
             for q in saved:
                 created.append(("/interview/saved", q["id"]))
-            return got.status_code == 200 and len(saved) > 0, f"{len(saved)} question(s) saved", saved
+            return len(saved) > 0, _why(got, f"{len(saved)} question(s) saved"), saved
 
         saved_qs = check("interview", "generate + persist questions", _questions) or []
 
         if saved_qs:
             def _answer():
                 got = c.post(f"/interview/saved/{saved_qs[0]['id']}/answer", json={"use_voice": False})
+                if _throttled(got):
+                    return None, "generation rate limit reached", None
                 d = got.json()
                 star = d.get("answer") or {}
-                return got.status_code == 200 and bool(star.get("situation")), "STAR answer stored", None
+                ok = got.status_code == 200 and bool(star.get("situation"))
+                return ok, _why(got, "STAR answer stored"), None
 
             check("interview", "draft + persist a STAR answer", _answer)
 
         def _copilot():
             got = c.post("/copilot/chat", json={"message": "In one sentence, what should I fix first?", "history": []})
+            if _throttled(got):
+                return None, "generation rate limit reached", None
             d = got.json()
-            return got.status_code == 200 and len(d.get("reply", "")) > 20, f"{len(d.get('reply',''))} chars", None
+            ok = got.status_code == 200 and len(d.get("reply", "")) > 20
+            return ok, _why(got, f"{len(d.get('reply',''))} chars"), None
 
         check("copilot", "grounded answer", _copilot)
 
