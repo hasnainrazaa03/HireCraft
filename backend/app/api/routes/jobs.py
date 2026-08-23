@@ -23,6 +23,7 @@ from app.schemas.resume import MasterResume
 from app.services import feature_flags
 from app.services.job_rerank import rerank_jobs
 from app.services.jobsearch import search_jobs
+from app.services.scraper import ScrapeError, scrape_job
 from app.services.llm.client import LlmConfigurationError, LlmError
 from app.services.llm.factory import client_for_user
 from app.services.matching import analyze_job_fit, default_search_query
@@ -462,6 +463,59 @@ def job_feed_stats(user: CurrentUser, db: DbSession) -> dict:
         "by_location": dict(sorted(locations.items(), key=lambda kv: -kv[1])[:20]),
         "last_run": last.isoformat() if last else None,
     }
+
+
+@router.post("/feed/{job_id}/fetch", response_model=JobSearchResult)
+def fetch_feed_description(
+    job_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    resume_id: uuid.UUID | None = None,
+) -> JobSearchResult:
+    """Pull the full posting for a feed row that arrived without one.
+
+    The aggregator lists (most of the feed) carry title/company/location and a
+    link, but no body — so the card has nothing to show and nothing to score
+    against. They do carry the ATS URL, and those are the boards the scraper
+    already reads natively, so the description can be fetched on demand and kept.
+    """
+    row = db.get(ScrapedJob, job_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found.")
+
+    if len(row.description or "") < 200 and row.url:
+        try:
+            scraped = scrape_job(row.url)
+        except ScrapeError as exc:
+            # A dead or JS-only posting isn't an error the user can fix; return
+            # the card unchanged rather than failing the whole modal.
+            logger.info("jobfeed.fetch_failed", url=row.url[:120], error=str(exc)[:160])
+            scraped = None
+        if scraped is not None and scraped.text:
+            row.description = scraped.text[:20000]
+            row.location = row.location or (scraped.location or "")
+            db.commit()
+            db.refresh(row)
+            # The stored fit for this posting was computed from an empty body.
+            with contextlib.suppress(Exception):
+                for key in get_redis().scan_iter(f"jobfit:*:{row.fingerprint}"):
+                    get_redis().delete(key)
+
+    profile = None
+    if resume_id is not None:
+        profile = db.get(ResumeProfile, resume_id)
+        if profile is not None and profile.user_id != user.id:
+            profile = None
+    if profile is None:
+        profile = db.execute(
+            select(ResumeProfile)
+            .where(ResumeProfile.user_id == user.id)
+            .order_by(ResumeProfile.is_default.desc(), ResumeProfile.updated_at.desc())
+        ).scalars().first()
+    fit = None
+    if profile is not None:
+        fit = _fit_cached(str(profile.id), row, MasterResume.model_validate(profile.content))
+    return _feed_row_to_result(row, fit)
 
 
 @router.patch("/feed/{job_id}", response_model=JobSearchResult)

@@ -394,6 +394,7 @@ export default function JobSearchPage() {
 
       {modal && (
         <JobModal
+          resumeId={mode === "feed" ? feedResume : undefined}
           job={modal} saved={saved.has(jobKey(modal))}
           onSave={() => toggleSave(modal)}
           onTailor={() => tailor(modal)}
@@ -553,11 +554,31 @@ function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
 
 type Tab = "overview" | "match" | "requirements" | "recruiters";
 
-function JobModal({ job, saved, onSave, onTailor, onClose }: {
+function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: {
   job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onClose: () => void;
+  /** Résumé the re-fetched posting should be re-scored against. */
+  resumeId?: string;
 }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("overview");
+  // Most feed rows come from aggregator lists that carry no description, so the
+  // card has nothing to show and nothing to score. They do carry the ATS link,
+  // so pull the real posting the moment the user opens one.
+  const [job, setJob] = useState(initial);
+  const [fetching, setFetching] = useState(false);
+  useEffect(() => setJob(initial), [initial]);
+  useEffect(() => {
+    if (!job.id || job.snippet.length >= 200 || fetching) return;
+    setFetching(true);
+    api
+      .post<JobSearchResult>(
+        `/jobs/feed/${job.id}/fetch${resumeId ? `?resume_id=${resumeId}` : ""}`,
+      )
+      .then(setJob)
+      .catch(() => {/* dead link — leave the card as it was */})
+      .finally(() => setFetching(false));
+    // Only on opening a different posting.
+  }, [job.id]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -609,7 +630,7 @@ function JobModal({ job, saved, onSave, onTailor, onClose }: {
         </div>
 
         <div className="p-6">
-          {tab === "overview" && <OverviewTab job={job} onWhy={() => setTab("match")} onImprove={onTailor} />}
+          {tab === "overview" && <OverviewTab job={job} fetching={fetching} onWhy={() => setTab("match")} onImprove={onTailor} />}
           {tab === "match" && <MatchTab job={job} />}
           {tab === "requirements" && <RequirementsTab job={job} />}
           {tab === "recruiters" && <RecruitersTab company={job.company} onDraft={() => { onClose(); navigate("/cover-letters"); }} />}
@@ -623,13 +644,19 @@ function Meta({ icon, children }: { icon: React.ReactNode; children: React.React
   return <span className="inline-flex items-center gap-1.5 text-subtle">{icon}<span className="text-muted">{children}</span></span>;
 }
 
-function OverviewTab({ job, onWhy, onImprove }: { job: JobSearchResult; onWhy: () => void; onImprove: () => void }) {
+function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult; onWhy: () => void; onImprove: () => void; fetching?: boolean }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-5 md:grid-cols-2">
         <div>
           <h3 className="section-title mb-2">About the role</h3>
-          <p className="line-clamp-6 text-sm leading-relaxed text-muted">{job.snippet || "No description available."}</p>
+          <p className="line-clamp-6 text-sm leading-relaxed text-muted">
+            {job.snippet
+              ? job.snippet
+              : fetching
+                ? "Fetching the full posting…"
+                : "This listing didn't include a description, and we couldn't fetch it from the source."}
+          </p>
           {job.url && (
             <a href={job.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-brand-300 hover:text-brand-200">
               View Full Description <IconArrowRight className="h-4 w-4" />
