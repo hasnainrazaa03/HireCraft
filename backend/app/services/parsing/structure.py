@@ -89,10 +89,34 @@ def _repair_url(value: object) -> object:
     return f"https://{v}"
 
 
+# Keys a model sometimes wraps its answer in instead of returning the object.
+_ENVELOPE_KEYS = ("result", "resume", "data", "output", "master_resume", "response")
+
+
+def _unwrap_envelope(payload: dict) -> dict:
+    """Unwrap ``{"result": {...the résumé...}}`` into the résumé itself.
+
+    The schema asks for a MasterResume, but a model intermittently nests it under
+    a wrapper key. Validation then fails twice over — `basics` missing, `result`
+    extra — and the whole import is rejected as unsalvageable even though the
+    parse was perfect. This shape is unambiguous, so repair it rather than
+    failing (or paying for a retry that may wrap it again).
+    """
+    if "basics" in payload:
+        return payload
+    for key in _ENVELOPE_KEYS:
+        inner = payload.get(key)
+        if isinstance(inner, dict) and "basics" in inner:
+            logger.info("parsing.unwrapped_envelope", key=key)
+            return inner
+    return payload
+
+
 def _repair(payload: dict) -> dict:
     """Best-effort repairs so a faithfully-parsed résumé passes strict
     validation: normalize dates, absolutize scheme-less URLs, and pin the
     schema version constant."""
+    payload = _unwrap_envelope(payload)
     payload["schema_version"] = "1.0"
 
     # section_order and entry ids are server-owned, not résumé facts. Now that the

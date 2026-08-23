@@ -231,3 +231,16 @@ def test_import_keeps_a_summary_the_resume_really_has():
     )
     _drop_invented_intro(resume, source)
     assert resume.basics.summary == "ML engineer with 5 years..."
+
+
+def test_repair_unwraps_a_wrapped_resume():
+    """The model intermittently nests its answer under a wrapper key. Validation
+    then fails twice over (basics missing, wrapper extra) and a perfectly good
+    parse is rejected as unsalvageable — so unwrap it instead."""
+    from app.services.parsing.structure import _unwrap_envelope
+
+    wrapped = {"result": {"basics": {"name": "A", "email": "a@example.com"}}}
+    assert "basics" in _unwrap_envelope(wrapped)
+    # An already-correct payload and an unrecognisable one are both left alone.
+    assert "basics" in _unwrap_envelope({"basics": {"name": "A"}})
+    assert _unwrap_envelope({"foo": 1}) == {"foo": 1}
