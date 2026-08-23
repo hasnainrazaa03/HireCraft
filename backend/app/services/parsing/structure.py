@@ -35,6 +35,10 @@ an email, phone, or date that isn't present.
 - Dates must be "YYYY", "YYYY-MM", or "Present". Convert "May 2024" to "2024-05", \
 "2024" stays "2024", "current"/"now" becomes "Present". If a date is unreadable, \
 omit it rather than guess.
+- NEVER write a `summary` or `headline` the résumé does not already contain. If \
+there is no summary/objective/profile section, leave both null — do not compose one \
+from the rest of the résumé. An invented summary silently rewrites the candidate's \
+document and pushes real content off the page.
 - Preserve bullet points verbatim as separate highlight entries.
 - Group skills the way the résumé groups them; if ungrouped, use one "Skills" group.
 - Put work experience in `experience`, personal/side projects in `projects`, and \
@@ -229,6 +233,36 @@ def _drop_offending(payload: dict, exc: ValidationError) -> bool:
     return changed
 
 
+# Headings that introduce a summary/objective block on a real résumé.
+_INTRO_HEADING = re.compile(
+    r"^\s*(professional\s+)?(summary|profile|objective|about(\s+me)?|overview)\s*:?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _drop_invented_intro(resume: MasterResume, source_text: str) -> None:
+    """Clear a summary/headline the source résumé never had.
+
+    The prompt forbids inventing one, but models compose a summary from the rest
+    of the résumé anyway — and that block is expensive: a ~700-character summary
+    is roughly nine rendered lines, enough to push a one-page résumé onto a
+    second page, where the one-page fitter then trims the candidate's REAL
+    bullets to make room for text the app made up. Checking the source is a
+    mechanical guarantee where the instruction wasn't.
+    """
+    if _INTRO_HEADING.search(source_text or ""):
+        return  # the résumé really does have one; keep what was transcribed
+    dropped = []
+    if resume.basics.summary:
+        dropped.append("summary")
+        resume.basics.summary = None
+    if resume.basics.headline:
+        dropped.append("headline")
+        resume.basics.headline = None
+    if dropped:
+        logger.info("parsing.dropped_invented_intro", fields=",".join(dropped))
+
+
 def structure_resume(
     text: str, *, client: LlmClient | None = None
 ) -> tuple[MasterResume, Usage]:
@@ -249,6 +283,7 @@ def structure_resume(
 
     payload = _repair(payload)
     resume = _coerce_valid(payload)
+    _drop_invented_intro(resume, text)
 
     logger.info(
         "parsing.structured",

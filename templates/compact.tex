@@ -1,0 +1,53 @@
+((# Compact — the dense, single-column classic used by hand-written engineering
+    résumés: 10.5pt, wide text block, small-caps rule headings, tight lists.
+
+    Ported from a user's own LaTeX résumé because it is markedly more
+    space-efficient than the styled templates: it fits the same content on one
+    page at 10.5pt that `modern` needs ~9pt to hold. That matters — a template
+    that fits honestly is better than one that fits by deleting bullets. #))
+\documentclass[10.5pt,letterpaper]{article}
+
+((# Margins the way the source résumé sets them: a half-inch trimmed off each
+    side and the top, widening the text block by a full inch. #))
+\usepackage[top=0.5in, bottom=0.5in, left=0.5in, right=0.5in, footskip=0.2in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{needspace}
+
+\definecolor{muted}{HTML}{333333}
+
+\hypersetup{
+  colorlinks=true, urlcolor=black, linkcolor=black,
+  pdftitle={((( basics.name ))) -- Resume}, pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+((# Tight lists are where this layout wins most of its space. #))
+\setlist[itemize]{leftmargin=1.1em, itemsep=1pt, parsep=0pt, topsep=1.5pt, label=\textbullet}
+
+((# Small-caps heading with a full-width rule under it, hugging the content. #))
+\titleformat{\section}
+  {\large\scshape\raggedright}
+  {}{0em}{}[\vspace{-0.55em}\rule{\linewidth}{0.4pt}\vspace{-0.35em}]
+\titlespacing*{\section}{0pt}{7pt}{3pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\raggedbottom
+\raggedright
+
+\newcommand{\cvsep}{\hspace{4pt}$\mid$\hspace{4pt}}
+((# Two-line entry head: bold role/org left, dates right; italic detail beneath. #))
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill#2\\%
+  \textit{\small\color{muted}#3}\hfill\textit{\small\color{muted}#4}\\[1.5pt]%
+}
+
+((* include "partials/_compact.tex" *))
+
+\begin{document}
+((* include "partials/_body.tex" *))
+\end{document}

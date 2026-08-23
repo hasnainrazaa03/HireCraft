@@ -27,6 +27,15 @@ TEMPLATES: tuple[Template, ...] = (
         filename="modern.tex",
     ),
     Template(
+        id="compact",
+        name="Compact",
+        description=(
+            "Dense single-column classic at 10.5pt — the most content per page. "
+            "Fits a full résumé on one page where styled templates need to shrink."
+        ),
+        filename="compact.tex",
+    ),
+    Template(
         id="ats",
         name="ATS",
         description="Monochrome and maximally parseable. Built for applicant-tracking systems.",

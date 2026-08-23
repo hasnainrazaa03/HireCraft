@@ -200,3 +200,34 @@ class TestSalvage:
 
         with pytest.raises(ParsingError):
             _coerce_valid({"basics": {"name": "X"}})  # no email, no content
+
+
+def test_import_drops_a_summary_the_resume_never_had():
+    """Regression: the parser composed a ~700-char summary for a résumé with no
+    summary section. That block is ~9 rendered lines — enough to push a one-page
+    résumé to two, where the one-page fitter then trimmed the candidate's real
+    bullets to make room for text the app invented."""
+    from app.schemas.resume import Basics, MasterResume, Project
+    from app.services.parsing.structure import _drop_invented_intro
+
+    source = "Education\nUSC\nExperience\nSunbase Data\nProjects\nVimaan\nSkills\nPython"
+    resume = MasterResume(
+        basics=Basics(name="A", email="a@example.com", headline="Invented headline", summary="Invented summary."),
+        projects=[Project(name="Vimaan", highlights=["Built a thing"])],
+    )
+    _drop_invented_intro(resume, source)
+    assert resume.basics.summary is None
+    assert resume.basics.headline is None
+
+
+def test_import_keeps_a_summary_the_resume_really_has():
+    from app.schemas.resume import Basics, MasterResume, Project
+    from app.services.parsing.structure import _drop_invented_intro
+
+    source = "Professional Summary\nML engineer with 5 years...\nExperience\nFoo"
+    resume = MasterResume(
+        basics=Basics(name="A", email="a@example.com", summary="ML engineer with 5 years..."),
+        projects=[Project(name="Vimaan", highlights=["Built a thing"])],
+    )
+    _drop_invented_intro(resume, source)
+    assert resume.basics.summary == "ML engineer with 5 years..."

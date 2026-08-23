@@ -133,19 +133,24 @@ _MAX_TRIM_STEPS = 24
 
 
 def _trim_one(resume: MasterResume) -> bool:
-    """Remove the single lowest-priority bullet so a résumé can fit one page: the
-    last highlight of the last entry (least relevant, since the tailoring orders by
-    relevance), dropping an entry that empties. Trims projects before experience;
-    leaves education intact. Returns False when there is nothing left to trim."""
+    """Drop the single lowest-priority BULLET so a résumé can fit one page.
+
+    Never removes an entry. An earlier version popped an entry once its last
+    bullet went, which silently deleted a whole project from the résumé to win a
+    page — losing real work is far worse than spilling onto a second page. Every
+    entry keeps at least one bullet, and if that still doesn't fit,
+    ``render_and_fit`` accepts two pages rather than cutting deeper.
+
+    Trims projects before experience, last entry first (the tailoring orders by
+    relevance, so the tail is the least relevant), and leaves education alone.
+    """
     for section in ("projects", "experience"):
         entries = getattr(resume, section, None) or []
         for i in range(len(entries) - 1, -1, -1):
             highlights = getattr(entries[i], "highlights", None)
-            if highlights:
-                if len(highlights) > 1:
-                    highlights.pop()
-                else:
-                    entries.pop(i)
+            # > 1: the entry always keeps a bullet, so it never disappears.
+            if highlights and len(highlights) > 1:
+                highlights.pop()
                 return True
     return False
 
