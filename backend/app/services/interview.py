@@ -69,9 +69,12 @@ def generate_questions(
     keywords: list[str] | None = None,
     categories: list[str] | None = None,
     count: int = 8,
+    exclude: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> list[InterviewQuestion]:
+    """``exclude`` lists questions already generated for this role, so asking for
+    more produces genuinely new ground instead of the same set again."""
     client = client or get_client()
     result: LlmResult[QuestionSet] = client.generate_structured(
         prompt=build_questions_prompt(
@@ -81,6 +84,7 @@ def generate_questions(
             keywords=keywords,
             categories=categories,
             count=count,
+            exclude=exclude,
         ),
         schema=QuestionSet,
         system_instruction=INTERVIEW_QUESTIONS_SYSTEM,

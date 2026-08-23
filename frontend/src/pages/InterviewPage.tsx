@@ -137,7 +137,12 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["interview-saved", applicationId] });
-      toast.success("Questions saved", "They'll still be here when you come back.");
+      toast.success(
+        "Questions saved",
+        questions.length > 0
+          ? "Added new questions — your existing ones and answers are untouched."
+          : "They'll still be here when you come back.",
+      );
     },
     onError: (e) =>
       toast.error("Couldn't generate", e instanceof ApiError ? e.message : "Please try again."),
@@ -225,7 +230,11 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
         </label>
         <button onClick={() => generate.mutate()} disabled={generate.isPending} className="btn-primary">
           <IconSparkles className="h-4 w-4" />
-          {generate.isPending ? "Generating…" : "Generate questions"}
+          {generate.isPending
+            ? "Generating…"
+            : questions.length > 0
+              ? "Generate more questions"
+              : "Generate questions"}
         </button>
       </div>
 
@@ -237,7 +246,8 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-subtle">
-              {questions.filter((q) => q.answer).length} of {questions.length} answered · saved automatically
+              {questions.filter((q) => q.answer).length} of {questions.length} answered · saved
+              automatically · generating again adds new questions, never repeats
             </p>
           </div>
           {questions.map((q) => (

@@ -120,3 +120,32 @@ def test_star_answer_allows_constructed_hypothetical(master: MasterResume):
         client=StubClient(star),
     )
     assert warnings == []
+
+
+def test_questions_prompt_excludes_already_asked(master: MasterResume):
+    """Asking again means "give me more" — previously generated questions must be
+    shown to the model as off-limits, or it just returns the same set."""
+    prompt = build_questions_prompt(
+        master,
+        role="Backend Engineer",
+        exclude=["Tell me about a time you led a team."],
+    )
+    assert "ALREADY ASKED" in prompt
+    assert "Tell me about a time you led a team." in prompt
+    assert "do NOT repeat" in prompt
+
+
+def test_questions_prompt_has_no_asked_block_on_a_first_run(master: MasterResume):
+    prompt = build_questions_prompt(master, role="Backend Engineer")
+    assert "ALREADY ASKED" not in prompt
+
+
+def test_norm_question_collapses_trivial_rewording():
+    """Duplicate detection has to survive punctuation/case/whitespace drift, since
+    a lightly-reworded repeat is exactly what slips past the prompt."""
+    from app.api.routes.interview import _norm_question
+
+    assert _norm_question("Tell me about a time you led a team.") == _norm_question(
+        "  tell me about a TIME you led a team!!  "
+    )
+    assert _norm_question("Describe a conflict") != _norm_question("Describe a failure")

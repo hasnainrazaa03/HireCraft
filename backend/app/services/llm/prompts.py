@@ -793,6 +793,7 @@ def build_questions_prompt(
     keywords: list[str] | None = None,
     categories: list[str] | None = None,
     count: int = 8,
+    exclude: list[str] | None = None,
 ) -> str:
     highlights = [
         f"- {e.title} at {e.company}: " + "; ".join(e.highlights[:2])
@@ -802,8 +803,22 @@ def build_questions_prompt(
     skills = ", ".join(item for g in resume.skills for item in g.items)
     cats = ", ".join(categories) if categories else "a sensible mix"
     kw = ", ".join((keywords or [])[:20])
+    # Questions already generated for this role. The candidate is asking for MORE,
+    # so repeating any of them wastes the round — push into new territory instead.
+    asked_block = ""
+    if exclude:
+        asked = "\n".join(f"- {q}" for q in exclude[:40])
+        asked_block = f"""
+ALREADY ASKED — do NOT repeat or lightly reword any of these:
+{asked}
+
+Generate genuinely DIFFERENT questions: probe other projects, other skills, other
+competencies, or a different angle/difficulty on the same theme. If an obvious area
+is already covered, move to one that isn't.
+"""
     return f"""\
 Generate about {count} interview questions for this candidate.
+{asked_block}
 
 Target role: {role or "(unspecified)"}
 Company: {company or "(unspecified)"}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
@@ -38,6 +39,14 @@ from app.services.pipeline import UsageLedger
 
 router = APIRouter(prefix="/interview", tags=["interview"])
 logger = get_logger(__name__)
+
+_PUNCT_RE = re.compile(r"[^a-z0-9 ]+")
+
+
+def _norm_question(text: str) -> str:
+    """Comparable form of a question, so 'Tell me about a time you led a team.' and
+    'Tell me about a time you led a team!' count as the same question."""
+    return " ".join(_PUNCT_RE.sub(" ", (text or "").lower()).split())
 
 
 def _owned_resume(db: DbSession, user_id: uuid.UUID, profile_id: uuid.UUID) -> ResumeProfile:
@@ -114,6 +123,18 @@ def interview_questions(
                 except Exception:  # noqa: BLE001
                     keywords = None
 
+    # Everything already generated for this application (or the standalone set).
+    # Asking again means "give me MORE", so these are excluded from the prompt and
+    # any near-duplicate that slips through is dropped below.
+    existing = db.execute(
+        select(SavedInterviewQuestion)
+        .where(
+            SavedInterviewQuestion.user_id == user.id,
+            SavedInterviewQuestion.application_id == payload.application_id,
+        )
+        .order_by(SavedInterviewQuestion.order_index)
+    ).scalars().all()
+
     ledger = UsageLedger()
     try:
         questions = generate_questions(
@@ -123,6 +144,7 @@ def interview_questions(
             keywords=keywords,
             categories=list(payload.categories),
             count=payload.count,
+            exclude=[q.question for q in existing],
             client=_client_for(user),
             ledger=ledger,
         )
@@ -134,14 +156,28 @@ def interview_questions(
     except LlmError as exc:
         raise _503_502(exc) from exc
 
+    # Drop anything that repeats a question already on file. The prompt asks the
+    # model to avoid them, but a lightly-reworded repeat still gets through, so the
+    # comparison is on normalized text rather than an exact match.
+    seen = {_norm_question(q.question) for q in existing}
+    fresh: list = []
+    for q in questions:
+        key = _norm_question(q.question)
+        if key in seen:
+            continue
+        seen.add(key)
+        fresh.append(q)
+    if len(fresh) < len(questions):
+        logger.info(
+            "interview.duplicate_questions_dropped",
+            dropped=len(questions) - len(fresh),
+        )
+
     saved: list[SavedQuestion] = []
     if payload.save:
-        # One live set per application (or one standalone set), so regenerating
-        # replaces the previous batch instead of piling sets on top of each other.
-        db.query(SavedInterviewQuestion).filter(
-            SavedInterviewQuestion.user_id == user.id,
-            SavedInterviewQuestion.application_id == payload.application_id,
-        ).delete(synchronize_session=False)
+        # Append: previously generated questions (and any answers drafted against
+        # them) are kept, so asking for more never destroys existing prep.
+        start = max((q.order_index for q in existing), default=-1) + 1
         rows = [
             SavedInterviewQuestion(
                 user_id=user.id,
@@ -153,16 +189,16 @@ def interview_questions(
                 tip=q.tip,
                 role=role,
                 company=company,
-                order_index=index,
+                order_index=start + index,
             )
-            for index, q in enumerate(questions)
+            for index, q in enumerate(fresh)
         ]
         db.add_all(rows)
         db.flush()
         saved = [SavedQuestion.model_validate(r) for r in rows]
 
     _record(db, user.id, ledger)  # commits
-    return QuestionsResponse(questions=questions, cost_usd=ledger.cost_usd, saved=saved)
+    return QuestionsResponse(questions=fresh, cost_usd=ledger.cost_usd, saved=saved)
 
 
 @router.get("/saved", response_model=list[SavedQuestion])
