@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   ApiError,
+  fetchAll,
   type ResumeProfileSummary,
   type ToneInfo,
   type OutreachKindInfo,
@@ -310,10 +311,14 @@ function SavedLettersStudio() {
     queryKey: ["saved-letters"],
     queryFn: () => api.get<SavedCoverLetterSummary[]>("/studio/cover-letters/saved"),
   });
-  const { data: apps = [] } = useQuery({
+  // Must match the shape Dashboard/Applications cache under this key — fetchAll
+  // returns { items, … }. Reading it as a bare array here crashes with
+  // "apps.map is not a function" when one of those pages populated the cache first.
+  const { data: appsData } = useQuery({
     queryKey: ["applications"],
-    queryFn: () => api.get<ApplicationSummary[]>("/applications"),
+    queryFn: () => fetchAll<ApplicationSummary>("/applications"),
   });
+  const apps = appsData?.items ?? [];
   const { data: detail } = useQuery({
     queryKey: ["saved-letter", selectedId],
     queryFn: () => api.get<SavedCoverLetterDetail>(`/studio/cover-letters/saved/${selectedId}`),

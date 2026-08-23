@@ -2712,7 +2712,7 @@ function AnalyticsTab({ application }: { application: ApplicationDetail }) {
   const avgPerCall = calls > 0 ? totalCost / calls : 0;
   const perK = totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0;
   const byModel = usage?.by_model ?? [];
-  const topModelCost = byModel.reduce((mx, m) => Math.max(mx, m.cost_usd), 0);
+  const modelCostTotal = byModel.reduce((sum, m) => sum + m.cost_usd, 0);
   const timeline = usage?.timeline ?? [];
   const TIMELINE_CAP = 40;
 
@@ -2804,7 +2804,7 @@ function AnalyticsTab({ application }: { application: ApplicationDetail }) {
         ) : (
           <div className="mt-4 space-y-4">
             {byModel.map((m) => (
-              <ModelRow key={m.model} m={m} share={topModelCost > 0 ? Math.round((m.cost_usd / topModelCost) * 100) : 0} />
+              <ModelRow key={m.model} m={m} share={modelCostTotal > 0 ? Math.round((m.cost_usd / modelCostTotal) * 100) : 0} />
             ))}
           </div>
         )}

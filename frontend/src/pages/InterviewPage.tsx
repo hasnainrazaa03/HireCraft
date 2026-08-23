@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   api,
   ApiError,
+  fetchAll,
   type ResumeProfileSummary,
   type QuestionCategory,
   type InterviewQuestion,
@@ -85,20 +86,25 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
   const [questions, setQuestions] = useState<InterviewQuestion[] | null>(null);
 
   // Applications to "prepare for" — picking one grounds the questions in that
-  // job (role, company, and the posting's keywords, via the backend).
-  const { data: apps = [] } = useQuery({
+  // job (role, company, and the posting's keywords, via the backend). Uses
+  // fetchAll to match the { items, … } shape cached under this key elsewhere.
+  const { data: appsData } = useQuery({
     queryKey: ["applications"],
-    queryFn: () => api.get<ApplicationSummary[]>("/applications"),
+    queryFn: () => fetchAll<ApplicationSummary>("/applications"),
   });
+  const apps = appsData?.items ?? [];
   // Load the chosen application's detail just to borrow its résumé profile.
   const { data: appDetail } = useQuery({
     queryKey: ["application", applicationId],
     queryFn: () => api.get<ApplicationDetail>(`/applications/${applicationId}`),
     enabled: !!applicationId,
   });
+  // Depend on the id, not the whole query object — otherwise any refetch of the
+  // application (a new object reference) re-runs this and silently reverts a
+  // résumé the user picked manually after choosing an application.
   useEffect(() => {
     if (appDetail?.resume_profile_id) setResumeId(appDetail.resume_profile_id);
-  }, [appDetail]);
+  }, [appDetail?.resume_profile_id]);
 
   function chooseApplication(id: string) {
     setApplicationId(id);
@@ -215,7 +221,9 @@ function QuestionStudio({ resumes }: { resumes: ResumeProfileSummary[] }) {
       {questions && (
         <div className="space-y-3">
           {questions.map((q, i) => (
-            <QuestionCard key={i} question={q} resumeId={resumeId} useVoice={useVoice} catLabel={CAT_LABEL[q.category]} />
+            // Key by question text (not index) so regenerating remounts the cards
+            // and clears each card's drafted STAR answer.
+            <QuestionCard key={`${i}:${q.question}`} question={q} resumeId={resumeId} useVoice={useVoice} catLabel={CAT_LABEL[q.category]} />
           ))}
         </div>
       )}

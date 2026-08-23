@@ -518,7 +518,7 @@ def render_resume_file(
         # preference. When on, render_and_fit escalates compaction until it fits.
         fit_one_page = one_page if one_page is not None else profile.one_page
         try:
-            result, _ = render_and_fit(
+            result, _, _rendered = render_and_fit(
                 resume,
                 settings.templates_dir,
                 template_name=resolve_filename(template_id),

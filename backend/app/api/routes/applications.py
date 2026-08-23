@@ -763,7 +763,8 @@ def download_package(
 
         # Self-documenting report + structured session data (best-effort: a bad
         # stored blob must never 500 the export).
-        add("report.txt", _build_report(application))
+        with contextlib.suppress(Exception):
+            add("report.txt", _build_report(application))
         with contextlib.suppress(Exception):
             if application.tailored_resume:
                 add("resume.json", json.dumps(application.tailored_resume, indent=2, ensure_ascii=False))
@@ -1010,7 +1011,7 @@ def assistant_apply(
     template = resolve_filename(profile.template if profile else None)
     one_page = profile.one_page if profile else True
     try:
-        compiled, resume_tex = render_and_fit(
+        compiled, resume_tex, merged = render_and_fit(
             merged, settings.templates_dir, template_name=template, one_page=one_page, job_name="resume"
         )
     except Exception as exc:  # noqa: BLE001 - typesetting failure -> friendly 422

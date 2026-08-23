@@ -23,12 +23,25 @@ from app.services.scraper import (
     validate_url,
 )
 
+# Paragraphs are distinct, not one line repeated: the extractor de-duplicates
+# identical blocks, so a repeated paragraph collapses to a single short line and
+# trips the thin-page rejection — which a real posting never would.
 PAGE = (
     "<html><head><title>Senior Widget Engineer</title>"
     "<meta property='og:site_name' content='Globex'></head><body><main>"
-    + "<p>We are hiring a widget engineer to build and ship widgets in Python. "
-      "Requires five years of experience and a degree.</p>" * 6
-    + "</main></body></html>"
+    "<p>We are hiring a widget engineer to build and ship widgets in Python. "
+    "Requires five years of experience and a degree.</p>"
+    "<p>You will design widget pipelines, own their reliability in production, "
+    "and partner with product teams on the roadmap.</p>"
+    "<p>Responsibilities include writing well-tested services, reviewing code, "
+    "and mentoring junior engineers on the widget platform.</p>"
+    "<p>Requirements: strong Python, experience with relational databases, and "
+    "a track record of shipping backend systems at scale.</p>"
+    "<p>Nice to have: exposure to distributed systems, container tooling, and "
+    "performance profiling of high-throughput services.</p>"
+    "<p>We offer competitive compensation, health benefits, and a hybrid "
+    "schedule from our Springfield office.</p>"
+    "</main></body></html>"
 ).encode()
 
 

@@ -102,6 +102,12 @@ def _persist(application_id: uuid.UUID, user_id: uuid.UUID, outcome: TailoringOu
         # A retry must not stack a second set of artifacts on the first.
         for existing in list(application.artifacts):
             db.delete(existing)
+        # …nor a second set of usage rows: the cost rollup below is reset for a
+        # fresh run (accrue_usage(reset=True)), so leaving the previous run's rows
+        # would make the Analytics tab report more than the application's total.
+        db.query(LlmUsage).filter(LlmUsage.application_id == application_id).delete(
+            synchronize_session=False
+        )
         db.flush()
 
         for kind, filename, data, content_type in artifacts:

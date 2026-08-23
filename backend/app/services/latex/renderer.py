@@ -161,8 +161,12 @@ def render_and_fit(
     """Render and compile a résumé PDF. When ``one_page`` is set, escalate the
     compact density until the PDF fits a single page or the readable floor is
     reached; if it still spills at max density, trim the lowest-priority bullets
-    (on a copy) until it fits — so one page is a real guarantee, not best-effort.
-    Returns ``(CompileResult, tex)`` for the layout that was used.
+    until it fits — so one page is a real guarantee, not best-effort.
+
+    Returns ``(CompileResult, tex, rendered)`` where ``rendered`` is the résumé the
+    PDF actually contains — the input unless trimming was needed. Callers that
+    persist, score, or export the résumé must store ``rendered``, or the app shows
+    and scores bullets the delivered PDF doesn't have.
     """
     # Imported lazily so the renderer module has no import-time dependency on the
     # LaTeX toolchain wrapper.
@@ -175,7 +179,7 @@ def render_and_fit(
         tex = render_resume(resume, templates_dir, template_name, density=density)
         result = compile_latex(tex, job_name=job_name)
         if not one_page or result.page_count <= 1:
-            return result, tex
+            return result, tex, resume
 
     # Density is maxed and it still spills: prune lowest-priority content (on a
     # copy, so the caller's résumé is untouched) and re-render at max density.
@@ -187,7 +191,7 @@ def render_and_fit(
         result = compile_latex(tex, job_name=job_name)
         if result.page_count <= 1:
             break
-    return result, tex
+    return result, tex, pruned
 
 
 def render_cover_letter(

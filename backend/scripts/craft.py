@@ -134,7 +134,12 @@ def cmd_build(args: argparse.Namespace) -> None:
     cover_paragraphs: list[str] = []
     if args.cover:
         raw = json.load(open(args.cover, encoding="utf-8"))
-        cover_paragraphs = raw["paragraphs"] if isinstance(raw, dict) else list(raw)
+        items = raw.get("paragraphs") if isinstance(raw, dict) else raw
+        if isinstance(items, str) or not isinstance(items, list):
+            _err("--cover must be a JSON list of paragraphs, or {\"paragraphs\": [...]}")
+        cover_paragraphs = [p for p in items if isinstance(p, str) and p.strip()]
+        if not cover_paragraphs:
+            _err("--cover contained no usable paragraphs")
 
     with SessionLocal() as db:
         user = _get_user(db, args.user)
@@ -161,7 +166,9 @@ def cmd_build(args: argparse.Namespace) -> None:
             job_id=job.id,
             resume_profile_id=profile.id,
             pipeline_status=PipelineStatus.PENDING,
-            include_cover_letter=bool(cover_paragraphs),
+            # Set from what actually survives vetting (below), not the raw input —
+            # otherwise a fully-rejected letter leaves the app flagged as having one.
+            include_cover_letter=False,
             reach_mode=args.reach,
         )
         db.add(application)
@@ -174,7 +181,7 @@ def cmd_build(args: argparse.Namespace) -> None:
         ).apply(tailoring)
         diff = build_diff(master, tailored)
 
-        compiled, resume_tex = render_and_fit(
+        compiled, resume_tex, tailored = render_and_fit(
             tailored,
             settings.templates_dir,
             template_name=resolve_filename(profile.template),
@@ -215,6 +222,7 @@ def cmd_build(args: argparse.Namespace) -> None:
         application.guardrail_report = report.model_dump(mode="json")
         if kept_cover:
             application.cover_letter = kept_cover
+            application.include_cover_letter = True
         application.pipeline_status = PipelineStatus.COMPLETED
         application.error_message = None
         log_event(application, "tailored", "Résumé tailored (via Claude Code)")
@@ -251,7 +259,10 @@ def cmd_eval(args: argparse.Namespace) -> None:
     with SessionLocal() as db:
         cols = []
         for aid in args.app:
-            app = db.get(Application, uuid.UUID(aid))
+            try:
+                app = db.get(Application, uuid.UUID(aid))
+            except ValueError:
+                _err(f"{aid!r} is not a valid application id")
             if app is None or app.tailored_resume is None:
                 _err(f"application {aid} not found or not tailored")
             resume = MasterResume.model_validate(app.tailored_resume)
@@ -317,7 +328,10 @@ def cmd_eval(args: argparse.Namespace) -> None:
 
 def cmd_rm(args: argparse.Namespace) -> None:
     with SessionLocal() as db:
-        app = db.get(Application, uuid.UUID(args.app))
+        try:
+            app = db.get(Application, uuid.UUID(args.app))
+        except ValueError:
+            _err(f"{args.app!r} is not a valid application id")
         if app is None:
             _err(f"no application {args.app}")
         db.delete(app)

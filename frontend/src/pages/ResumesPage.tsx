@@ -122,7 +122,7 @@ export default function ResumesPage() {
     setName("");
     setTags([]);
     setTemplate("modern");
-    setOnePage(false);
+    setOnePage(true); // one-page is the default; startNew() calls close() first
     setContent(STARTER);
     setMode("builder");
     setJsonDraft("");

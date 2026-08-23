@@ -586,13 +586,15 @@ def run_pipeline(
             )
 
     progress("rendering", "Typesetting your PDF")
-    compiled, resume_tex = render_and_fit(
+    compiled, resume_tex, tailored = render_and_fit(
         tailored,
         templates_dir,
         template_name=resolve_filename(template),
         one_page=one_page,
         job_name="resume",
     )
+    # `tailored` is now what the PDF actually contains (one-page fit may have
+    # trimmed bullets), so the stored/scored/exported résumé matches the document.
 
     if cover_tex:
         cover_compiled = compile_latex(cover_tex, job_name="cover_letter")

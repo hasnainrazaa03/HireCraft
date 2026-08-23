@@ -55,6 +55,7 @@ from app.services.llm.client import (
     LlmResponseError,
 )
 from app.services.llm.factory import client_for_user
+from app.services.llm.guardrails import GuardrailEngine
 from app.services.llm.prompts import COVER_LETTER_TONES, OUTREACH_KINDS
 from app.services.pipeline import (
     UsageLedger,
@@ -522,6 +523,16 @@ def refine_saved_cover_letter(
             detail="Couldn't produce a grounded revision. Try rewording your request.",
         )
     letter.paragraphs = paragraphs
+    # The stored guardrail flags described the OLD paragraphs; keeping them would
+    # point the truthfulness panel at text that no longer exists. Re-vet the
+    # revision so the flags match what's on the page.
+    engine = GuardrailEngine(resume, requirements, evidence=evidence_lines(db, user.id))
+    for paragraph in paragraphs:
+        engine.vet_paragraph(paragraph)
+    letter.guardrail_report = GuardrailReport(
+        violations=engine.violations,
+        keywords_requested=requirements.all_keywords() if requirements else [],
+    ).model_dump()
     _sync_attached(db, user.id, letter, resume)
     _record(db, user.id, ledger)  # commits the session
     db.refresh(letter)
@@ -594,6 +605,15 @@ def attach_saved_cover_letter(
     if profile is None or profile.user_id != user.id:
         profile = db.get(ResumeProfile, app.resume_profile_id)
     resume = MasterResume.model_validate(profile.content)
+    # One letter per application: detach any other letter still pointing here, or
+    # a later refine of that stale letter would silently overwrite this one.
+    for other in db.execute(
+        select(SavedCoverLetter).where(
+            SavedCoverLetter.application_id == app.id,
+            SavedCoverLetter.id != letter.id,
+        )
+    ).scalars():
+        other.application_id = None
     letter.application_id = app.id
     _store_on_application(db, user.id, app, resume, letter)
     db.commit()
