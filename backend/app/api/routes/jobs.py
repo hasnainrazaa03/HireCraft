@@ -6,6 +6,7 @@ import contextlib
 import json
 import re
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import redis
 from fastapi import APIRouter, HTTPException, Query, status
@@ -348,6 +349,21 @@ def _cache_set_json(key: str, data: dict, ttl: int) -> None:
         get_redis().setex(key, ttl, json.dumps(data))
 
 
+def _staleness_penalty(created_at: int | None) -> float:
+    """Points to dock from a match score for a posting's age.
+
+    Tuned so freshness breaks ties and sinks the clearly-dead, without letting
+    age override a genuinely strong match: nothing inside a month is touched,
+    and the penalty tops out at 12 points.
+    """
+    if not created_at:
+        return 0.0
+    days = (datetime.now(UTC).timestamp() - created_at) / 86_400
+    if days <= 30:
+        return 0.0
+    return min(12.0, (days - 30) / 15.0)
+
+
 @router.get("/feed", response_model=list[JobSearchResult])
 def job_feed(
     user: CurrentUser,
@@ -362,6 +378,10 @@ def job_feed(
     status_filter: str | None = Query(default=None, alias="status"),
     include_closed: bool = False,
     min_score: int = Query(default=0, ge=0, le=100),
+    posted_within: int = Query(
+        default=0, ge=0, le=3650,
+        description="Only postings first seen within this many days (0 = any age)",
+    ),
     sort: str = Query(default="match", pattern="^(match|newest|company)$"),
     limit: int = Query(default=60, ge=1, le=300),
 ) -> list[JobSearchResult]:
@@ -389,6 +409,11 @@ def job_feed(
         stmt = stmt.where(ScrapedJob.remote.is_(True))
     if location:
         stmt = stmt.where(ScrapedJob.location.ilike(f"%{location}%"))
+    if posted_within:
+        cutoff = datetime.now(UTC) - timedelta(days=posted_within)
+        # A posting with no date is of unknown age, not "old" — excluding it from
+        # a recency filter is the honest reading, since we can't claim it's fresh.
+        stmt = stmt.where(ScrapedJob.posted_at.is_not(None), ScrapedJob.posted_at >= cutoff)
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(
@@ -429,7 +454,12 @@ def job_feed(
     elif sort == "company":
         results.sort(key=lambda r: (r.company or "").lower())
     else:
-        results.sort(key=lambda r: (r.match_score or 0), reverse=True)
+        # Best match, but a posting months old is a worse *opportunity* than an
+        # equally-matched one from this week — most are already filled. Age
+        # applies a gentle penalty rather than a filter, so a standout old role
+        # still outranks a mediocre fresh one, and unknown-age postings are
+        # treated as neither fresh nor stale.
+        results.sort(key=lambda r: (r.match_score or 0) - _staleness_penalty(r.created_at), reverse=True)
     return results[:limit]
 
 
@@ -491,7 +521,18 @@ def fetch_feed_description(
     if row is None or row.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found.")
 
-    if len(row.description or "") < 200 and row.url:
+    # Re-read a posting that was stored before extraction kept its structure, so
+    # existing rows pick up their bullets and headings the first time they're
+    # opened. A posting that genuinely has neither would qualify forever, so a
+    # single attempt is recorded and not repeated.
+    body = row.description or ""
+    unstructured = bool(body) and "• " not in body and "## " not in body
+    if unstructured:
+        with contextlib.suppress(Exception):
+            if get_redis().get(f"jobtext:restructured:{row.fingerprint}"):
+                unstructured = False
+
+    if row.url and (len(body) < 200 or unstructured):
         try:
             scraped = scrape_job(row.url)
         except ScrapeError as exc:
@@ -508,6 +549,11 @@ def fetch_feed_description(
             with contextlib.suppress(Exception):
                 for key in get_redis().scan_iter(f"jobfit:*:{row.fingerprint}"):
                     get_redis().delete(key)
+        if unstructured:
+            # Whether or not the re-read produced markers, don't try this row
+            # again — some postings are genuinely prose with no lists at all.
+            with contextlib.suppress(Exception):
+                get_redis().setex(f"jobtext:restructured:{row.fingerprint}", 60 * 60 * 24 * 30, "1")
 
     profile = None
     if resume_id is not None:

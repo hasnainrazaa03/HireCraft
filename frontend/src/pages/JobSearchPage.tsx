@@ -47,6 +47,20 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
+/**
+ * How a posting's age should read on a card.
+ *
+ * Age is the strongest available signal that a listing is already filled, and
+ * the feed carries plenty of postings several months old. Showing "9mo ago" in
+ * the same grey as everything else buries that, so old ones are marked — a
+ * caution, not a verdict, since some reqs really do stay open.
+ */
+function freshness(unix: number | null): { label: string; stale: boolean } | null {
+  if (!unix) return null;
+  const days = Math.floor((Date.now() / 1000 - unix) / 86400);
+  return { label: timeAgo(unix), stale: days > 90 };
+}
+
 const SAVED_KEY = "hirecraft.savedJobs";
 function loadSaved(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || "[]")); } catch { return new Set(); }
@@ -64,6 +78,65 @@ function loadSaved(): Set<string> {
  */
 function jobKey(job: JobSearchResult): string {
   return job.url || `${job.source}|${job.title}|${job.company}`;
+}
+
+/**
+ * Lay a scraped posting back out as headings, bullets and paragraphs.
+ *
+ * Extraction keeps the structure the ATS published, marking list items with
+ * "• " and headings with "## ". Anything without a marker is a paragraph — and
+ * a short line ending in a colon is treated as a heading too, since plenty of
+ * boards write their section titles as plain bold text rather than a real
+ * heading tag.
+ */
+type Block =
+  | { kind: "heading"; text: string }
+  | { kind: "para"; text: string }
+  | { kind: "list"; items: string[] };
+
+function parsePosting(text: string): Block[] {
+  const blocks: Block[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("• ")) {
+      const item = line.slice(2).trim();
+      const last = blocks[blocks.length - 1];
+      if (last?.kind === "list") last.items.push(item);
+      else blocks.push({ kind: "list", items: [item] });
+    } else if (line.startsWith("## ")) {
+      blocks.push({ kind: "heading", text: line.slice(3).trim() });
+    } else if (line.length <= 60 && line.endsWith(":")) {
+      blocks.push({ kind: "heading", text: line.slice(0, -1).trim() });
+    } else {
+      blocks.push({ kind: "para", text: line });
+    }
+  }
+  return blocks;
+}
+
+function Posting({ text }: { text: string }) {
+  const blocks = parsePosting(text);
+  return (
+    <div className="space-y-3.5">
+      {blocks.map((b, i) =>
+        b.kind === "heading" ? (
+          <h4 key={i} className="pt-1.5 text-sm font-semibold tracking-tight text-content">{b.text}</h4>
+        ) : b.kind === "list" ? (
+          <ul key={i} className="space-y-2">
+            {b.items.map((item, j) => (
+              <li key={j} className="flex gap-2.5 text-sm leading-relaxed text-muted">
+                <span className="mt-[0.5rem] h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400/70" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p key={i} className="text-sm leading-relaxed text-muted">{b.text}</p>
+        ),
+      )}
+    </div>
+  );
 }
 
 const GRADIENT_BTN =
@@ -113,6 +186,8 @@ export default function JobSearchPage() {
   const [feedLocation, setFeedLocation] = useState("");
   const [feedRemote, setFeedRemote] = useState(false);
   const [feedMinScore, setFeedMinScore] = useState(0);
+  // Age cutoff in days; 0 = any age.
+  const [feedPostedWithin, setFeedPostedWithin] = useState(0);
   const [feedQuery, setFeedQuery] = useState("");
 
   const live = useQuery({
@@ -148,6 +223,7 @@ export default function JobSearchPage() {
   if (feedLocation) feedParams.set("location", feedLocation);
   if (feedRemote) feedParams.set("remote_only", "true");
   if (feedMinScore) feedParams.set("min_score", String(feedMinScore));
+  if (feedPostedWithin) feedParams.set("posted_within", String(feedPostedWithin));
   if (feedQuery.trim()) feedParams.set("q", feedQuery.trim());
 
   const feed = useQuery({
@@ -310,6 +386,16 @@ export default function JobSearchPage() {
                 </select>
               </label>
               <label className="block">
+                <span className="label">Date posted</span>
+                <select className="input mt-1" value={feedPostedWithin} onChange={(e) => setFeedPostedWithin(Number(e.target.value))}>
+                  <option value={0}>Any time</option>
+                  <option value={7}>Past week</option>
+                  <option value={30}>Past month</option>
+                  <option value={90}>Past 3 months</option>
+                  <option value={180}>Past 6 months</option>
+                </select>
+              </label>
+              <label className="block">
                 <span className="label">Sort</span>
                 <select className="input mt-1" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
                   <option value="match">Best match</option>
@@ -337,11 +423,12 @@ export default function JobSearchPage() {
                     {b} ({n})
                   </FilterPill>
                 ))}
-                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedQuery) && (
+                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedPostedWithin || feedQuery) && (
                   <button
                     onClick={() => {
                       setBucket(""); setFeedLevel(""); setFeedSource("");
-                      setFeedLocation(""); setFeedRemote(false); setFeedMinScore(0); setFeedQuery("");
+                      setFeedLocation(""); setFeedRemote(false); setFeedMinScore(0);
+                      setFeedPostedWithin(0); setFeedQuery("");
                     }}
                     className="btn-ghost btn-sm text-subtle hover:text-content"
                   >
@@ -548,7 +635,15 @@ function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
               </div>
             )}
             <div className="flex items-center gap-1.5 text-xs text-subtle">
-              <span>{job.created_at ? `Posted ${timeAgo(job.created_at)}` : "Recently posted"}</span>
+              {(() => {
+                const age = freshness(job.created_at);
+                if (!age) return <span>Posted date unknown</span>;
+                return (
+                  <span className={age.stale ? "text-amber-300/90" : undefined}>
+                    Posted {age.label}{age.stale ? " · may be filled" : ""}
+                  </span>
+                );
+              })()}
               <span>·</span>
               <span className="truncate text-brand-300/70">{job.source}</span>
               {job.sponsorship && (
@@ -668,7 +763,23 @@ function JobDetail({ job: initial, saved, onSave, onTailor, onClose, resumeId }:
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
             {job.location && <Meta icon={<IconPin className="h-4 w-4" />}>{job.location}</Meta>}
             {job.remote && <Meta icon={<IconGlobe className="h-4 w-4" />}>Remote</Meta>}
-            {job.created_at && <Meta icon={<IconClock className="h-4 w-4" />}>Posted {timeAgo(job.created_at)}</Meta>}
+            {(() => {
+              const age = freshness(job.created_at);
+              if (!age) return null;
+              return (
+                <span className="inline-flex items-center gap-1.5 text-subtle">
+                  <IconClock className="h-4 w-4" />
+                  <span className={age.stale ? "text-amber-300/90" : "text-muted"}>
+                    Posted {age.label}
+                  </span>
+                  {age.stale && (
+                    <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+                      may be filled
+                    </span>
+                  )}
+                </span>
+              );
+            })()}
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
             <button onClick={onTailor} className={`${GRADIENT_BTN} flex-1 sm:flex-none`} style={GRADIENT_STYLE}>
@@ -727,9 +838,15 @@ function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult
         <h3 className="section-title mb-2">About the role</h3>
         {body ? (
           <>
-            <p className={`whitespace-pre-line text-sm leading-relaxed text-muted ${expanded ? "" : "line-clamp-6"}`}>
-              {body}
-            </p>
+            {/* Collapsed, the posting is clipped by height and faded out, so a
+                bullet list is cut at a believable place instead of the first
+                block being stretched to fill a line clamp. */}
+            <div className={`relative ${expanded ? "" : "max-h-44 overflow-hidden"}`}>
+              <Posting text={body} />
+              {!expanded && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-canvas-raised to-transparent" />
+              )}
+            </div>
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
               {/* Only offer the toggle when there is more to reveal — six lines
                   is roughly 400 characters at this width. */}

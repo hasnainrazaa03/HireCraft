@@ -33,6 +33,7 @@ MAX_TEXT_CHARS = 24_000
 
 _WHITESPACE = re.compile(r"[ \t ]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
+_SPACE_BEFORE_PUNCT = re.compile(r"[ \t]+([:;,.!?)\]])")
 
 # Boilerplate lines that survive extraction on most job boards.
 _NOISE_PATTERNS = re.compile(
@@ -168,7 +169,11 @@ def clean_text(raw: str) -> str:
         lines.append(line)
 
     text = _BLANK_LINES.sub("\n\n", "\n".join(lines)).strip()
-    return text
+    # Joining inline markup inserts a space that the rendered HTML never had —
+    # "<strong>Evals for design</strong>: Building…" comes back as
+    # "Evals for design : Building…". Nothing in English wants a space before
+    # its punctuation, so close it up.
+    return _SPACE_BEFORE_PUNCT.sub(r"\1", text)
 
 
 def _extract_with_trafilatura(html: str, url: str | None) -> str | None:
@@ -317,8 +322,26 @@ _SMARTRECRUITERS_RE = re.compile(
 
 
 def _html_to_text(fragment: str) -> str:
-    """Plain text from an HTML fragment (the ATS APIs return escaped HTML)."""
+    """Plain text from an HTML fragment (the ATS APIs return escaped HTML).
+
+    List items and headings keep a lightweight marker ("• ", "## ") rather than
+    being flattened into anonymous lines. Postings are mostly headed sections and
+    bullets, and a bare ``get_text`` throws that away — leaving the reader one
+    undifferentiated wall of text with responsibilities and requirements running
+    together. The markers survive ``clean_text`` and let the UI lay the posting
+    back out.
+    """
     soup = BeautifulSoup(_html.unescape(fragment or ""), "html.parser")
+    for tag in soup.find_all("br"):
+        tag.replace_with("\n")
+    # Assigning .string collapses each item to a single line, so nested inline
+    # markup (<strong>, <a>, <span>) can't split one bullet across several.
+    for li in soup.find_all("li"):
+        if (item := li.get_text(" ", strip=True)):
+            li.string = f"• {item}"
+    for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        if (head := heading.get_text(" ", strip=True)):
+            heading.string = f"## {head}"
     return clean_text(soup.get_text(separator="\n"))
 
 
