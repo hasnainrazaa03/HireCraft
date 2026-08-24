@@ -157,9 +157,22 @@ def test_every_api_route_requires_authentication():
     import pkgutil
 
     import app.api.routes as routes_pkg
-    from app.api.deps import enforce_generation_quota, get_current_user, require_admin
+    from app.api.deps import (
+        enforce_generation_quota,
+        get_current_user,
+        get_extension_user,
+        require_admin,
+    )
 
-    guards = {get_current_user, require_admin, enforce_generation_quota}
+    # get_extension_user is a real guard, not an exemption: the /extension routes
+    # authenticate with the browser extension's long-lived key instead of a
+    # bearer token, and reject any request without a valid one.
+    guards = {
+        get_current_user,
+        require_admin,
+        enforce_generation_quota,
+        get_extension_user,
+    }
     public = {
         ("POST", "/auth/register"), ("POST", "/auth/login"), ("POST", "/auth/refresh"),
         ("POST", "/auth/verify-email"), ("POST", "/auth/forgot-password"),

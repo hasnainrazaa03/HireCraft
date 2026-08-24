@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.crypto import decrypt, encrypt
 from app.core.logging import get_logger
 from app.core.rate_limit import check_rate_limit
+from app.core.security import generate_extension_key
 from app.models.application import Application
 from app.models.job import Job
 from app.models.llm_usage import LlmUsage
@@ -159,6 +160,52 @@ def _llm_settings(user: User) -> LlmSettings:
             )
         )
     return LlmSettings(provider=prov, model=model, providers=providers)
+
+
+@router.get("/extension-key", response_model=dict)
+def extension_key_status(user: CurrentUser) -> dict:
+    """Whether a browser-extension key exists, and when it was issued.
+
+    Never the key itself — only its hash is stored, so it genuinely cannot be
+    shown again after it is created.
+    """
+    return {
+        "configured": bool(user.extension_key_hash),
+        "created_at": (
+            user.extension_key_created_at.isoformat()
+            if user.extension_key_created_at
+            else None
+        ),
+    }
+
+
+@router.post("/extension-key", response_model=dict)
+def issue_extension_key(user: CurrentUser, db: DbSession) -> dict:
+    """Issue a browser-extension key, replacing any existing one.
+
+    The plaintext is returned exactly once. Issuing again invalidates the
+    previous key, which is also how a key gets rotated if it leaks.
+    """
+    key, digest = generate_extension_key()
+    user.extension_key_hash = digest
+    user.extension_key_created_at = datetime.now(UTC)
+    db.commit()
+    logger.info("account.extension_key_issued", user_id=str(user.id))
+    return {
+        "key": key,
+        "created_at": user.extension_key_created_at.isoformat(),
+        "note": "Copy this now — it is stored only as a hash and cannot be shown again.",
+    }
+
+
+@router.delete("/extension-key", response_model=MessageResponse)
+def revoke_extension_key(user: CurrentUser, db: DbSession) -> MessageResponse:
+    """Revoke the extension key; the extension stops working immediately."""
+    user.extension_key_hash = None
+    user.extension_key_created_at = None
+    db.commit()
+    logger.info("account.extension_key_revoked", user_id=str(user.id))
+    return MessageResponse(message="Extension key revoked.")
 
 
 @router.get("/llm", response_model=LlmSettings)

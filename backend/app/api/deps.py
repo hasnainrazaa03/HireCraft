@@ -5,12 +5,17 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import check_generation_limit
-from app.core.security import TokenError, decode_token, token_subject
+from app.core.security import (
+    TokenError,
+    decode_token,
+    hash_extension_key,
+    token_subject,
+)
 from app.db.session import get_db
 from app.models.user import User
 
@@ -98,6 +103,39 @@ def enforce_generation_quota(request: Request, user: CurrentUser) -> User:
 
 
 GenerationUser = Annotated[User, Depends(enforce_generation_quota)]
+
+
+def get_extension_user(
+    db: DbSession,
+    x_hirecraft_key: Annotated[str | None, Header()] = None,
+) -> User:
+    """Resolve the browser extension's long-lived key to its user.
+
+    Separate from the bearer flow on purpose. The extension cannot refresh a
+    short-lived access token, so it carries a key instead — and that key
+    authorises the /extension routes only, never the rest of the API.
+    """
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or missing extension key.",
+    )
+    key = (x_hirecraft_key or "").strip()
+    if not key:
+        raise unauthorized
+
+    user = (
+        db.query(User).filter(User.extension_key_hash == hash_extension_key(key)).first()
+    )
+    if user is None:
+        raise unauthorized
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled."
+        )
+    return user
+
+
+ExtensionUser = Annotated[User, Depends(get_extension_user)]
 
 
 def require_admin(user: CurrentUser) -> User:

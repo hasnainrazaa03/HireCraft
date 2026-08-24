@@ -60,6 +60,15 @@ class User(Base, TimestampMixin):
 
     # Account preferences.
     theme: Mapped[str] = mapped_column(String(10), default="dark", nullable=False)
+
+    # Long-lived credential for the browser extension, which has to reach the API
+    # unattended and can't refresh a 30-minute access token. Only the hash is
+    # stored, so a database copy doesn't hand over working keys, and it authorises
+    # the /extension routes alone rather than the whole account.
+    extension_key_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    extension_key_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     # JSONB on Postgres (production); JSON on SQLite so the unit tests, which run
     # against an in-memory SQLite DB, can compile the schema.
     notification_prefs: Mapped[dict[str, Any]] = mapped_column(

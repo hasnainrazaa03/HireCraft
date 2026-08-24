@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -119,3 +121,29 @@ def token_subject(token: str, expected_type: TokenType = "access") -> uuid.UUID:
         return uuid.UUID(str(payload["sub"]))
     except (KeyError, ValueError) as exc:
         raise TokenError("Token subject is not a valid user id.") from exc
+
+
+# --- extension key ----------------------------------------------------------
+#
+# A long-lived credential for the browser extension, which runs unattended and
+# cannot refresh a short-lived access token.
+#
+# Hashed with SHA-256 rather than Argon2, deliberately. Argon2 is right for
+# passwords because they are low-entropy and guessable; this key is 32 random
+# bytes, so brute force is not the threat, and it is verified on every extension
+# request — a deliberately slow hash there would be a self-inflicted denial of
+# service. What matters is that the plaintext is never stored, and a fixed-length
+# digest is what the indexed lookup needs.
+
+_EXTENSION_KEY_BYTES = 32
+EXTENSION_KEY_PREFIX = "hcx_"
+
+
+def generate_extension_key() -> tuple[str, str]:
+    """Return ``(plaintext, hash)``. The plaintext is shown once and not stored."""
+    key = f"{EXTENSION_KEY_PREFIX}{secrets.token_urlsafe(_EXTENSION_KEY_BYTES)}"
+    return key, hash_extension_key(key)
+
+
+def hash_extension_key(key: str) -> str:
+    return hashlib.sha256(key.strip().encode()).hexdigest()

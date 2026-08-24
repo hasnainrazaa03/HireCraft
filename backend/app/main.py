@@ -24,6 +24,7 @@ from app.api.routes import (
     copilot,
     evidence,
     export,
+    extension,
     health,
     insights,
     interview,
@@ -215,7 +216,7 @@ app.include_router(health.router)
 for module in (
     auth, oauth, account, profile, writing, evidence, resumes, applications, studio,
     companies, insights, interview, jobs, notifications, copilot, export, admin,
-    config, analytics,
+    config, analytics, extension,
 ):
     app.include_router(module.router, prefix=settings.api_v1_prefix)
 
