@@ -260,9 +260,16 @@ def _rerank_cache_set(key: str, data: dict) -> None:
         get_redis().setex(key, _RERANK_TTL, json.dumps(data))
 
 
-def _feed_row_to_result(row: ScrapedJob, fit: dict | None = None) -> JobSearchResult:
+def _feed_row_to_result(
+    row: ScrapedJob, fit: dict | None = None, *, full: bool = False
+) -> JobSearchResult:
     """Render a stored feed posting in the same shape the job cards already use,
-    plus the scraper's extras (level, term bucket, sponsorship, track pick)."""
+    plus the scraper's extras (level, term bucket, sponsorship, track pick).
+
+    ``full`` carries the entire description as well, for the detail panel. It is
+    off for list responses: a page of 120 postings would otherwise ship megabytes
+    of text to render a 400-character preview on each card.
+    """
     tags = [t for t in (row.terms or []) if t]
     if row.level and row.level != "unknown":
         tags.append(row.level.replace("_", " "))
@@ -275,6 +282,7 @@ def _feed_row_to_result(row: ScrapedJob, fit: dict | None = None) -> JobSearchRe
         remote=bool(row.remote),
         tags=tags[:8],
         snippet=(row.description or "")[:400],
+        description=(row.description or "") if full else "",
         source=row.source,
         created_at=int(row.posted_at.timestamp()) if row.posted_at else None,
         match_score=fit["score"] if fit else None,
@@ -515,7 +523,8 @@ def fetch_feed_description(
     fit = None
     if profile is not None:
         fit = _fit_cached(str(profile.id), row, MasterResume.model_validate(profile.content))
-    return _feed_row_to_result(row, fit)
+    # The detail panel renders the whole posting, not the card's preview.
+    return _feed_row_to_result(row, fit, full=True)
 
 
 @router.patch("/feed/{job_id}", response_model=JobSearchResult)

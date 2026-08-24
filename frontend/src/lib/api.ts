@@ -1230,6 +1230,8 @@ export interface JobSearchResult {
   remote: boolean;
   tags: string[];
   snippet: string;
+  /** Whole posting; only present on a single-job response, "" in list results. */
+  description?: string;
   source: string;
   created_at: number | null;
   company_domain: string;

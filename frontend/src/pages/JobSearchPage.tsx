@@ -625,7 +625,11 @@ function JobDetail({ job: initial, saved, onSave, onTailor, onClose, resumeId }:
   const [fetching, setFetching] = useState(false);
   useEffect(() => setJob(initial), [initial]);
   useEffect(() => {
-    if (!job.id || job.snippet.length >= 200 || fetching) return;
+    // The list response carries only a 400-character preview, so the panel
+    // always pulls the single-job response to get the whole description — and
+    // for aggregator rows that arrived with no body at all, that call is also
+    // what scrapes it from the ATS.
+    if (!job.id || job.description || fetching) return;
     setFetching(true);
     api
       .post<JobSearchResult>(
@@ -677,7 +681,7 @@ function JobDetail({ job: initial, saved, onSave, onTailor, onClose, resumeId }:
         </div>
 
         {/* Tabs */}
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.06] px-6">
+        <div className="flex shrink-0 flex-wrap gap-1 border-b border-white/[0.06] px-6">
           {(["overview", "match", "requirements", "recruiters"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`-mb-px whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium capitalize transition ${
@@ -708,43 +712,70 @@ function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult
   // render as findings — "None detected" under Potential Gaps reads as "you
   // have no gaps", which is the opposite of what an unscored card knows.
   const scored = job.match_score != null;
+  // The whole posting once the single-job response lands; the list's 400-char
+  // preview until then, so there's something to read immediately.
+  const body = job.description || job.snippet;
+  const [expanded, setExpanded] = useState(false);
+  // Collapse again when a different posting is opened into the same panel.
+  useEffect(() => setExpanded(false), [job.id, job.url]);
   return (
     <div className="space-y-6">
-      <div className="grid gap-5 md:grid-cols-2">
-        <div>
-          <h3 className="section-title mb-2">About the role</h3>
-          <p className="line-clamp-6 text-sm leading-relaxed text-muted">
-            {job.snippet
-              ? job.snippet
-              : fetching
-                ? "Fetching the full posting…"
-                : "This listing didn't include a description, and we couldn't fetch it from the source."}
-          </p>
-          {job.url && (
-            <a href={job.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-brand-300 hover:text-brand-200">
-              View Full Description <IconArrowRight className="h-4 w-4" />
-            </a>
-          )}
-        </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-surface-2 p-4">
-          <h3 className="section-title mb-3">Skills you have</h3>
-          {job.strengths.length ? (
-            <ul className="space-y-2">
-              {job.strengths.slice(0, 6).map((s) => (
-                <li key={s} className="flex items-center gap-2.5 text-sm text-content">
-                  <span className="h-2 w-2 rounded-full bg-emerald" /> {s}
-                </li>
-              ))}
-              {job.strengths.length > 6 && <li className="badge-brand mt-1 inline-block">+{job.strengths.length - 6} more</li>}
-            </ul>
-          ) : (
-            <p className="text-sm text-subtle">
-              {scored
-                ? "No overlapping skills detected from this posting."
-                : "Pick a résumé above to see which of your skills this posting asks for."}
+      {/* The description gets the panel's full width and reads top to bottom:
+          a few lines by default, the entire posting once expanded. The panel
+          scrolls, so there is no reason to keep the body in a narrow column. */}
+      <div>
+        <h3 className="section-title mb-2">About the role</h3>
+        {body ? (
+          <>
+            <p className={`whitespace-pre-line text-sm leading-relaxed text-muted ${expanded ? "" : "line-clamp-6"}`}>
+              {body}
             </p>
-          )}
-        </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+              {/* Only offer the toggle when there is more to reveal — six lines
+                  is roughly 400 characters at this width. */}
+              {(job.description || body.length > 400) && (
+                <button
+                  onClick={() => setExpanded((v) => !v)}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-brand-300 hover:text-brand-200"
+                >
+                  {expanded ? "Show less" : "View more"}
+                  <IconArrowRight className={`h-4 w-4 transition-transform ${expanded ? "-rotate-90" : "rotate-90"}`} />
+                </button>
+              )}
+              {job.url && (
+                <a href={job.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-subtle hover:text-content">
+                  View full description on {job.source.split(" · ")[0]} <IconArrowRight className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm leading-relaxed text-muted">
+            {fetching
+              ? "Fetching the full posting…"
+              : "This listing didn't include a description, and we couldn't fetch it from the source."}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-white/[0.07] bg-surface-2 p-4">
+        <h3 className="section-title mb-3">Skills you have</h3>
+        {job.strengths.length ? (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {job.strengths.slice(0, 8).map((s) => (
+              <li key={s} className="flex items-center gap-2.5 text-sm text-content">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald" /> {s}
+              </li>
+            ))}
+            {job.strengths.length > 8 && <li className="badge-brand mt-1 inline-block">+{job.strengths.length - 8} more</li>}
+          </ul>
+        ) : (
+          <p className="text-sm text-subtle">
+            {scored
+              ? "No overlapping skills detected from this posting."
+              : "Pick a résumé above to see which of your skills this posting asks for."}
+          </p>
+        )}
       </div>
 
       {/* AI Match Analysis */}

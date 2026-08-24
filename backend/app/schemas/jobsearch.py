@@ -15,6 +15,10 @@ class JobSearchResult(BaseModel):
     remote: bool
     tags: list[str]
     snippet: str
+    # The whole posting. Only populated when a single job is requested — the
+    # feed list would otherwise carry a few megabytes of description text for
+    # cards that show 400 characters of it.
+    description: str = ""
     source: str
     created_at: int | None = None  # unix seconds, for "posted N days ago"
     company_domain: str = ""  # real host for a logo lookup; "" → guess from name
