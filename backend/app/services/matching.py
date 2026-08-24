@@ -192,6 +192,55 @@ def _term_present(job_lower: str, term: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(term.lower())}(?![a-z0-9])", job_lower) is not None
 
 
+# Domain terms that résumés and postings write both ways. A résumé heading
+# "ML & Deep Learning" leaves no trace of the word "machine", so a posting
+# titled "Machine Learning Engineer" matched on half its domain words while
+# "Data Engineer" — data being a word the résumé does spell out — matched on
+# all of them. Expanding both sides removes the accident of which form each
+# document happened to use.
+_DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "ml": ("machine", "learning"),
+    "dl": ("deep", "learning"),
+    "ai": ("artificial", "intelligence"),
+    "genai": ("generative", "artificial", "intelligence"),
+    "cv": ("computer", "vision"),
+    "nlp": ("natural", "language", "processing"),
+    "nlu": ("natural", "language", "understanding"),
+    "llm": ("large", "language", "model"),
+    "llms": ("large", "language", "model"),
+    "mle": ("machine", "learning", "engineer"),
+    "rl": ("reinforcement", "learning"),
+    "asr": ("speech", "recognition"),
+}
+# The reverse direction: a spelled-out phrase should also match the acronym.
+_DOMAIN_ACRONYMS: dict[tuple[str, ...], str] = {
+    ("machine", "learning"): "ml",
+    ("deep", "learning"): "dl",
+    ("artificial", "intelligence"): "ai",
+    ("computer", "vision"): "cv",
+    ("natural", "language"): "nlp",
+    ("large", "language"): "llm",
+    ("reinforcement", "learning"): "rl",
+}
+
+
+def _expand_domain_terms(tokens: list[str]) -> list[str]:
+    """Add each domain term's other spelling, so the two forms match.
+
+    Applied to both the résumé profile and a job title: whichever way each
+    document writes it, the comparison sees both.
+    """
+    out = list(tokens)
+    present = set(tokens)
+    for token in tokens:
+        if (expansion := _DOMAIN_SYNONYMS.get(token)) is not None:
+            out.extend(w for w in expansion if w not in present)
+    for phrase, acronym in _DOMAIN_ACRONYMS.items():
+        if acronym not in present and all(w in present for w in phrase):
+            out.append(acronym)
+    return out
+
+
 def _role_profile(resume: MasterResume) -> list[str]:
     """The candidate's domain vocabulary — the words that say what they *do*.
 
@@ -222,7 +271,7 @@ def _role_profile(resume: MasterResume) -> list[str]:
         parts += _content_tokens(pr.name)
     for ed in resume.education:
         parts += _content_tokens(ed.field_of_study or "")
-    return parts
+    return _expand_domain_terms(parts)
 
 
 # Role words so common across engineering postings that matching them says little
@@ -233,6 +282,17 @@ _GENERIC_ROLE_WORDS = frozenset({
     "technologist", "consultant", "i", "ii", "iii", "1", "2", "3",
 })
 _GENERIC_TITLE_CEILING = 65.0
+
+# Cosine between a full job description and a résumé's ~120-token role profile is
+# structurally small — the documents are wildly different lengths — so the raw
+# value spans roughly 0.10 at the median to 0.33 at the very top. Scaling by an
+# arbitrary factor left this component's realistic ceiling near 56/100 even for a
+# 99th-percentile posting, which capped the blended score around 80 and made the
+# "Excellent Match" band (>=82) unreachable for every posting in the feed. The
+# scale below maps the observed 99.9th percentile to ~90, so the component uses
+# its range instead of permanently spending it. Measured over 770 described
+# postings; re-derive it rather than nudge it if the corpus changes shape.
+_TEXT_SIM_SCALE = 362.0
 
 
 # Words in a past job title that describe employment shape, not domain.
@@ -284,7 +344,9 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
     # --- Signal 1: title / domain alignment (strongest discriminator).
     profile = _role_profile(resume)
     profile_set = set(profile)
-    title_tokens = [t for t in _content_tokens(title) if t not in _SENIORITY_WORDS]
+    title_tokens = _expand_domain_terms(
+        [t for t in _content_tokens(title) if t not in _SENIORITY_WORDS]
+    )
     if title_tokens:
         # Score the DOMAIN words, not the filler. "Software Engineer" is two words
         # nearly every engineering résumé contains, so counting them made a
@@ -321,7 +383,7 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
     # and handing description-less postings the highest scores in the feed.
     body = (job_text or "")[len(title or "") :].strip()
     text_sim: float | None = (
-        min(100.0, _tf_cosine(_content_tokens(job_text), profile) * 260)
+        min(100.0, _tf_cosine(_content_tokens(job_text), profile) * _TEXT_SIM_SCALE)
         if len(body) >= 200
         else None
     )
