@@ -582,18 +582,32 @@ function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Freeze the page underneath. Without this a scroll that starts over the
+    // backdrop moves the list behind the drawer, which is what made the layers
+    // look misaligned. Restores whatever overflow the page actually had.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-md sm:p-8" onClick={onClose}>
+    // A right-side drawer, the shape job boards use: the list stays visible
+    // behind it, so moving between postings doesn't feel like leaving the page.
+    // The backdrop is a fixed, non-scrolling layer and the panel owns its own
+    // scroll — a scrollable backdrop slides its own coverage away and lets the
+    // page behind show through at the edges.
+    <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="my-4 w-full max-w-2xl animate-fade-in rounded-3xl border border-white/[0.08] bg-canvas-raised shadow-soft"
+        className="absolute right-0 top-0 flex h-full w-full max-w-xl animate-slide-in-right flex-col border-l border-white/[0.08] bg-canvas-raised shadow-soft"
         onClick={(e) => e.stopPropagation()}
         role="dialog" aria-modal="true" aria-label={`${job.title} at ${job.company}`}
       >
-        {/* Header */}
-        <div className="relative border-b border-white/[0.06] p-6">
+        {/* Header — fixed while the body scrolls, so the title and the primary
+            action stay reachable however long the posting is. */}
+        <div className="relative shrink-0 border-b border-white/[0.06] p-6">
           <button onClick={onClose} className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-lg text-base text-subtle transition hover:bg-white/[0.06] hover:text-content" aria-label="Close">✕</button>
           <div className="flex items-start gap-3.5 pr-8">
             <div className="group"><CompanyLogo company={job.company || job.title} domain={job.company_domain} /></div>
@@ -618,7 +632,7 @@ function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: 
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-white/[0.06] px-6">
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.06] px-6">
           {(["overview", "match", "requirements", "recruiters"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`-mb-px whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium capitalize transition ${
@@ -629,7 +643,7 @@ function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: 
           ))}
         </div>
 
-        <div className="p-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6">
           {tab === "overview" && <OverviewTab job={job} fetching={fetching} onWhy={() => setTab("match")} onImprove={onTailor} />}
           {tab === "match" && <MatchTab job={job} />}
           {tab === "requirements" && <RequirementsTab job={job} />}

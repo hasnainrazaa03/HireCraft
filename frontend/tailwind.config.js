@@ -107,10 +107,17 @@ export default {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        // The job drawer travels its own full width, so it reads as a panel
+        // sliding in from the edge rather than a card nudging sideways.
+        "slide-in-right": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.2s ease-out",
         "slide-in": "slide-in 0.25s ease-out",
+        "slide-in-right": "slide-in-right 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
       },
     },
   },
