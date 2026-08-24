@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, tokens, type User } from "./api";
+import { api, isExpired, tokens, type User } from "./api";
 
 interface AuthState {
   user: User | null;
@@ -58,7 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!tokens.access) {
+      // No token, or one that has already expired with no refresh to rescue it:
+      // calling /auth/me would be a guaranteed 401, which the browser logs as a
+      // console error that reads like a real failure on an ordinary signed-out
+      // visit. Go straight to the login screen instead.
+      if (!tokens.access || (isExpired(tokens.access) && isExpired(tokens.refresh))) {
+        tokens.clear();
         setLoading(false);
         return;
       }

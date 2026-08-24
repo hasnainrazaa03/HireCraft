@@ -30,6 +30,26 @@ export const tokens = {
   },
 };
 
+/**
+ * Is this JWT past its own expiry?
+ *
+ * Used to avoid firing a request we already know will 401. The check is a
+ * convenience, never a security boundary — the server validates every token
+ * regardless, and an unreadable or unsigned token is treated as expired.
+ */
+export function isExpired(jwt: string | null): boolean {
+  if (!jwt) return true;
+  try {
+    const [, payload] = jwt.split(".");
+    const { exp } = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    if (typeof exp !== "number") return false; // no expiry claim — let the server decide
+    // A few seconds of slack for clock skew.
+    return Date.now() / 1000 >= exp - 5;
+  } catch {
+    return true;
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
