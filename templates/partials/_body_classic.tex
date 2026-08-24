@@ -48,7 +48,10 @@
 ((* for e in r.education *))
     \resumeSubheading
       {((( e.institution )))}{((( e.location )))}
-      {((( e.degree )))((* if e.field_of_study *)) in ((( e.field_of_study )))((* endif *))((* if e.gpa *)); \textbf{GPA: ((( e.gpa )))}((* endif *))((* if e.honors *)), \textbf{((( e.honors | texjoin )))}((* endif *))}{((( date_range(e.start_date, e.end_date) )))}
+((# "M.S. in Computer Science" already names the field, so appending it again
+    produced "M.S. in Computer Science in Computer Science". Only add the field
+    when the degree doesn't already contain it. #))
+      {((( e.degree )))((* if e.field_of_study and e.field_of_study|lower not in e.degree|lower *)) in ((( e.field_of_study )))((* endif *))((* if e.gpa *)); \textbf{GPA: ((( e.gpa )))}((* endif *))((* if e.honors *)), \textbf{((( e.honors | texjoin )))}((* endif *))}{((( date_range(e.start_date, e.end_date) )))}
 ((* if e.coursework *))
       \resumeItemListStart
         \courseItem{Coursework: ((( e.coursework | texjoin )))}

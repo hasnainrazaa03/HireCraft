@@ -40,6 +40,10 @@ there is no summary/objective/profile section, leave both null — do not compos
 from the rest of the résumé. An invented summary silently rewrites the candidate's \
 document and pushes real content off the page.
 - Preserve bullet points verbatim as separate highlight entries.
+- An education line often carries a distinction next to the GPA — "GPA: 3.86, \
+Silver Medalist", "3.9/4.0, Dean's List", "First Class with Distinction". Put the \
+number in `gpa` and the distinction in `honors`. Dropping it loses an achievement \
+the résumé states.
 - Group skills the way the résumé groups them; if ungrouped, use one "Skills" group.
 - Put work experience in `experience`, personal/side projects in `projects`, and \
 schooling in `education`. Internships, part-time jobs, and teaching/research/course \
@@ -264,6 +268,40 @@ _INTRO_HEADING = re.compile(
 )
 
 
+# "3.86, Silver Medalist" / "3.9/4.0 (Dean's List)" — the numeric grade, then
+# anything else the line carried.
+_GPA_WITH_HONORS = re.compile(
+    r"^\s*(?P<gpa>\d(?:\.\d+)?(?:\s*/\s*\d(?:\.\d+)?)?)\s*[,;(–—-]+\s*(?P<rest>.+?)\)?\s*$"
+)
+
+
+def _split_gpa_honors(payload: dict) -> None:
+    """Move a distinction that arrived inside `gpa` into `honors`.
+
+    Résumés commonly write the grade and the distinction on one line — "GPA:
+    3.86, Silver Medalist" — and the model sometimes returns that whole string
+    as the GPA. This runs on the raw payload, before validation: `gpa` is capped
+    at 20 characters, so a combined value would otherwise be rejected and the
+    distinction lost entirely rather than merely misplaced. Neither fact is
+    invented; both were already on the line.
+    """
+    for entry in payload.get("education") or []:
+        if not isinstance(entry, dict):
+            continue
+        gpa = str(entry.get("gpa") or "").strip()
+        if not gpa:
+            continue
+        match = _GPA_WITH_HONORS.match(gpa)
+        if not match:
+            continue
+        rest = match.group("rest").strip(" .,;-")
+        entry["gpa"] = match.group("gpa").strip()
+        if rest:
+            honors = [h for h in (entry.get("honors") or []) if isinstance(h, str)]
+            if rest not in honors:
+                entry["honors"] = [*honors, rest][:10]
+
+
 def _drop_invented_intro(resume: MasterResume, source_text: str) -> None:
     """Clear a summary/headline the source résumé never had.
 
@@ -306,6 +344,7 @@ def structure_resume(
     )
 
     payload = _repair(payload)
+    _split_gpa_honors(payload)
     resume = _coerce_valid(payload)
     _drop_invented_intro(resume, text)
 
