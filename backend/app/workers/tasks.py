@@ -470,5 +470,77 @@ def scrape_job_feed_task() -> dict[str, int]:
             for key in ("new", "updated", "deactivated"):
                 totals[key] += counts[key]
 
+    totals["hydrated"] = hydrate_feed_descriptions()
     logger.info("jobfeed.run_complete", passed=stats.get("passed"), **totals)
     return totals
+
+
+# Aggregator lists (most of the feed) carry a title, company and link but no
+# body. A posting with no description cannot be scored — the matcher has only a
+# title to go on, so it lands near the neutral prior — and roughly two thirds of
+# the feed arrives that way. Fetching them on demand when a card is opened fixes
+# one posting at a time and leaves the ranking wrong until then, so each
+# scheduled run also fills in a batch.
+_HYDRATE_PER_RUN = 400
+
+
+def hydrate_feed_descriptions(limit: int = _HYDRATE_PER_RUN) -> int:
+    """Fetch bodies for description-less postings; returns how many were filled.
+
+    Bounded per run rather than exhaustive: this makes a few hundred requests to
+    third-party boards, and the feed converges over successive runs instead of
+    hammering them once. Newest first, since those are the ones worth applying
+    to. A posting that can't be read (JS-only career sites, dead links) is
+    recorded so it isn't retried every run.
+    """
+    from sqlalchemy import func, select
+
+    from app.core.rate_limit import get_redis
+    from app.models.scraped_job import ScrapedJob
+    from app.services.scraper import ScrapeError, scrape_job
+
+    filled = 0
+    with session_scope() as db:
+        rows = db.execute(
+            select(ScrapedJob)
+            .where(
+                ScrapedJob.active.is_(True),
+                ScrapedJob.url != "",
+                func.coalesce(func.length(ScrapedJob.description), 0) < 200,
+            )
+            .order_by(ScrapedJob.posted_at.desc().nullslast())
+            .limit(limit * 3)
+        ).scalars().all()
+
+        redis = None
+        with contextlib.suppress(Exception):
+            redis = get_redis()
+
+        for row in rows:
+            if filled >= limit:
+                break
+            if redis is not None:
+                with contextlib.suppress(Exception):
+                    if redis.get(f"jobtext:unreadable:{row.fingerprint}"):
+                        continue
+            try:
+                scraped = scrape_job(row.url, timeout=20)
+            except (ScrapeError, Exception):  # noqa: BLE001 - one bad link, not a bad run
+                scraped = None
+            if scraped is not None and scraped.text:
+                row.description = scraped.text[:20000]
+                if not row.location and scraped.location:
+                    row.location = scraped.location[:500]
+                filled += 1
+                # A body changes the score, so drop any fit cached from its absence.
+                if redis is not None:
+                    with contextlib.suppress(Exception):
+                        for key in redis.scan_iter(f"jobfit:*:{row.fingerprint}"):
+                            redis.delete(key)
+            elif redis is not None:
+                # Don't spend a request on this one every run for the next month.
+                with contextlib.suppress(Exception):
+                    redis.setex(f"jobtext:unreadable:{row.fingerprint}", 60 * 60 * 24 * 30, "1")
+
+    logger.info("jobfeed.hydrated", filled=filled)
+    return filled

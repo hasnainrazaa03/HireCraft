@@ -14,7 +14,10 @@ over thousands of postings.
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import UTC, datetime
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +102,46 @@ def scrape(
     return kept, stats
 
 
+# Tracking and referrer parameters differ per source for the same posting, so
+# they must not enter its identity.
+_TRACKING_PARAMS = re.compile(
+    r"^(utm_\w+|gh_src|ref|referer|referrer|source|src|campaign|trk|lever-source.*)$",
+    re.IGNORECASE,
+)
+
+
+def posting_key(url: str, fallback: str) -> str:
+    """Stable identity for a posting.
+
+    The URL is the only thing two sources agree on. The same Roblox req arrives
+    from Greenhouse as "[2027] Software Engineer, Early Career" and from Simplify
+    as "Software Engineer - Early Career", and the same xAI req arrives under the
+    company names "xAI" and "SpaceXAI" — so a content hash of company, title and
+    location stores the posting twice. Where there is no URL, fall back to the
+    scraper's own content hash.
+    """
+    if not url:
+        return fallback
+    try:
+        parsed = urlsplit(url.strip())
+    except ValueError:
+        return fallback
+    if not parsed.netloc:
+        return fallback
+    query = urlencode(
+        sorted((k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=False)
+               if not _TRACKING_PARAMS.match(k))
+    )
+    canonical = urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path.rstrip("/"),
+        query,
+        "",
+    ))
+    return hashlib.sha1(canonical.encode()).hexdigest()[:24]
+
+
 def persist(
     db,  # noqa: ANN001 - Session; typed loosely to avoid an import cycle
     user_id,  # noqa: ANN001 - uuid.UUID
@@ -108,8 +151,9 @@ def persist(
 ) -> dict[str, int]:
     """Upsert this run's postings for one user; returns {new, updated, deactivated}.
 
-    A posting is identified by the scraper's own content fingerprint, so re-seeing
-    it refreshes ``last_seen`` (and any changed detail) rather than duplicating.
+    A posting is identified by its URL (see ``posting_key``), so the same job
+    arriving from two boards under different titles refreshes one row rather than
+    creating a second.
     Résumé fit is not stored — see the module docstring.
     """
     now = datetime.now(UTC)
@@ -121,7 +165,11 @@ def persist(
     counts = {"new": 0, "updated": 0, "deactivated": 0}
 
     for job in jobs:
-        fingerprint = job.id
+        fingerprint = posting_key(job.url, job.id)
+        if fingerprint in seen:
+            # Two sources in the same run carrying one posting; the first wins
+            # and the second must not overwrite its (possibly richer) fields.
+            continue
         seen.add(fingerprint)
         row = existing.get(fingerprint)
         if row is None:
@@ -141,7 +189,13 @@ def persist(
         row.title = _clip(job.title, 500)
         row.url = job.url
         row.location = _clip(job.location, 500)
-        row.description = (job.description or "")[:20000]
+        # Never replace a description with nothing. Most feed rows arrive from
+        # aggregator lists with no body and are filled in later by fetching the
+        # posting; blindly assigning here erased that on the next scrape, so the
+        # same job silently lost its description every few hours.
+        incoming = (job.description or "")[:20000]
+        if len(incoming) > len(row.description or ""):
+            row.description = incoming
         row.remote = job.remote
         row.posted_at = job.posted_at
         row.level = _clip(job.level, 32) or "unknown"
