@@ -1,8 +1,13 @@
 # HireCraft — Full Testing Guide
 
-> **Fresh run — reset 2026-08-22.** The database was wiped back to a clean slate
-> (new résumés, brag bank, and master docs go in from scratch); the account,
-> Anthropic key, Claude Sonnet 5 selection, and the scraped job feed were kept.
+> **Fresh run — full wipe 2026-08-23.** The database was emptied back to a bare
+> account: **0** résumés, applications, cover letters, interview questions,
+> brag-bank items, notifications, and LLM-usage rows, and the scraped job feed
+> was cleared too (2,529 → 0), so **Job Search starts empty until the scraper is
+> run**. Generated artifact files were deleted and caches cleared. What survived
+> is only the login itself, the Anthropic key, and the Claude Sonnet 5 model
+> choice. Backup: `backups/hirecraft_20260823_194127.sql` (5.9 MB).
+>
 > Every case below is unchecked. Notes from the previous run are preserved as
 > reference for what was found and fixed last time — treat them as history, not
 > as current results.
@@ -42,7 +47,7 @@ gets ignored.)
 - When a case fails, keep going — note it and move on; we'll batch fixes.
 
 **Two accounts help:**
-- **Your account** (`hasnainrazaa03@gmail.com`) — already has a résumé, 26 brag-bank facts, 1 application. Best for the "rich data" flows.
+- **Your account** (`hasnainrazaa03@gmail.com`) — **currently empty** after the wipe. It becomes the "rich data" account as §3–§7 load a résumé, brag bank, and applications into it.
 - **A throwaway** (register a new `+test@…`) — best for first-run / empty-state flows (Section 1–2).
 
 **The product's signature promise to keep testing everywhere:** *bold but never fabricated.* Any AI output (résumé bullets, cover letters, STAR answers) must only state things your résumé **or brag bank** support. If you ever catch it inventing a number, tool, employer, or credential — that's a **P0 bug**; note it loudly.
@@ -55,14 +60,14 @@ gets ignored.)
 
 Confirms the app is up before deep testing.
 
-- ⬜ **T-SMOKE-01** Load http://localhost:5173 — you land on Login or Dashboard, no console errors (open DevTools console).
-  - Notes: PASS. Unauthenticated → auto-redirects to `/login`; page loads; no JS errors/warnings (only the default DevTools info message).
-- ⬜ **T-SMOKE-02** Sign in — Dashboard renders with your name and stat cards.
-  - Notes:
-- ⬜ **T-SMOKE-03** Every left-nav item opens without a blank screen or error: Dashboard, Copilot, Applications, Resumes, Career Profile, Writing Voice, Cover Letters, Company Intel, Interview Prep, Job Search, Analytics, Templates.
-  - Notes:
+- ✅ **T-SMOKE-01** Load http://localhost:5173 — you land on Login or Dashboard, no console errors (open DevTools console).
+  - Notes: PASS. Lands on Dashboard, sidebar visible, no errors. **Fixed during this run:** a `GET /auth/me 401` console error on boot — a stale token from before the wipe made the call a guaranteed failure; boot now skips it when the token is expired with no usable refresh (commit ffdb1b4).
+- ✅ **T-SMOKE-02** Sign in — Dashboard renders with your name and stat cards.
+  - Notes: PASS. All counts read empty on a freshly wiped account — no NaN/undefined, no fake numbers.
+- ✅ **T-SMOKE-03** Every left-nav item opens without a blank screen or error: Dashboard, Copilot, Applications, Resumes, Career Profile, Writing Voice, Cover Letters, Company Intel, Interview Prep, Job Search, Analytics, Templates.
+  - Notes: PASS. All 12 nav destinations open and render. Copilot empty state, Cover Letters → Saved letters, Interview Prep and Job Search all clean on an empty account.
 - ⬜ **T-SMOKE-04** Job Search shows cards; open one job's **View More** modal; close it.
-  - Notes:
+  - Notes: *Blocked until the feed is populated — the wipe cleared all 2,529 scraped jobs. Run the scraper (§10) first, then come back.*
 
 ---
 

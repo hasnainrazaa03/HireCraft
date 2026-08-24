@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, isExpired, tokens, type User } from "./api";
+import { api, isExpired, tokens, tryRefresh, type User } from "./api";
 
 interface AuthState {
   user: User | null;
@@ -63,6 +63,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // console error that reads like a real failure on an ordinary signed-out
       // visit. Go straight to the login screen instead.
       if (!tokens.access || (isExpired(tokens.access) && isExpired(tokens.refresh))) {
+        tokens.clear();
+        setLoading(false);
+        return;
+      }
+      // Expired access but a refresh that should still work — the usual state
+      // when you come back the next day. Rotate first rather than spending a
+      // request we know 401s; the interceptor would recover, but only after
+      // logging a failure that looks like one.
+      if (isExpired(tokens.access) && !(await tryRefresh())) {
         tokens.clear();
         setLoading(false);
         return;

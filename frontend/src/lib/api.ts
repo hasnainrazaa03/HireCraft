@@ -41,7 +41,11 @@ export function isExpired(jwt: string | null): boolean {
   if (!jwt) return true;
   try {
     const [, payload] = jwt.split(".");
-    const { exp } = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    // base64url → base64, re-padded: JWTs strip "=" and atob rejects some
+    // unpadded lengths. A throw here would report "expired" and sign the user
+    // out on every reload, so the decode has to be exact.
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const { exp } = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")));
     if (typeof exp !== "number") return false; // no expiry claim — let the server decide
     // A few seconds of slack for clock skew.
     return Date.now() / 1000 >= exp - 5;
@@ -93,7 +97,7 @@ async function rotate(staleAccess: string | null): Promise<boolean> {
   }
 }
 
-async function tryRefresh(): Promise<boolean> {
+export async function tryRefresh(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
   // Captured before we queue for the lock, so rotate() can tell whether someone
