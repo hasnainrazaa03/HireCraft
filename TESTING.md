@@ -66,8 +66,12 @@ Confirms the app is up before deep testing.
   - Notes: PASS. All counts read empty on a freshly wiped account — no NaN/undefined, no fake numbers.
 - ✅ **T-SMOKE-03** Every left-nav item opens without a blank screen or error: Dashboard, Copilot, Applications, Resumes, Career Profile, Writing Voice, Cover Letters, Company Intel, Interview Prep, Job Search, Analytics, Templates.
   - Notes: PASS. All 12 nav destinations open and render. Copilot empty state, Cover Letters → Saved letters, Interview Prep and Job Search all clean on an empty account.
-- ⬜ **T-SMOKE-04** Job Search shows cards; open one job's **View More** modal; close it.
+- ✅ **T-SMOKE-04** Job Search shows cards; open one job's **View More** modal; close it.
   - Notes: *Unblocked — scraper re-run 2026-08-23, **2,513 jobs** in the feed.* Most rows arrive with title/company/location only; the description is fetched **on demand** when you open a card, by design. **Fixed while unblocking this (commit 24717d7):** that on-demand fetch silently failed for every **Workday** posting (432 rows — the public page is a JS shell and there was no handler, so the card opened with no description and scored against nothing). Now read via Workday's `cxs` JSON API; **SmartRecruiters** (100 rows) added the same way. Greenhouse/Lever/Ashby re-checked, unchanged. *Still unreadable:* `apply.workable.com` (27) and the JS-only career sites bytedance/lifeattiktok (326) — a card there will show no description.
+    **PASS** — cards appear, detail opens. Two further issues found and fixed from this case:
+    (a) **Overlay misrender (P2, fixed 6b20213):** the detail was a centered modal whose backdrop was itself the scroll container, so a long posting scrolled the backdrop out from under itself and the dashboard showed through above the card. Rebuilt as a **right-side drawer** (per user request — the shape job boards use): fixed backdrop, panel owns its scroll, header and tabs stay put, page behind is frozen while open.
+    (b) **Misleading empty state (P2, fixed 9f4d330):** with no résumé scored, the drawer printed "No overlapping skills detected" and "Potential Gaps: **None detected**" — findings from an analysis that never ran, the second reading as "you have no gaps". Now distinguishes *analysed-found-nothing* from *not analysed*.
+    **Open question for the user — feed staleness:** 527 of 2,513 postings (21%) are older than 3 months, and 697 more are 1–3 months (the Figma card in testing read "Posted 9mo ago"). Only 359 are from the last week. Decide whether to hide, down-rank, or badge stale postings.
 
 ---
 
