@@ -459,7 +459,16 @@ def job_feed(
         # applies a gentle penalty rather than a filter, so a standout old role
         # still outranks a mediocre fresh one, and unknown-age postings are
         # treated as neither fresh nor stale.
-        results.sort(key=lambda r: (r.match_score or 0) - _staleness_penalty(r.created_at), reverse=True)
+        # Recency is the tiebreak, not an afterthought: without a résumé every
+        # score is null and every fresh posting's penalty is zero, so the keys
+        # all tied and "best match" silently degraded into whatever order the
+        # database happened to return — an arbitrary list presented as a
+        # ranking. It also does the right thing when scores exist, putting the
+        # fresher of two equal matches first.
+        results.sort(
+            key=lambda r: ((r.match_score or 0) - _staleness_penalty(r.created_at), r.created_at or 0),
+            reverse=True,
+        )
     return results[:limit]
 
 

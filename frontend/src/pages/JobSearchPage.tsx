@@ -269,9 +269,12 @@ export default function JobSearchPage() {
   const wide = useMediaQuery("(min-width: 1024px)");
   const splitView = modal !== null && wide;
 
+  // Mirrors the server's ordering, including its recency tiebreak — without it
+  // an unscored feed (no résumé yet) ties on every comparison and "best match"
+  // renders in arbitrary order while looking like a ranking.
   const sorted = [...(jobs ?? [])].sort((a, b) =>
     sort === "match"
-      ? (b.match_score ?? 0) - (a.match_score ?? 0)
+      ? (b.match_score ?? 0) - (a.match_score ?? 0) || (b.created_at ?? 0) - (a.created_at ?? 0)
       : (b.created_at ?? 0) - (a.created_at ?? 0),
   );
 
@@ -498,7 +501,11 @@ export default function JobSearchPage() {
           {!query && (
             <div className="flex items-center gap-2 text-sm text-brand-200">
               <IconSparkles className="h-4 w-4" />
-              <span>Recommended for your profile — AI-ranked against your résumé. Search above to explore more.</span>
+              <span>
+                {sorted.some((j) => j.match_score != null)
+                  ? "Recommended for your profile — AI-ranked against your résumé. Search above to explore more."
+                  : "Newest postings first. Add a résumé, or pick one under \u201cScore against\u201d, to rank these by how well you fit."}
+              </span>
             </div>
           )}
           <div className={`grid gap-6 transition-opacity ${splitView ? "" : "xl:grid-cols-2"} ${isFetching ? "opacity-60" : ""}`}>
