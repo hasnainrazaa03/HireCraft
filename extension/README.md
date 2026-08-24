@@ -74,4 +74,6 @@ no dependencies.
 - Content scripts run on Greenhouse, Ashby and Lever only — not on every site.
 - Nothing is sent anywhere except your own HireCraft instance.
 
-> `icon128.png` is intentionally omitted — add any 128×128 PNG before packaging.
+> `icon128.png` is generated, not hand-drawn — Chrome refuses to load an unpacked
+> extension whose manifest names an icon that isn't there, so the file has to
+> exist. Replace it with anything 128×128 you prefer.
