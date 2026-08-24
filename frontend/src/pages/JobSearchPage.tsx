@@ -27,6 +27,26 @@ function timeAgo(unix: number | null): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
+/**
+ * Track a CSS media query in React.
+ *
+ * The detail panel needs a genuinely different DOM depending on width — an
+ * inline column beside the list, or an overlay drawer — so it can't be a
+ * `hidden lg:block` pair: both shells would mount, and the panel would fetch
+ * the posting twice.
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
 const SAVED_KEY = "hirecraft.savedJobs";
 function loadSaved(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || "[]")); } catch { return new Set(); }
@@ -168,14 +188,34 @@ export default function JobSearchPage() {
     });
   }
 
+  // Below this width there isn't room for a list and a panel side by side, so
+  // the panel becomes an overlay drawer instead.
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const splitView = modal !== null && wide;
+
   const sorted = [...(jobs ?? [])].sort((a, b) =>
     sort === "match"
       ? (b.match_score ?? 0) - (a.match_score ?? 0)
       : (b.created_at ?? 0) - (a.created_at ?? 0),
   );
 
+  const detail = modal && (
+    <JobDetail
+      resumeId={mode === "feed" ? feedResume : undefined}
+      job={modal} saved={saved.has(jobKey(modal))}
+      onSave={() => toggleSave(modal)}
+      onTailor={() => tailor(modal)}
+      onClose={() => setModal(null)}
+    />
+  );
+
   return (
-    <div className="space-y-7">
+    // Opening a posting splits the page rather than covering it: the board
+    // narrows to a single column on the left and stays fully live — scroll it,
+    // re-filter it, click straight through to another posting — while the
+    // detail sits beside it. Nothing is dimmed and nothing is blocked.
+    <div className="flex gap-6">
+    <div className="min-w-0 flex-1 space-y-7">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Job Search</h1>
         <p className="mt-1 text-sm text-muted">Discover jobs that match your profile and career goals.</p>
@@ -374,7 +414,7 @@ export default function JobSearchPage() {
               <span>Recommended for your profile — AI-ranked against your résumé. Search above to explore more.</span>
             </div>
           )}
-          <div className={`grid gap-6 transition-opacity xl:grid-cols-2 ${isFetching ? "opacity-60" : ""}`}>
+          <div className={`grid gap-6 transition-opacity ${splitView ? "" : "xl:grid-cols-2"} ${isFetching ? "opacity-60" : ""}`}>
             {sorted.map((job) => (
               <JobCard
                 scoredWith={mode === "feed" ? feedResumes.find((r) => r.id === feedResume)?.name : undefined}
@@ -392,15 +432,32 @@ export default function JobSearchPage() {
         </>
       )}
 
-      {modal && (
-        <JobModal
-          resumeId={mode === "feed" ? feedResume : undefined}
-          job={modal} saved={saved.has(jobKey(modal))}
-          onSave={() => toggleSave(modal)}
-          onTailor={() => tailor(modal)}
-          onClose={() => setModal(null)}
-        />
+      {/* Narrow screens: no room to split, so the panel overlays instead. */}
+      {modal && !wide && (
+        <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" onClick={() => setModal(null)}>
+          <div
+            className="absolute right-0 top-0 h-full w-full max-w-xl animate-slide-in-right border-l border-white/[0.08] bg-canvas-raised shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog" aria-modal="true"
+          >
+            {detail}
+          </div>
+        </div>
       )}
+    </div>
+
+    {/* Wide screens: a real column in the page flow. Sticky so it stays with
+        you as the board scrolls, and capped to the viewport so the panel's own
+        body scrolls rather than stretching the page. */}
+    {splitView && (
+      <aside className="w-[26rem] shrink-0 xl:w-[30rem]">
+        {/* top clears the app's sticky header (~4rem) so the panel parks just
+            below it rather than sliding underneath. */}
+        <div className="sticky top-[4.5rem] h-[calc(100vh-5.5rem)] animate-slide-in-right overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-raised shadow-soft">
+          {detail}
+        </div>
+      </aside>
+    )}
     </div>
   );
 }
@@ -550,11 +607,11 @@ function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
   );
 }
 
-// --- modal (matches the reference: tabs + AI match analysis) ----------------
+// --- detail panel (tabs + AI match analysis) --------------------------------
 
 type Tab = "overview" | "match" | "requirements" | "recruiters";
 
-function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: {
+function JobDetail({ job: initial, saved, onSave, onTailor, onClose, resumeId }: {
   job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onClose: () => void;
   /** Résumé the re-fetched posting should be re-scored against. */
   resumeId?: string;
@@ -582,29 +639,17 @@ function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
-    // Freeze the page underneath. Without this a scroll that starts over the
-    // backdrop moves the list behind the drawer, which is what made the layers
-    // look misaligned. Restores whatever overflow the page actually had.
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   return (
-    // A right-side drawer, the shape job boards use: the list stays visible
-    // behind it, so moving between postings doesn't feel like leaving the page.
-    // The backdrop is a fixed, non-scrolling layer and the panel owns its own
-    // scroll — a scrollable backdrop slides its own coverage away and lets the
-    // page behind show through at the edges.
-    <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="absolute right-0 top-0 flex h-full w-full max-w-xl animate-slide-in-right flex-col border-l border-white/[0.08] bg-canvas-raised shadow-soft"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog" aria-modal="true" aria-label={`${job.title} at ${job.company}`}
-      >
+    // Just the panel's contents. Positioning belongs to whichever shell renders
+    // it — an inline column beside the list on a wide screen, an overlay drawer
+    // when there isn't room for both.
+    <div
+      className="flex h-full flex-col overflow-hidden"
+      aria-label={`${job.title} at ${job.company}`}
+    >
         {/* Header — fixed while the body scrolls, so the title and the primary
             action stay reachable however long the posting is. */}
         <div className="relative shrink-0 border-b border-white/[0.06] p-6">
@@ -648,7 +693,6 @@ function JobModal({ job: initial, saved, onSave, onTailor, onClose, resumeId }: 
           {tab === "match" && <MatchTab job={job} />}
           {tab === "requirements" && <RequirementsTab job={job} />}
           {tab === "recruiters" && <RecruitersTab company={job.company} onDraft={() => { onClose(); navigate("/cover-letters"); }} />}
-        </div>
       </div>
     </div>
   );
