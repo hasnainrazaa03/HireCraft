@@ -169,7 +169,12 @@ TECH_VOCAB: tuple[str, ...] = (
     "Machine Learning", "Deep Learning", "NLP", "Computer Vision", "PyTorch",
     "TensorFlow", "Scikit-learn", "Pandas", "NumPy", "LLM", "Transformers",
     "Data Engineering", "ETL", "Data Pipelines", "Tableau", "Power BI",
-    "Agile", "Scrum", "TDD", "Selenium", "Playwright",
+    # "Agile"/"Scrum" deliberately absent: this vocabulary exists only to decide
+    # which skills a posting names and whether the résumé claims them, and a way
+    # of working is not a technology. Nearly every posting mentions one and
+    # nearly no résumé lists it, so they scored as a gap on almost every job —
+    # noise that pulled coverage down without describing a real shortfall.
+    "TDD", "Selenium", "Playwright",
 )
 
 
@@ -370,7 +375,15 @@ def analyze_job_fit(resume: MasterResume, job_text: str, *, title: str = "") -> 
     # --- Signal 2: skill coverage, shrunk toward a neutral prior so a lone hit
     # can't read as a perfect match ((1 hit)/(1 named) is pulled off 100%).
     if present:
-        alpha, prior = 3.0, 0.4
+        # The prior exists to stop one lucky hit reading as a perfect match, so
+        # it must dominate when the posting names one or two skills and step
+        # aside once there is a real sample. A fixed alpha of 3 never stepped
+        # aside: a posting naming seven technologies of which the résumé held
+        # six — every one but "Agile" — scored 72%, under-crediting a near
+        # perfect match badly enough to cap the whole feed. Alpha now decays
+        # with the size of the sample it is guarding against.
+        alpha = 3.0 / (1.0 + len(present) / 4.0)
+        prior = 0.4
         skill_cov: float | None = (len(strengths) + alpha * prior) / (len(present) + alpha) * 100
     else:
         skill_cov = None
