@@ -67,6 +67,7 @@ export default function ResumesPage() {
 
   const [historyFor, setHistoryFor] = useState<ResumeProfileSummary | null>(null);
   const [previewFor, setPreviewFor] = useState<ResumeProfileSummary | null>(null);
+  const [sourceFor, setSourceFor] = useState<ResumeProfileSummary | null>(null);
   const [scoreFor, setScoreFor] = useState<ResumeProfileSummary | null>(null);
   const [rewriteFor, setRewriteFor] = useState<ResumeProfileSummary | null>(null);
   const [importing, setImporting] = useState(false);
@@ -285,9 +286,9 @@ export default function ResumesPage() {
                     which parsing and a template render can never reproduce. */}
                 {p.source_filename && (
                   <button
-                    onClick={() => api.download(`/resumes/${p.id}/original`, p.source_filename!)}
+                    onClick={() => setSourceFor(p)}
                     className="btn-ghost btn-sm"
-                    title={`Download the file you uploaded (${p.source_filename})`}
+                    title={`Read or download the file you uploaded (${p.source_filename})`}
                   >
                     Original
                   </button>
@@ -321,6 +322,7 @@ export default function ResumesPage() {
         />
       )}
       {previewFor && <PreviewModal profile={previewFor} templates={templates} onClose={() => setPreviewFor(null)} />}
+      {sourceFor && <SourceModal profile={sourceFor} onClose={() => setSourceFor(null)} />}
       {scoreFor && <ScoreModal profile={scoreFor} onClose={() => setScoreFor(null)} />}
       {rewriteFor && (
         <RewriteModal
@@ -759,5 +761,105 @@ function VersionHistoryModal({ profile, onClose, onRestored }: { profile: Resume
         </div>
       )}
     </Modal>
+  );
+}
+
+interface SourceView {
+  filename: string;
+  language: string;
+  content: string;
+  truncated: boolean;
+  size_bytes: number;
+}
+
+/**
+ * Read the file a résumé was imported from.
+ *
+ * Importing is lossy and re-rendering makes a different document, so the
+ * uploaded file is the only faithful copy of what the user actually wrote.
+ * Offering it solely as a download made it feel discarded; a .tex is plain
+ * text, so it is simply shown, with the download still one click away.
+ */
+function SourceModal({ profile, onClose }: { profile: ResumeProfileSummary; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["resume-source", profile.id],
+    queryFn: () => api.get<SourceView>(`/resumes/${profile.id}/source`),
+    retry: false,
+  });
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function copy() {
+    if (!data?.content) return;
+    try {
+      await navigator.clipboard.writeText(data.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* clipboard blocked (insecure context, denied permission) — the text is
+         still selectable in the pane, so this needs no error of its own. */
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-raised shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={`Original source of ${profile.name}`}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-base font-semibold text-content">{profile.source_filename}</h2>
+            <p className="mt-0.5 text-xs text-subtle">
+              The file you uploaded, exactly as you wrote it
+              {data ? ` · ${(data.size_bytes / 1024).toFixed(1)} KB` : ""}
+            </p>
+          </div>
+          <button onClick={copy} className="btn-ghost btn-sm" disabled={!data?.content}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button
+            onClick={() => api.download(`/resumes/${profile.id}/original`, profile.source_filename!)}
+            className="btn-ghost btn-sm"
+          >
+            Download
+          </button>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-base text-subtle transition hover:bg-white/[0.06] hover:text-content" aria-label="Close">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-surface-2/40">
+          {isLoading ? (
+            <div className="py-20 text-center"><Spinner className="mx-auto h-6 w-6" /></div>
+          ) : error ? (
+            <div className="p-6 text-sm text-muted">
+              {(error as ApiError)?.message || "Couldn't read the original file."}
+              <button
+                onClick={() => api.download(`/resumes/${profile.id}/original`, profile.source_filename!)}
+                className="ml-2 text-brand-300 hover:text-brand-200"
+              >
+                Download it instead
+              </button>
+            </div>
+          ) : (
+            <>
+              <pre className="whitespace-pre p-5 font-mono text-[12.5px] leading-relaxed text-muted">
+                {data?.content}
+              </pre>
+              {data?.truncated && (
+                <p className="border-t border-white/[0.06] px-5 py-3 text-xs text-subtle">
+                  Shown up to 400 KB — download the file for the rest.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

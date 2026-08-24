@@ -709,6 +709,54 @@ _CONTENT_TYPES = {
 }
 
 
+# Source formats that are text and therefore readable in the browser. A PDF or
+# .docx is a container, not something to show in a code pane.
+_VIEWABLE_SOURCE_SUFFIXES = {"tex", "txt", "md", "json", "yaml", "yml"}
+# Enough for any résumé source; a pathological upload shouldn't be streamed into
+# the page whole.
+_MAX_SOURCE_VIEW_BYTES = 400_000
+
+
+@router.get("/{profile_id}/source", response_model=dict)
+def view_original_source(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> dict:
+    """The imported file's text, for reading in the app rather than downloading.
+
+    Importing is lossy and re-rendering produces a different document, so the
+    uploaded file is the only faithful copy of what the user actually wrote.
+    Keeping it strictly behind a download makes it feel discarded; a .tex is
+    plain text and there is no reason it can't simply be read.
+    """
+    profile = _get_owned(db, user.id, profile_id)
+    if not profile.source_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This résumé was built in the app, so there's no uploaded original.",
+        )
+    name = profile.source_filename or "resume"
+    suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if suffix not in _VIEWABLE_SOURCE_SUFFIXES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"A {suffix.upper() or 'binary'} original can be downloaded, but not shown as text.",
+        )
+    try:
+        data = storage.read_bytes(profile.source_path)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="The original file is no longer available."
+        ) from exc
+
+    truncated = len(data) > _MAX_SOURCE_VIEW_BYTES
+    text = data[:_MAX_SOURCE_VIEW_BYTES].decode("utf-8", errors="replace")
+    return {
+        "filename": name,
+        "language": suffix,
+        "content": text,
+        "truncated": truncated,
+        "size_bytes": len(data),
+    }
+
+
 @router.get("/{profile_id}/original")
 def download_original(profile_id: uuid.UUID, user: CurrentUser, db: DbSession) -> Response:
     """The file this résumé was imported from, byte-for-byte.
