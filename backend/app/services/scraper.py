@@ -305,6 +305,15 @@ def _read_capped(response: httpx.Response, limit: int) -> bytes:
 _ASHBY_RE = re.compile(r"ashbyhq\.com/([^/?#]+)/([0-9a-f-]{36})", re.IGNORECASE)
 _LEVER_RE = re.compile(r"lever\.co/([^/?#]+)/([0-9a-f-]{36})", re.IGNORECASE)
 _GREENHOUSE_RE = re.compile(r"greenhouse\.io/(?:embed/job_app\?for=)?([^/?#]+).*?(?:/jobs/|token=)(\d+)", re.IGNORECASE)
+# Workday serves the posting from a "cxs" JSON endpoint; the public page is a JS
+# shell. The optional locale segment ("/en-US/") is not part of the site id.
+_WORKDAY_RE = re.compile(
+    r"https://([^./]+)\.([^./]+)\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Z]{2}/)?([^/]+)(/job/[^?#]+)",
+    re.IGNORECASE,
+)
+_SMARTRECRUITERS_RE = re.compile(
+    r"jobs\.smartrecruiters\.com/(?:[^/]+/)??([^/?#]+)/(\d+)", re.IGNORECASE
+)
 
 
 def _html_to_text(fragment: str) -> str:
@@ -344,6 +353,39 @@ def _ats_api_result(url: str, *, timeout: int) -> ScrapeResult | None:
             loc = (job.get("categories") or {}).get("location")
             return _ats_result(url, clean_text("\n\n".join(p for p in parts if p)),
                                job.get("text"), org, loc)
+
+        elif (m := _WORKDAY_RE.match(url)) and host.endswith("myworkdayjobs.com"):
+            tenant, cell, site, path = m.groups()
+            data = httpx.get(
+                f"https://{tenant}.{cell}.myworkdayjobs.com/wday/cxs/{tenant}/{site}{path}",
+                headers={"Accept": "application/json"}, timeout=timeout,
+            ).json()
+            info = (data or {}).get("jobPostingInfo") or {}
+            loc = info.get("location") or ""
+            if info.get("additionalLocations"):
+                loc = "; ".join([loc, *info["additionalLocations"]]).strip("; ")
+            return _ats_result(url, _html_to_text(info.get("jobDescription") or ""),
+                               info.get("title"), tenant, loc)
+
+        elif (m := _SMARTRECRUITERS_RE.search(url)) and host.endswith("smartrecruiters.com"):
+            org, pid = m.group(1), m.group(2)
+            job = httpx.get(
+                f"https://api.smartrecruiters.com/v1/companies/{org}/postings/{pid}",
+                timeout=timeout,
+            ).json()
+            sections = ((job.get("jobAd") or {}).get("sections") or {})
+            parts = []
+            for key in ("companyDescription", "jobDescription", "qualifications",
+                        "additionalInformation"):
+                block = sections.get(key) or {}
+                body = _html_to_text(block.get("text") or "")
+                if body:
+                    parts.append(f"{block.get('title') or ''}\n{body}".strip())
+            loc = (job.get("location") or {})
+            where = ", ".join(x for x in (loc.get("city"), loc.get("region"),
+                                          loc.get("country")) if x)
+            return _ats_result(url, clean_text("\n\n".join(parts)),
+                               job.get("name"), org, where)
 
         elif (m := _GREENHOUSE_RE.search(url)) and host.endswith("greenhouse.io"):
             org, pid = m.group(1), m.group(2)
