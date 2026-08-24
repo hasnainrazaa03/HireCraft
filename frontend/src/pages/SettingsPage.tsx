@@ -14,13 +14,14 @@ import { useToast } from "../lib/toast";
 import { Modal, Spinner } from "../components/ui";
 import { IconCheck, IconShield, IconLogout, IconKey } from "../components/icons";
 
-type Tab = "profile" | "security" | "ai" | "sessions" | "notifications" | "data";
+type Tab = "profile" | "security" | "ai" | "sessions" | "extension" | "notifications" | "data";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "security", label: "Security" },
   { id: "ai", label: "AI Model" },
   { id: "sessions", label: "Devices" },
+  { id: "extension", label: "Extension" },
   { id: "notifications", label: "Notifications" },
   { id: "data", label: "Data" },
 ];
@@ -53,6 +54,7 @@ export default function SettingsPage() {
         {tab === "security" && <SecuritySection />}
         {tab === "ai" && <LlmSection />}
         {tab === "sessions" && <SessionsSection />}
+        {tab === "extension" && <ExtensionSection />}
         {tab === "notifications" && <NotificationsSection />}
         {tab === "data" && <DataSection />}
       </div>
@@ -608,5 +610,138 @@ function DataSection() {
         />
       </Modal>
     </>
+  );
+}
+
+// --- Browser extension --------------------------------------------------------
+
+interface ExtensionKeyStatus {
+  configured: boolean;
+  created_at: string | null;
+}
+
+/**
+ * Issue the key the browser extension uses to reach this account.
+ *
+ * The key is shown once and then only its hash is kept, so the UI has to treat
+ * that single moment as the whole point: it stays on screen with a copy button
+ * until dismissed, rather than appearing in a toast that scrolls away.
+ */
+function ExtensionSection() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [issued, setIssued] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ["extension-key"],
+    queryFn: () => api.get<ExtensionKeyStatus>("/account/extension-key"),
+  });
+
+  const issue = useMutation({
+    mutationFn: () => api.post<{ key: string }>("/account/extension-key"),
+    onSuccess: (data) => {
+      setIssued(data.key);
+      setCopied(false);
+      queryClient.invalidateQueries({ queryKey: ["extension-key"] });
+    },
+    onError: () => toast.error("Couldn't create a key"),
+  });
+
+  const revoke = useMutation({
+    mutationFn: () => api.delete("/account/extension-key"),
+    onSuccess: () => {
+      setIssued(null);
+      queryClient.invalidateQueries({ queryKey: ["extension-key"] });
+      toast.info("Key revoked", "The extension will stop working immediately.");
+    },
+  });
+
+  async function copy() {
+    if (!issued) return;
+    try {
+      await navigator.clipboard.writeText(issued);
+      setCopied(true);
+    } catch {
+      /* clipboard blocked — the key is selectable on screen either way */
+    }
+  }
+
+  return (
+    <Card
+      title="Browser extension"
+      description="Lets the HireCraft extension fill job application forms with your details and attach your résumé."
+    >
+      {isLoading ? (
+        <Spinner className="h-5 w-5" />
+      ) : (
+        <div className="space-y-4">
+          {issued && (
+            <div className="rounded-xl border border-brand-500/30 bg-brand-500/[0.07] p-4">
+              <div className="text-sm font-medium text-content">
+                Copy this key now — it won't be shown again
+              </div>
+              <p className="mt-1 text-xs text-subtle">
+                Only a hash is stored, so it genuinely can't be recovered. Paste it
+                into the extension's popup. Lost it? Create another; the old one
+                stops working.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg bg-surface-3 px-3 py-2 font-mono text-xs text-content">
+                  {issued}
+                </code>
+                <button onClick={copy} className="btn-secondary btn-sm shrink-0">
+                  {copied ? "Copied" : "Copy"}
+                </button>
+                <button onClick={() => setIssued(null)} className="btn-ghost btn-sm shrink-0">
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1 text-sm">
+              {status?.configured ? (
+                <>
+                  <span className="text-content">A key is active</span>
+                  {status.created_at && (
+                    <span className="text-subtle">
+                      {" "}
+                      · created {new Date(status.created_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-muted">No key yet — create one to connect the extension.</span>
+              )}
+            </div>
+            <button
+              onClick={() => issue.mutate()}
+              disabled={issue.isPending}
+              className="btn-secondary btn-sm"
+            >
+              <IconKey className="h-4 w-4" />
+              {status?.configured ? "Replace key" : "Create key"}
+            </button>
+            {status?.configured && (
+              <button
+                onClick={() => revoke.mutate()}
+                disabled={revoke.isPending}
+                className="btn-ghost btn-sm text-danger"
+              >
+                Revoke
+              </button>
+            )}
+          </div>
+
+          <p className="text-xs leading-relaxed text-subtle">
+            This key can read the details it fills into forms, download your résumé
+            as a PDF, and record an application you've made. It can't change your
+            account, and it can't start a paid AI run.
+          </p>
+        </div>
+      )}
+    </Card>
   );
 }

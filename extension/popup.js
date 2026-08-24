@@ -135,3 +135,76 @@ document.getElementById("clip").addEventListener("click", async () => {
     statusEl.textContent = "Couldn't clip this page.";
   }
 });
+
+// --- autofill: connect, and inspect a form -----------------------------------
+
+const DEFAULT_API = "http://localhost:8000";
+const apiUrlEl = document.getElementById("apiUrl");
+const extKeyEl = document.getElementById("extKey");
+const connEl = document.getElementById("connStatus");
+const inspectOut = document.getElementById("inspectOut");
+
+chrome.storage.local.get(["apiUrl", "extensionKey"], ({ apiUrl, extensionKey }) => {
+  apiUrlEl.value = apiUrl || DEFAULT_API;
+  // Show that a key is stored without redisplaying it: the real one is never
+  // recoverable from HireCraft either, so echoing it here would be the only
+  // place it could leak from.
+  if (extensionKey) extKeyEl.placeholder = "•••••••• (saved)";
+});
+
+function say(text, isError) {
+  connEl.textContent = text;
+  connEl.classList.toggle("err", Boolean(isError));
+}
+
+document.getElementById("connect").addEventListener("click", async () => {
+  const api = (apiUrlEl.value.trim() || DEFAULT_API).replace(/\/$/, "");
+  const typed = extKeyEl.value.trim();
+  const stored = (await chrome.storage.local.get(["extensionKey"])).extensionKey;
+  const key = typed || stored;
+  if (!key) {
+    say("Paste the key from Settings → Extension.", true);
+    return;
+  }
+
+  await chrome.storage.local.set({ apiUrl: api, extensionKey: key });
+  say("Checking…");
+  const reply = await chrome.runtime.sendMessage({ type: "ping" });
+  if (!reply?.ok) {
+    say(reply?.error || "Couldn't connect.", true);
+    return;
+  }
+  const { profile } = reply.data;
+  extKeyEl.value = "";
+  extKeyEl.placeholder = "•••••••• (saved)";
+  const resumes = profile.resumes?.length || 0;
+  say(`Connected as ${profile.email} · ${resumes} résumé${resumes === 1 ? "" : "s"}`);
+});
+
+document.getElementById("inspect").addEventListener("click", async () => {
+  // Two of the three ATSs render their forms client-side, so this is how an
+  // adapter gets written or a stopped-working page gets diagnosed: it prints the
+  // label the filler actually resolved for every control on the page.
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () =>
+        window.HIRECRAFT_FILL
+          ? window.HIRECRAFT_FILL.inspectForm()
+          : "HireCraft isn't active on this page (it runs on Greenhouse, Ashby and Lever).",
+    });
+    inspectOut.hidden = false;
+    inspectOut.textContent =
+      typeof result === "string"
+        ? result
+        : result.length
+          ? result
+              .map((f) => `${f.tag}${f.type ? `[${f.type}]` : ""}  ${f.label || "(no label)"}\n    → ${f.normalised}`)
+              .join("\n")
+          : "No fillable controls found on this page.";
+    say(typeof result === "string" ? "" : `${result.length || 0} controls found`);
+  } catch (error) {
+    say("Couldn't read this page.", true);
+  }
+});

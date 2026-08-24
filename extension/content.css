@@ -1,0 +1,99 @@
+/*
+ * Panel styling.
+ *
+ * Every rule is namespaced under .hc- and every property the page might set is
+ * stated explicitly: this markup lives inside someone else's stylesheet, and an
+ * unstated font-size or color is whatever that site happens to inherit.
+ */
+
+.hc-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483000; /* above the site's own overlays, below nothing */
+  width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #14141b;
+  color: #e9e9f0;
+  font-family: -apple-system, "Segoe UI", Inter, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.hc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.hc-mark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #b9a6ff;
+}
+.hc-x {
+  all: unset;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #8a8a9e;
+}
+.hc-x:hover { background: rgba(255, 255, 255, 0.07); color: #e9e9f0; }
+
+.hc-status { margin-bottom: 10px; font-size: 12px; color: #9a9aad; }
+.hc-summary { margin-bottom: 8px; font-size: 12px; font-weight: 600; color: #e9e9f0; }
+
+.hc-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.hc-row { display: flex; align-items: baseline; gap: 7px; font-size: 12px; }
+.hc-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+.hc-ok .hc-dot { background: #4ade80; }
+.hc-miss .hc-dot { background: #fbbf24; }
+.hc-skip .hc-dot { background: #6b7280; }
+.hc-label { flex: 0 0 auto; color: #cfcfe0; }
+.hc-val {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: #8a8a9e;
+}
+
+.hc-note {
+  margin-bottom: 10px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.09);
+  font-size: 11px;
+  line-height: 1.4;
+  color: #f4d58d;
+}
+
+.hc-actions { display: flex; gap: 7px; }
+.hc-btn {
+  all: unset;
+  flex: 1 1 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #24242f;
+  color: #cfcfe0;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.hc-btn:hover { background: #2c2c3a; }
+.hc-btn:disabled { opacity: 0.55; cursor: default; }
+.hc-primary { background: #7c4dff; color: #fff; }
+.hc-primary:hover { background: #6b3ff0; }

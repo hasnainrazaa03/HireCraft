@@ -1,12 +1,33 @@
 {
   "manifest_version": 3,
-  "name": "HireCraft Job Clipper",
-  "version": "0.1.0",
-  "description": "Grab a job posting from the page and send it to HireCraft to tailor your résumé.",
+  "name": "HireCraft",
+  "version": "0.2.0",
+  "description": "Clip a job posting into HireCraft, and fill its application form with your details and résumé.",
   "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.lever.co/*"
+      ],
+      "js": ["autofill/fields.js", "autofill/fill.js", "autofill/adapters.js", "content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "HireCraft Job Clipper"
+    "default_title": "HireCraft"
   },
   "icons": {
     "128": "icon128.png"

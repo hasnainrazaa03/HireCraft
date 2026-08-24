@@ -1,33 +1,77 @@
-# HireCraft Job Clipper (Chrome extension)
+# HireCraft (Chrome extension)
 
-A minimal Manifest V3 extension that grabs the job posting on the current tab and
-hands it to the HireCraft web app so you can tailor a résumé to it in one click.
+Two things: clip a job posting into HireCraft, and fill its application form with
+your own details and résumé.
 
-## What it does
+## Autofill
 
-- Extracts the job posting with **ATS-aware selectors** — Greenhouse, Lever,
-  Ashby, Workday, LinkedIn, and Indeed each have targeted description/title/
-  company selectors, so you get the clean role text (and title + company),
-  not the whole chrome-heavy page. Falls back to a generic job/description
-  container, then the page body, on any other site.
-- **Copy** puts that text on your clipboard to paste into HireCraft.
-- **Clip & open** stashes the text and opens `…/new?clip=1` in the HireCraft app.
+On a **Greenhouse, Ashby or Lever** application page a small HireCraft panel
+appears bottom-right. Click **Fill this form** and it enters your name, email,
+phone, location, LinkedIn/GitHub/portfolio and years of experience, and attaches
+your résumé as a PDF. **Track application** records it in your HireCraft tracker
+without a tailoring run, so applying logs itself.
+
+### It never submits
+
+The panel fills and stops. Lever's apply form carries an hCaptcha, so automated
+submission would not work there anyway — but the real reason is that an
+application cannot be un-sent. Check what it filled, then submit it yourself.
+
+### It leaves some questions alone, on purpose
+
+Race, ethnicity, gender, pronouns, disability, veteran status and date of birth
+are yours to answer; HireCraft stores nothing for them, and putting a default in
+one would be inventing an answer. Salary is skipped too — a stored range is a
+preference, not a number to commit to without reading the posting.
+
+### It tells you what it did
+
+Every fill reports which fields were filled, which were left for you, and which
+it could not find. A filler that silently skips something is worse than one that
+does nothing, because you submit assuming it worked.
+
+## Setup
+
+1. In HireCraft: **Settings → Extension → Create key**, and copy it. It is shown
+   once — only a hash is stored.
+2. `chrome://extensions` → **Developer mode** → **Load unpacked** → this folder.
+3. Open the popup, paste the key under **Autofill**, click **Connect**. It should
+   report your email and how many résumés it can see.
+
+## When a site stops filling
+
+Greenhouse and Ashby build their forms in the browser, so their markup changes
+without warning. **Inspect this form** in the popup prints every control on the
+page with the label the filler actually resolved for it — which is how to see
+whether a field was renamed, and what to add to `autofill/adapters.js`.
+
+## How it works
+
+- `autofill/fields.js` — what to fill and the label patterns that identify it.
+- `autofill/fill.js` — resolves each control's accessible label, then sets values
+  through the native property setter with `input`/`change` events, because these
+  forms are React-controlled and a plain `el.value = x` is silently discarded.
+- `autofill/adapters.js` — per-ATS corrections. Deliberately near-empty: entries
+  belong here only once the generic matcher is *proven* wrong on a real page.
+- `background.js` — the only place that talks to the API. The key never enters
+  the employer's page, and MV3 content scripts are subject to CORS while the
+  service worker is not.
+
+Run the field-matching tests with `node --test extension/test/fields.test.mjs` —
+no dependencies.
+
+## Clipping
+
+- **Clip & open** grabs the posting with ATS-aware selectors (Greenhouse, Lever,
+  Ashby, Workday, LinkedIn, Indeed) and opens HireCraft's new-application flow.
+- **Copy** puts the text on your clipboard instead.
 
 ## Privacy / scope
 
-- No credentials live in the extension. You stay signed in to the web app; the
-  extension only deep-links into it.
-- It reads only the tab you explicitly click it on (`activeTab`), and sends the
-  text nowhere except your own clipboard / your own HireCraft instance.
-- No background scraping, no third-party servers.
+- The extension key reaches three endpoints: the details it fills, your résumé
+  PDF, and recording an application. It cannot change your account or start a
+  paid AI run, and revoking it in Settings stops it immediately.
+- Content scripts run on Greenhouse, Ashby and Lever only — not on every site.
+- Nothing is sent anywhere except your own HireCraft instance.
 
-## Install (developer mode)
-
-1. `chrome://extensions` → enable **Developer mode**.
-2. **Load unpacked** → select this `extension/` folder.
-3. Set your HireCraft URL in the popup (defaults to `http://localhost:5173`).
-
-> Note: `icon128.png` is intentionally omitted from the repo — add any 128×128
-> PNG before packaging for the Chrome Web Store. The web app reads the clipboard
-> (reliable across browsers); the `clippedJob` in `chrome.storage` (text, title,
-> company, url, source) is available for a tighter same-origin integration later.
+> `icon128.png` is intentionally omitted — add any 128×128 PNG before packaging.

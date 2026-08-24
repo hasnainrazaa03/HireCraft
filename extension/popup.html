@@ -38,6 +38,15 @@
         color: #e9e9f0;
       }
       .status { font-size: 11px; color: #6ee7a8; margin-top: 8px; min-height: 14px; }
+      .status.err { color: #ff8a8a; }
+      hr { border: 0; border-top: 1px solid #24242f; margin: 14px 0; }
+      h2 { font-size: 12px; margin: 0 0 8px; color: #cfcfe0; }
+      .hint { font-size: 11px; color: #6f6f82; margin: 6px 0 0; line-height: 1.45; }
+      pre {
+        max-height: 190px; overflow: auto; margin: 8px 0 0; padding: 8px;
+        background: #101017; border-radius: 8px; font-size: 10px; line-height: 1.4;
+        color: #9a9aad; white-space: pre-wrap; word-break: break-word;
+      }
     </style>
   </head>
   <body>
@@ -49,9 +58,30 @@
       <input id="appUrl" placeholder="http://localhost:5173" />
     </div>
 
-    <button id="clip" class="primary">Clip this job & open HireCraft</button>
+    <button id="clip" class="primary">Clip this job &amp; open HireCraft</button>
     <button id="copy" class="secondary">Copy job text to clipboard</button>
     <div class="status" id="status"></div>
+
+    <hr />
+
+    <h2>Autofill</h2>
+    <div class="field">
+      <label for="apiUrl">HireCraft API</label>
+      <input id="apiUrl" placeholder="http://localhost:8000" />
+    </div>
+    <div class="field">
+      <label for="extKey">Extension key</label>
+      <input id="extKey" type="password" placeholder="hcx_…" />
+    </div>
+    <button id="connect" class="primary">Connect</button>
+    <button id="inspect" class="secondary">Inspect this form</button>
+    <div class="status" id="connStatus"></div>
+    <p class="hint">
+      Create a key in HireCraft under Settings → Extension. On a Greenhouse, Ashby
+      or Lever application page a HireCraft panel appears bottom-right — it fills
+      the form and never submits it.
+    </p>
+    <pre id="inspectOut" hidden></pre>
 
     <script src="popup.js"></script>
   </body>
