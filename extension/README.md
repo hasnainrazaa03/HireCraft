@@ -5,11 +5,16 @@ your own details and résumé.
 
 ## Autofill
 
-On a **Greenhouse, Ashby or Lever** application page a small HireCraft panel
-appears bottom-right. Click **Fill this form** and it enters your name, email,
-phone, location, LinkedIn/GitHub/portfolio and years of experience, and attaches
-your résumé as a PDF. **Track application** records it in your HireCraft tracker
-without a tailoring run, so applying logs itself.
+On a **Greenhouse, Ashby or Lever** application page the HireCraft logo appears
+bottom-right. Click it to open the panel, then **Fill this form**: it enters your
+name, email, phone, location, country, LinkedIn/GitHub/portfolio, school, degree,
+graduation year and GPA, and attaches your résumé as a PDF. The page scrolls to
+each field as it is filled and outlines it briefly, so you can watch the work
+rather than find the form mysteriously full. Collapse it back to the logo with
+**—**; the badge shows how many fields were filled.
+
+**Track application** records it in your HireCraft tracker without a tailoring
+run, so applying logs itself.
 
 ### It never submits
 

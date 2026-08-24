@@ -1,12 +1,40 @@
 /**
- * The on-page HireCraft panel: fill the form, say what happened, record it.
+ * The on-page HireCraft launcher: a logo that opens the fill panel.
+ *
+ * Sits collapsed as the app's own mark until you want it, because an
+ * application form is long and a panel parked over it is in the way for the
+ * ninety per cent of the time you are reading rather than filling.
  *
  * Only ever fills. It never clicks submit and never touches a CAPTCHA — Lever's
  * apply form carries an hCaptcha, and more to the point an application cannot be
  * un-sent, so the last action stays a deliberate human one.
  */
 
-const PANEL_ID = "hirecraft-panel";
+const ROOT_ID = "hirecraft-root";
+
+/** The app's own logo, inline so it stays crisp at any size. */
+const LOGO_SVG = `
+<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="hc-g" x1="6" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C4DFF"/><stop offset="1" stop-color="#4CC9F0"/>
+    </linearGradient>
+  </defs>
+  <rect x="9" y="6.5" width="7.6" height="35" rx="3.8" fill="url(#hc-g)"/>
+  <path d="M12.8 25.5 C 12.8 19.5, 18.2 16.6, 23.8 16.6 C 30.2 16.6, 33.4 21, 33.4 27 L 33.4 37.7"
+        stroke="url(#hc-g)" stroke-width="7.6" stroke-linecap="round" fill="none"/>
+  <path d="M37.5 7 C 37.9 10.3 39.2 11.6 42.5 12 C 39.2 12.4 37.9 13.7 37.5 17 C 37.1 13.7 35.8 12.4 32.5 12 C 35.8 11.6 37.1 10.3 37.5 7 Z"
+        fill="#B98CFF"/>
+</svg>`;
+
+const state = {
+  open: false,
+  busy: false,
+  status: "",
+  report: null,
+  tracked: false,
+  resumeId: null,
+};
 
 function ask(message) {
   return new Promise((resolve) => {
@@ -22,11 +50,12 @@ function ask(message) {
 
 /** Does this page actually have an application form worth offering to fill? */
 function looksLikeApplicationForm() {
-  const hasFile = document.querySelector('input[type="file"]');
-  const textInputs = document.querySelectorAll(
-    'input[type="text"], input[type="email"], input[type="tel"], input:not([type])'
+  if (document.querySelector('input[type="file"]')) return true;
+  return (
+    document.querySelectorAll(
+      'input[type="text"], input[type="email"], input[type="tel"], input:not([type])'
+    ).length >= 3
   );
-  return Boolean(hasFile) || textInputs.length >= 3;
 }
 
 function el(tag, className, text) {
@@ -36,48 +65,51 @@ function el(tag, className, text) {
   return node;
 }
 
-function render(panel, state) {
-  panel.replaceChildren();
+// --- rendering ---------------------------------------------------------------
+
+function renderPanel() {
+  const panel = el("div", "hc-panel");
 
   const header = el("div", "hc-head");
-  header.append(el("span", "hc-mark", "HireCraft"));
-  const close = el("button", "hc-x", "✕");
-  close.title = "Hide";
-  close.onclick = () => panel.remove();
-  header.append(close);
+  const brand = el("span", "hc-brand");
+  const mark = el("span", "hc-head-mark");
+  mark.innerHTML = LOGO_SVG;
+  brand.append(mark, el("span", "hc-brand-text", "HireCraft"));
+  header.append(brand);
+
+  const collapse = el("button", "hc-x", "—");
+  collapse.title = "Collapse";
+  collapse.setAttribute("aria-label", "Collapse HireCraft");
+  collapse.onclick = () => {
+    state.open = false;
+    render();
+  };
+  header.append(collapse);
   panel.append(header);
 
   if (state.status) panel.append(el("div", "hc-status", state.status));
 
   if (state.report) {
     const { filled, missing, skipped } = state.report;
-    const summary = el(
-      "div",
-      "hc-summary",
-      `Filled ${filled.length} field${filled.length === 1 ? "" : "s"}` +
-        (missing.length ? ` · ${missing.length} left for you` : "")
+    panel.append(
+      el(
+        "div",
+        "hc-summary",
+        `Filled ${filled.length} field${filled.length === 1 ? "" : "s"}` +
+          (missing.length ? ` · ${missing.length} left for you` : "")
+      )
     );
-    panel.append(summary);
 
     const list = el("div", "hc-list");
-    for (const item of filled) {
-      const row = el("div", "hc-row hc-ok");
-      row.append(el("span", "hc-dot"), el("span", "hc-label", item.label));
-      row.append(el("span", "hc-val", String(item.value).slice(0, 34)));
-      list.append(row);
-    }
-    for (const item of missing) {
-      const row = el("div", "hc-row hc-miss");
-      row.append(el("span", "hc-dot"), el("span", "hc-label", item.label));
-      row.append(el("span", "hc-val", item.why));
-      list.append(row);
-    }
-    for (const item of skipped) {
-      const row = el("div", "hc-row hc-skip");
-      row.append(el("span", "hc-dot"), el("span", "hc-label", item.label));
-      row.append(el("span", "hc-val", item.why));
-      list.append(row);
-    }
+    const row = (cls, label, value) => {
+      const r = el("div", `hc-row ${cls}`);
+      r.append(el("span", "hc-dot"), el("span", "hc-label", label));
+      r.append(el("span", "hc-val", String(value).slice(0, 36)));
+      return r;
+    };
+    for (const item of filled) list.append(row("hc-ok", item.label, item.value));
+    for (const item of missing) list.append(row("hc-miss", item.label, item.why));
+    for (const item of skipped) list.append(row("hc-skip", item.label, item.why));
     panel.append(list);
     panel.append(
       el("div", "hc-note", "Nothing has been submitted. Check the form, then submit it yourself.")
@@ -86,23 +118,85 @@ function render(panel, state) {
 
   const actions = el("div", "hc-actions");
   const fill = el("button", "hc-btn hc-primary", state.busy ? "Filling…" : "Fill this form");
-  fill.disabled = Boolean(state.busy);
-  fill.onclick = () => runFill(panel, state);
+  fill.disabled = state.busy;
+  fill.onclick = runFill;
   actions.append(fill);
 
   const track = el("button", "hc-btn", state.tracked ? "Tracked ✓" : "Track application");
-  track.disabled = Boolean(state.busy || state.tracked);
-  track.onclick = () => runTrack(panel, state);
+  track.disabled = state.busy || state.tracked;
+  track.onclick = runTrack;
   actions.append(track);
   panel.append(actions);
+
+  return panel;
 }
 
-async function runFill(panel, state) {
-  render(panel, { ...state, busy: true, status: "Reading your HireCraft profile…" });
+function renderLauncher() {
+  const button = el("button", "hc-launcher");
+  button.innerHTML = LOGO_SVG;
+  button.title = "Fill this form with HireCraft";
+  button.setAttribute("aria-label", "Open HireCraft");
+  button.onclick = () => {
+    state.open = true;
+    render();
+  };
+  // A count of what was filled, so a collapsed launcher still reports.
+  if (state.report?.filled?.length) {
+    button.append(el("span", "hc-badge", String(state.report.filled.length)));
+  }
+  return button;
+}
+
+function render() {
+  const root = document.getElementById(ROOT_ID);
+  if (!root) return;
+  root.replaceChildren(state.open ? renderPanel() : renderLauncher());
+}
+
+/**
+ * Update just the status line.
+ *
+ * Filling reports after every field, and rebuilding the whole panel each time
+ * would throw away and recreate a few dozen nodes per field for the sake of one
+ * string — while the browser is already busy smooth-scrolling the page.
+ */
+function setStatus(text) {
+  state.status = text;
+  const root = document.getElementById(ROOT_ID);
+  const line = root?.querySelector(".hc-status");
+  if (line) line.textContent = text;
+  else render();
+}
+
+// --- actions -----------------------------------------------------------------
+
+/**
+ * Bring a field into view and mark it as it is filled.
+ *
+ * `scrollIntoView` is skipped when the field is already comfortably on screen:
+ * scrolling to something the user is already looking at is motion for its own
+ * sake, and on a long form it turns a fill into a jolting ride down the page.
+ */
+function highlight(node) {
+  if (!node || !node.getBoundingClientRect) return;
+  const box = node.getBoundingClientRect();
+  const margin = Math.min(160, window.innerHeight * 0.2);
+  if (box.top < margin || box.bottom > window.innerHeight - margin) {
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  node.classList.add("hc-filled-flash");
+  setTimeout(() => node.classList.remove("hc-filled-flash"), 1200);
+}
+
+async function runFill() {
+  state.busy = true;
+  state.status = "Reading your HireCraft profile…";
+  render();
 
   const profileReply = await ask({ type: "profile" });
   if (!profileReply.ok) {
-    render(panel, { ...state, busy: false, status: profileReply.error });
+    Object.assign(state, { busy: false, status: profileReply.error });
+    render();
     return;
   }
   const profile = profileReply.data;
@@ -110,7 +204,7 @@ async function runFill(panel, state) {
   let resumeFile = null;
   const preferred = profile.resumes?.find((r) => r.is_default) || profile.resumes?.[0];
   if (preferred) {
-    render(panel, { ...state, busy: true, status: `Fetching ${preferred.name}…` });
+    setStatus(`Fetching ${preferred.name}…`);
     const pdf = await ask({ type: "resume", resumeId: preferred.id });
     if (pdf.ok) {
       resumeFile = window.HIRECRAFT_FILL.fileFromDataUrl(
@@ -120,50 +214,72 @@ async function runFill(panel, state) {
     }
   }
 
-  const report = window.HIRECRAFT_FILL.fillForm(profile, {
+  state.resumeId = preferred?.id || null;
+  setStatus("Filling…");
+
+  const report = await window.HIRECRAFT_FILL.fillForm(profile, {
     resumeFile,
     overrides: window.HIRECRAFT_ADAPTER.overrides,
+    onProgress: ({ el: field, label }) => {
+      setStatus(`Filled ${label}`);
+      highlight(field);
+    },
   });
-  render(panel, { ...state, busy: false, status: "", report, profile, resumeId: preferred?.id });
+
+  // Back to where the form starts, so the first thing seen after a fill is the
+  // top of what was filled rather than wherever the last field happened to be.
+  const first = document.querySelector("form") || document.body;
+  first.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  Object.assign(state, { busy: false, status: "", report });
+  render();
 }
 
-async function runTrack(panel, state) {
-  render(panel, { ...state, busy: true, status: "Recording this application…" });
+async function runTrack() {
+  state.busy = true;
+  setStatus("Recording this application…");
   const reply = await ask({
     type: "track",
     url: location.href,
-    resumeId: state.resumeId || null,
+    resumeId: state.resumeId,
   });
-  render(panel, {
-    ...state,
+  Object.assign(state, {
     busy: false,
     tracked: reply.ok,
     status: reply.ok ? "Saved to your HireCraft tracker." : reply.error,
   });
+  render();
 }
+
+// --- mounting ----------------------------------------------------------------
 
 function mount() {
-  if (document.getElementById(PANEL_ID)) return;
+  if (document.getElementById(ROOT_ID)) return;
   if (!looksLikeApplicationForm()) return;
-
-  const panel = el("div", "hc-panel");
-  panel.id = PANEL_ID;
-  document.body.append(panel);
-  render(panel, { busy: false, status: "" });
+  const root = el("div", "hc-root");
+  root.id = ROOT_ID;
+  document.body.append(root);
+  render();
 }
 
-// Two of the three ATSs render their form after load, so waiting for the DOM is
-// not enough — watch until a form appears, then stop watching.
 if (looksLikeApplicationForm()) {
   mount();
 } else {
+  // Two of the three ATSs render their form after load, so waiting for the DOM
+  // is not enough. The check is debounced: a React app mutates constantly
+  // during hydration, and running a querySelectorAll on every mutation is a
+  // measurable cost on the page we are a guest on.
+  let pending = 0;
   const observer = new MutationObserver(() => {
-    if (looksLikeApplicationForm()) {
-      observer.disconnect();
-      mount();
-    }
+    if (pending) return;
+    pending = requestAnimationFrame(() => {
+      pending = 0;
+      if (looksLikeApplicationForm()) {
+        observer.disconnect();
+        mount();
+      }
+    });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  // Give up after a while rather than observing the page for its whole life.
   setTimeout(() => observer.disconnect(), 20000);
 }

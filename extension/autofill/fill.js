@@ -69,21 +69,34 @@ function labelFor(el) {
   return el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
 }
 
-/** Every control on the page we could conceivably fill. */
+const IGNORED_TYPES = new Set([
+  "hidden", "submit", "button", "reset", "image", "checkbox", "radio",
+]);
+
+/**
+ * Every control we could conceivably fill, each with its label already resolved.
+ *
+ * Labels are resolved here rather than in the fill loop because `labelFor` walks
+ * the DOM and reads `innerText`, which forces layout. Doing that once per
+ * control — instead of once per control per pass — is the difference between a
+ * fill that feels instant and one that visibly hangs on a long form.
+ */
 function controls() {
-  return Array.from(
-    document.querySelectorAll("input, select, textarea")
-  ).filter((el) => {
+  const out = [];
+  for (const el of document.querySelectorAll("input, select, textarea")) {
     const type = (el.getAttribute("type") || "text").toLowerCase();
-    if (["hidden", "submit", "button", "reset", "image", "checkbox", "radio"].includes(type)) {
-      return false;
-    }
-    if (el.disabled || el.readOnly) return false;
+    if (IGNORED_TYPES.has(type)) continue;
+    if (el.disabled || el.readOnly) continue;
     // Off-screen controls are usually a hidden duplicate form or a widget's
     // internals; filling those does nothing visible and can confuse the page.
     const box = el.getBoundingClientRect();
-    return box.width > 0 && box.height > 0;
-  });
+    if (box.width <= 0 || box.height <= 0) continue;
+    const raw = labelFor(el);
+    const label = normalise(raw);
+    if (!label) continue;
+    out.push({ el, raw, label });
+  }
+  return out;
 }
 
 /**
@@ -152,17 +165,16 @@ function fileFromDataUrl(dataUrl, filename) {
  * decoration: an autofiller that quietly skips a field is worse than one that
  * does nothing, because the user submits believing it worked.
  */
-function fillForm(profile, { resumeFile = null, overrides = {} } = {}) {
+async function fillForm(
+  profile,
+  { resumeFile = null, overrides = {}, onProgress = null, stepDelay = 90 } = {}
+) {
   const filled = [];
   const skipped = [];
   const missing = [];
   const claimed = new Set();
 
-  for (const el of controls()) {
-    const raw = labelFor(el);
-    const label = normalise(raw);
-    if (!label) continue;
-
+  for (const { el, raw, label } of controls()) {
     const skip = window.HIRECRAFT_SKIP.find((group) =>
       group.match.some((re) => re.test(label))
     );
@@ -195,6 +207,13 @@ function fillForm(profile, { resumeFile = null, overrides = {} } = {}) {
     if (ok) {
       filled.push({ label: field.label, value });
       claimed.add(field.key);
+      // Let the caller follow along. Watching each field fill is how you check
+      // the work — a form that is simply full when you look up tells you
+      // nothing about whether the right answer went in the right box.
+      if (onProgress) {
+        onProgress({ el, label: field.label, value });
+        if (stepDelay) await pause(stepDelay);
+      }
     } else {
       missing.push({ label: field.label, why: "no matching option" });
     }
@@ -208,6 +227,7 @@ function fillForm(profile, { resumeFile = null, overrides = {} } = {}) {
       try {
         attachFile(target, resumeFile);
         filled.push({ label: "Résumé", value: resumeFile.name });
+        if (onProgress) onProgress({ el: target, label: "Résumé", value: resumeFile.name });
       } catch (error) {
         missing.push({ label: "Résumé", why: "the upload field refused the file" });
       }
@@ -250,7 +270,10 @@ function findUploadInput(want, reject = []) {
   for (const input of inputs) {
     let node = input.parentElement;
     for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
-      const text = normalise(node.innerText || "");
+      // textContent, not innerText: innerText forces a layout pass per ancestor
+      // per input, and the difference in what they return does not matter for
+      // deciding which upload a section is about.
+      const text = normalise((node.textContent || "").slice(0, 400));
       if (!text) continue;
       const wanted = want.some((re) => re.test(text));
       const rejected = reject.some((re) => re.test(text));
@@ -268,13 +291,13 @@ function findUploadInput(want, reject = []) {
 
 /** Every control with its resolved label — how adapters get built and debugged. */
 function inspectForm() {
-  return controls().map((el) => ({
+  return controls().map(({ el, raw, label }) => ({
     tag: el.tagName.toLowerCase(),
     type: el.getAttribute("type") || "",
     name: el.getAttribute("name") || "",
     id: el.id || "",
-    label: labelFor(el).replace(/\s+/g, " ").trim().slice(0, 90),
-    normalised: normalise(labelFor(el)).slice(0, 90),
+    label: raw.replace(/\s+/g, " ").trim().slice(0, 90),
+    normalised: label.slice(0, 90),
   }));
 }
 
