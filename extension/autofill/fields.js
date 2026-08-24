@@ -16,15 +16,23 @@
 // whitespace, punctuation stripped, and any trailing "required"/"*" removed.
 const FIELDS = [
   {
+    key: "preferred_name",
+    label: "Preferred name",
+    from: (p) => p.preferred_name || p.first_name,
+    // Checked before the legal name: a form that asks specifically for a
+    // preferred name must not receive the name on someone's documents.
+    match: [/^preferred\s*(first\s*)?name$/, /\bpreferred\s*name\b/, /\bgo(es)?\s*by\b/, /\bnickname\b/],
+  },
+  {
     key: "first_name",
     label: "First name",
-    from: (p) => p.first_name,
+    from: (p) => p.legal_first_name || p.first_name,
     match: [/^first\s*name$/, /^given\s*name$/, /^legal\s*first\s*name$/, /\bfirst\s*name\b/],
   },
   {
     key: "last_name",
     label: "Last name",
-    from: (p) => p.last_name,
+    from: (p) => p.legal_last_name || p.last_name,
     match: [/^last\s*name$/, /^family\s*name$/, /^surname$/, /^legal\s*last\s*name$/, /\blast\s*name\b/],
   },
   {
@@ -53,7 +61,13 @@ const FIELDS = [
     key: "location",
     label: "Location",
     from: (p) => p.location,
-    match: [/^location$/, /\bcurrent\s*location\b/, /^city\b/, /\bcity,?\s*state\b/, /\bwhere\s+are\s+you\s+located\b/],
+    // "Location (City)" normalises to "location city", which none of the
+    // original anchored patterns matched — the field sat empty on the first
+    // real form this was tried on.
+    match: [
+      /^location\b/, /\bcurrent\s*location\b/, /^city\b/, /\bcity\b/,
+      /\bwhere\s+are\s+you\s+located\b/, /^town\b/,
+    ],
   },
   {
     key: "linkedin",
@@ -82,6 +96,57 @@ const FIELDS = [
     match: [/^website$/, /\bwebsite\s*url\b/, /^url$/, /^other\s*url$/],
   },
   {
+    key: "country",
+    label: "Country",
+    from: (p) => p.country,
+    match: [/^country$/, /\bcountry\b/],
+  },
+  {
+    key: "school",
+    label: "School",
+    from: (p) => p.education?.school,
+    match: [/^school$/, /\bschool\s*name\b/, /\buniversity\b/, /\bcollege\b/, /\binstitution\b/],
+  },
+  {
+    key: "degree",
+    label: "Degree",
+    from: (p) => p.education?.degree,
+    match: [/^degree$/, /\bdegree\s*(type|level|earned)\b/, /\bhighest\s*degree\b/],
+  },
+  {
+    key: "field_of_study",
+    label: "Field of study",
+    from: (p) => p.education?.field_of_study,
+    match: [/\bfield\s*of\s*study\b/, /\bmajor$/, /\bdiscipline\b/, /\bcourse\s*of\s*study\b/],
+  },
+  {
+    key: "start_year",
+    label: "Start year",
+    from: (p) => p.education?.start_year,
+    match: [/\bstart\s*date\s*year\b/, /^start\s*year$/, /\bfrom\s*year\b/],
+  },
+  {
+    key: "end_year",
+    label: "End year",
+    from: (p) => p.education?.end_year,
+    match: [/\bend\s*date\s*year\b/, /^end\s*year$/, /\bto\s*year\b/],
+  },
+  {
+    key: "graduation_year",
+    label: "Graduation year",
+    from: (p) => p.education?.end_year,
+    match: [
+      /\bgraduat\w*\s*(date|year)\b/, /\byear\s*(did|of)\s*.*graduat/,
+      /\bwhat\s*year\s*did\s*you\s*graduate\b/, /\bexpected\s*graduation\b/,
+    ],
+  },
+  {
+    key: "gpa",
+    label: "GPA",
+    from: (p) => p.education?.gpa,
+    match: [/\bgpa\b/, /\bgrade\s*point\s*average\b/],
+  },
+  {
     key: "years_experience",
     label: "Years of experience",
     from: (p) => (p.years_experience == null ? "" : String(p.years_experience)),
@@ -99,16 +164,42 @@ const FIELDS = [
  * employer's form without looking.
  */
 const SKIP = [
-  // Plurals are explicit: \b after "pronoun" does not match "pronouns", and
-  // "What are your pronouns?" is exactly how the question is usually written.
-  /\b(races?|ethnicit(y|ies)|genders?|sex|pronouns?)\b/,
-  /\bdisabilit(y|ies)\b/,
-  /\bveterans?\b/,
-  /\bhispanic\b/,
-  /\bsexual\s*orientation\b/,
-  /\bdate\s*of\s*birth\b/,
-  /\b(salary|compensation)\s*(expectation|requirement|range)?\b/,
-  /\bdesired\s*(salary|pay|compensation)\b/,
+  {
+    why: "yours to answer",
+    match: [
+      /\b(races?|ethnicit(y|ies)|genders?|sex|pronouns?)\b/,
+      /\bdisabilit(y|ies)\b/,
+      /\bveterans?\b/,
+      /\bhispanic\b/,
+      /\bsexual\s*orientation\b/,
+      /\bdate\s*of\s*birth\b/,
+    ],
+  },
+  {
+    why: "depends on the offer",
+    match: [
+      /\b(salary|compensation)\s*(expectation|requirement|range)?\b/,
+      /\bdesired\s*(salary|pay|compensation)\b/,
+    ],
+  },
+  {
+    // Verkada's form asks "requires working onsite 5 days per week in the Bay
+    // Area — are you currently local or willing to relocate?". Answering that
+    // needs the role's city and the answer the candidate actually wants to
+    // give; a stored relocation preference is neither. Filling "currently
+    // local" for someone in Los Angeles would put a false statement on a real
+    // application.
+    why: "depends on this role's location",
+    match: [/\bwilling\s*to\s*relocate\b/, /\brelocat\w*/, /\bonsite\b/, /\bhybrid\b/],
+  },
+  {
+    why: "answer this one yourself",
+    match: [
+      /\bwhy\s+(do\s+you\s+want|are\s+you\s+interested|this\s+(role|company))\b/,
+      /\btell\s+us\s+about\b/,
+      /\bcover\s*letter\b/,
+    ],
+  },
 ];
 
 /** A file input we should attach the résumé to. */
@@ -116,8 +207,26 @@ const SKIP = [
 // ASCII spelling covers "Résumé" too.
 const RESUME_FILE = [/\bresume\b/, /\bcv\b/, /\bupload\s*(your)?\s*resume\b/];
 
+/**
+ * Uploads the résumé must never land in.
+ *
+ * A real form has several file inputs. Verkada's asks for a résumé, a cover
+ * letter, an undergraduate transcript and a graduate transcript; putting the
+ * résumé in the wrong one is worse than leaving it empty, because it looks done.
+ * "Resume/CV" contains "resume" and must still win over these, which is why the
+ * search rejects only when a section names one of these and *not* the résumé.
+ */
+const NOT_RESUME = [
+  /\bcover\s*letter\b/,
+  /\btranscript\b/,
+  /\bportfolio\s*(file|upload)\b/,
+  /\bwriting\s*sample\b/,
+  /\bcertificat(e|ion)s?\b/,
+];
+
 // Attached to window so the content script can read them; MV3 content scripts
 // share one scope per frame but are not modules.
 window.HIRECRAFT_FIELDS = FIELDS;
 window.HIRECRAFT_SKIP = SKIP;
 window.HIRECRAFT_RESUME_FILE = RESUME_FILE;
+window.HIRECRAFT_NOT_RESUME = NOT_RESUME;

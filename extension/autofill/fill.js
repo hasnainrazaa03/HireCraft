@@ -163,8 +163,14 @@ function fillForm(profile, { resumeFile = null, overrides = {} } = {}) {
     const label = normalise(raw);
     if (!label) continue;
 
-    if (window.HIRECRAFT_SKIP.some((re) => re.test(label))) {
-      skipped.push({ label: raw.trim().slice(0, 60), why: "left for you to answer" });
+    const skip = window.HIRECRAFT_SKIP.find((group) =>
+      group.match.some((re) => re.test(label))
+    );
+    if (skip) {
+      // Say *why* it was left. "Left for you" on a demographic question and on
+      // a salary question mean different things, and the reader needs to know
+      // which they are looking at.
+      skipped.push({ label: raw.trim().slice(0, 60), why: skip.why });
       continue;
     }
 
@@ -197,10 +203,7 @@ function fillForm(profile, { resumeFile = null, overrides = {} } = {}) {
   // Résumé upload, handled separately: file inputs are excluded from `controls`
   // because everything above them assumes a text value.
   if (resumeFile) {
-    const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
-    const target =
-      fileInputs.find((el) => window.HIRECRAFT_RESUME_FILE.some((re) => re.test(normalise(labelFor(el))))) ||
-      (fileInputs.length === 1 ? fileInputs[0] : null);
+    const target = findUploadInput(window.HIRECRAFT_RESUME_FILE, window.HIRECRAFT_NOT_RESUME);
     if (target) {
       try {
         attachFile(target, resumeFile);
@@ -211,12 +214,56 @@ function fillForm(profile, { resumeFile = null, overrides = {} } = {}) {
     } else {
       missing.push({
         label: "Résumé",
-        why: fileInputs.length ? "couldn't tell which upload box" : "no upload box on this page",
+        why: document.querySelector('input[type="file"]')
+          ? "couldn't tell which upload box"
+          : "no upload box on this page",
       });
     }
   }
 
   return { filled, skipped, missing };
+}
+
+/**
+ * Find the file input for a particular upload.
+ *
+ * A real application form has several. The Verkada/Greenhouse form carries four
+ * — résumé, cover letter, undergraduate transcript, graduate transcript — and
+ * each is a hidden input behind an "Attach" button, so the input itself has no
+ * usable label of its own. The label lives on the *section*, so the search walks
+ * up from the input until it finds an ancestor whose text names one upload and
+ * not the others. `reject` matters as much as `want`: without it the résumé
+ * lands in the cover-letter box, which is worse than not filling at all.
+ */
+function findUploadInput(want, reject = []) {
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+  if (!inputs.length) return null;
+
+  for (const input of inputs) {
+    // The input's own label first, when it has one.
+    const own = normalise(labelFor(input));
+    if (own && want.some((re) => re.test(own)) && !reject.some((re) => re.test(own))) {
+      return input;
+    }
+  }
+
+  for (const input of inputs) {
+    let node = input.parentElement;
+    for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+      const text = normalise(node.innerText || "");
+      if (!text) continue;
+      const wanted = want.some((re) => re.test(text));
+      const rejected = reject.some((re) => re.test(text));
+      // Stop at the first ancestor that mentions any upload at all: going
+      // further reaches a container holding every upload on the form, where
+      // "resume" and "cover letter" both appear and the answer is meaningless.
+      if (wanted || rejected) {
+        if (wanted && !rejected) return input;
+        break;
+      }
+    }
+  }
+  return null;
 }
 
 /** Every control with its resolved label — how adapters get built and debugged. */

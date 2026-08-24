@@ -33,13 +33,18 @@ new Function(
   readFileSync(join(here, "..", "autofill", "fill.js"), "utf8")
 )(window);
 
-const { HIRECRAFT_FIELDS: FIELDS, HIRECRAFT_SKIP: SKIP, HIRECRAFT_RESUME_FILE: RESUME } = window;
+const {
+  HIRECRAFT_FIELDS: FIELDS,
+  HIRECRAFT_SKIP: SKIP,
+  HIRECRAFT_RESUME_FILE: RESUME,
+  HIRECRAFT_NOT_RESUME: NOT_RESUME,
+} = window;
 const { normalise } = window.HIRECRAFT_FILL;
 
 /** The key that would claim this label, or null. */
 function claim(rawLabel) {
   const label = normalise(rawLabel);
-  if (SKIP.some((re) => re.test(label))) return "SKIP";
+  if (SKIP.some((group) => group.match.some((re) => re.test(label)))) return "SKIP";
   return FIELDS.find((f) => f.match.some((re) => re.test(label)))?.key ?? null;
 }
 
@@ -69,10 +74,34 @@ test("labels map to the field a human would expect", () => {
     ["City, State", "location"],
     ["Years of experience", "years_experience"],
     ["How many years of relevant experience do you have?", "years_experience"],
+    // Labels taken verbatim from a live Verkada/Greenhouse application form.
+    ["Location (City) *", "location"],
+    ["Country *", "country"],
+    ["School *", "school"],
+    ["Degree *", "degree"],
+    ["Start date year *", "start_year"],
+    ["End date year *", "end_year"],
+    ["What year did you graduate from your most recent degree program? *", "graduation_year"],
+    ["What is your major GPA (on a 4.0 scale) for your most recent degree program? *", "gpa"],
   ];
   for (const [label, expected] of cases) {
     assert.equal(claim(label), expected, `${label} should map to ${expected}`);
   }
+});
+
+test("a preferred-name box gets the preferred name, not the legal one", () => {
+  // Both exist for a reason: an application is an employment record and asks
+  // for the name on the candidate's documents, while a "preferred name" box is
+  // asking the opposite question. Answering either with the other is wrong.
+  assert.equal(claim("Preferred name"), "preferred_name");
+  assert.equal(claim("What name do you go by?"), "preferred_name");
+  assert.equal(claim("First Name"), "first_name");
+  assert.equal(claim("Legal first name"), "first_name");
+
+  const FIELDS_BY_KEY = Object.fromEntries(FIELDS.map((f) => [f.key, f]));
+  const p = { legal_first_name: "Mohammad Hasnain", preferred_name: "Hasnain", first_name: "X" };
+  assert.equal(FIELDS_BY_KEY.first_name.from(p), "Mohammad Hasnain");
+  assert.equal(FIELDS_BY_KEY.preferred_name.from(p), "Hasnain");
 });
 
 test("near-miss labels are not answered with the candidate's own details", () => {
@@ -106,6 +135,28 @@ test("voluntary self-identification is never filled", () => {
     "Date of birth",
   ]) {
     assert.equal(claim(label), "SKIP", `${label} must be left for the candidate`);
+  }
+});
+
+test("questions that need the role in front of you are left alone", () => {
+  // A stored relocation preference cannot answer "are you local to the Bay
+  // Area, or willing to relocate?" — that needs the role's city and a decision.
+  // Filling "currently local" for someone in Los Angeles would be a false
+  // statement on a real application.
+  for (const label of [
+    "This role requires working onsite 5 days per week in the Bay Area. Are you currently local or willing to relocate?",
+    "Are you willing to relocate?",
+    "Are you comfortable with a hybrid schedule?",
+    "Why do you want to work here?",
+  ]) {
+    assert.equal(claim(label), "SKIP", `${label} must be left for the candidate`);
+  }
+});
+
+test("every skip group explains itself", () => {
+  for (const group of SKIP) {
+    assert.ok(group.why && group.why.length > 3, "a skip group needs a reason to show");
+    assert.ok(Array.isArray(group.match) && group.match.length, "a skip group needs patterns");
   }
 });
 
@@ -151,14 +202,27 @@ test("every field can produce a value from a full profile", () => {
     full_name: "Ada Lovelace King",
     first_name: "Ada Lovelace",
     last_name: "King",
+    legal_first_name: "Ada Lovelace",
+    legal_last_name: "King",
+    preferred_name: "Ada",
     email: "ada@example.com",
     phone: "555-0100",
     location: "Los Angeles, CA",
+    country: "United States",
     linkedin: "https://linkedin.com/in/ada",
     github: "https://github.com/ada",
     portfolio: "https://ada.dev",
     website: "https://ada.dev",
     years_experience: 3.5,
+    open_to_relocation: true,
+    education: {
+      school: "University of Southern California",
+      degree: "M.S. in Computer Science",
+      field_of_study: "Computer Science",
+      gpa: "3.67",
+      start_year: "2025",
+      end_year: "2027",
+    },
   };
   for (const field of FIELDS) {
     const value = field.from(profile);
@@ -176,4 +240,28 @@ test("an empty profile yields no values rather than undefined text", () => {
     const value = String(field.from({}) ?? "").trim();
     assert.equal(value, "", `${field.key} should be blank for an empty profile`);
   }
+});
+
+test("the résumé is not put in another upload box", () => {
+  /** What findUploadInput decides for a section with this text. */
+  const verdict = (text) => {
+    const n = normalise(text);
+    const wanted = RESUME.some((re) => re.test(n));
+    const rejected = NOT_RESUME.some((re) => re.test(n));
+    return wanted && !rejected ? "attach" : "skip";
+  };
+
+  // Verkada's Greenhouse form carries four uploads. Only one takes the résumé.
+  assert.equal(verdict("Resume/CV *"), "attach");
+  assert.equal(verdict("Resume"), "attach");
+  assert.equal(verdict("Upload your resume"), "attach");
+
+  assert.equal(verdict("Cover Letter"), "skip");
+  assert.equal(verdict("Undergraduate Transcript *"), "skip");
+  assert.equal(verdict("Graduate Transcript"), "skip");
+  assert.equal(verdict("Writing sample"), "skip");
+
+  // The trap: a section naming both must not attach. Landing the résumé in a
+  // transcript box looks filled and is wrong, which is worse than empty.
+  assert.equal(verdict("Attach your resume or cover letter"), "skip");
 });

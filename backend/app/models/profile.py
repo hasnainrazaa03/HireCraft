@@ -39,6 +39,23 @@ class CareerProfile(Base, TimestampMixin):
     headline: Mapped[str | None] = mapped_column(String(200))
     phone: Mapped[str | None] = mapped_column(String(40))
     location: Mapped[str | None] = mapped_column(String(180))
+    # Country as an application form asks for it, separately from the free-text
+    # location: forms want it as its own dropdown value, not parsed out of
+    # "Los Angeles, CA".
+    country: Mapped[str | None] = mapped_column(String(80))
+
+    # An application is an employment record, so it asks for the name on the
+    # candidate's documents — which is not always the name they go by. Both are
+    # stored because a form may ask for either, and answering "Preferred name"
+    # with a legal name (or the reverse) is wrong in both directions.
+    legal_first_name: Mapped[str | None] = mapped_column(String(120))
+    legal_last_name: Mapped[str | None] = mapped_column(String(120))
+    preferred_name: Mapped[str | None] = mapped_column(String(120))
+
+    # Where an employer should write. The account's login email is how the user
+    # signs in to HireCraft and is not necessarily the address they want on an
+    # application — a personal Gmail versus a university address, say.
+    contact_email: Mapped[str | None] = mapped_column(String(320))
 
     linkedin_url: Mapped[str | None] = mapped_column(String(500))
     github_url: Mapped[str | None] = mapped_column(String(500))

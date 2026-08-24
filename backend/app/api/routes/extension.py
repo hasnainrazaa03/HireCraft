@@ -72,20 +72,37 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
     # rather than making them type the same phone number twice. The Career
     # Profile still wins where it has a value: it is the more deliberate answer.
     basics: dict = {}
+    basics_source: dict = {}
     if resumes:
         default = next((r for r in resumes if r.is_default), resumes[0])
-        basics = (default.content or {}).get("basics") or {}
+        basics_source = default.content or {}
+        basics = basics_source.get("basics") or {}
 
     def pick(profile_value: object, basics_key: str) -> str:
         return str(profile_value or basics.get(basics_key) or "").strip()
 
     full_name = user.full_name or str(basics.get("name") or "")
-    first, last = _split_name(full_name)
+    # A form's plain "First name" belongs to the employment record, so it gets
+    # the legal name where one is stored; a form that asks for a preferred name
+    # gets that instead. Answering either with the other is wrong both ways.
+    legal_first = (profile.legal_first_name if profile else "") or ""
+    legal_last = (profile.legal_last_name if profile else "") or ""
+    if not (legal_first or legal_last):
+        legal_first, legal_last = _split_name(full_name)
+    preferred = (profile.preferred_name if profile else "") or _split_name(full_name)[0]
+
     return {
         "full_name": full_name,
-        "first_name": first,
-        "last_name": last,
-        "email": user.email or str(basics.get("email") or ""),
+        "first_name": legal_first,
+        "last_name": legal_last,
+        "legal_first_name": legal_first,
+        "legal_last_name": legal_last,
+        "preferred_name": preferred,
+        # The address an employer should write to, which is not necessarily the
+        # one used to sign in here.
+        "email": pick(profile.contact_email if profile else None, "email") or user.email,
+        "login_email": user.email,
+        "country": pick(profile.country if profile else None, "country"),
         "phone": pick(profile.phone if profile else None, "phone"),
         "location": pick(profile.location if profile else None, "location"),
         "linkedin": pick(profile.linkedin_url if profile else None, "linkedin"),
@@ -96,10 +113,44 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         "visa_status": (profile.visa_status if profile else "") or "",
         "years_experience": (profile.years_experience if profile else None),
         "open_to_relocation": bool(profile.open_to_relocation) if profile else False,
+        # The most recent degree, which is what "School", "Degree", "Graduation
+        # year" and "GPA" on an application form are asking about. Taken from the
+        # résumé because that is where it already lives — re-entering a degree
+        # into a second form would be the app failing to use what it holds.
+        "education": _latest_education(basics_source),
         "resumes": [
             {"id": str(r.id), "name": r.name, "is_default": r.is_default}
             for r in resumes
         ],
+    }
+
+
+def _latest_education(content: dict) -> dict:
+    """The most recent degree from a résumé, flattened for form filling.
+
+    "Most recent" is by end date, falling back to document order: a résumé lists
+    education newest-first by convention, but the dates are the fact and the
+    ordering is only a habit.
+    """
+    entries = [e for e in (content.get("education") or []) if isinstance(e, dict)]
+    if not entries:
+        return {}
+
+    def sort_key(entry: dict) -> str:
+        end = str(entry.get("end_date") or "")
+        return "9999" if end.lower() == "present" else end
+
+    latest = max(entries, key=sort_key)
+    start = str(latest.get("start_date") or "")
+    end = str(latest.get("end_date") or "")
+    return {
+        "school": latest.get("institution") or "",
+        "degree": latest.get("degree") or "",
+        "field_of_study": latest.get("field_of_study") or "",
+        "gpa": latest.get("gpa") or "",
+        # Forms ask for the year alone far more often than a full date.
+        "start_year": start[:4],
+        "end_year": "" if end.lower() == "present" else end[:4],
     }
 
 
