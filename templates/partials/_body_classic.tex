@@ -1,0 +1,150 @@
+((# ===================================================================
+    Classic résumé body — the two-column-header, \resumeSubheading layout.
+
+    Kept separate from partials/_body.tex because the difference is
+    structural, not stylistic: this one puts contact details in a two-column
+    tabular beside the name rather than centred under it, and lays every entry
+    out through \resumeSubheading{left}{right}{sub-left}{sub-right} instead of
+    \entryheading. A preamble alone can't turn one into the other.
+
+    A template including this file MUST first define:
+      \resumeSubheading{#1}{#2}{#3}{#4}
+      \resumeItem{#1}  \simpleItem{#1}  \courseItem{#1}
+      \resumeSubHeadingListStart / End, \resumeItemListStart / End
+      colour `muted`, a \section format, and \begin{document}
+
+    Every interpolated value is auto-escaped. Never add the `raw` filter to
+    user data. Do not write a closing comment delimiter inside a comment.
+   =================================================================== #))
+
+((# ------------------------------ HEADER ------------------------------ #))
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+  \textbf{((* if basics.website *))\href{((( basics.website | url )))}{\Large ((( basics.name )))}((* else *))\Large ((( basics.name )))((* endif *))}
+    & ((* if basics.email *))Email: \href{mailto:((( basics.email | url )))}{((( basics.email )))}((* endif *)) \\
+  ((* if basics.location *))((( basics.location )))((* endif *))
+    & ((* if basics.phone *))Mobile: ((( basics.phone )))((* endif *)) \\
+  ((* if basics.linkedin *))\href{((( basics.linkedin | url )))}{((( basics.linkedin | display_url )))}((* endif *))((* if basics.linkedin and basics.github *)) $\mid$ ((* endif *))((* if basics.github *))\href{((( basics.github | url )))}{((( basics.github | display_url )))}((* endif *))
+    & ((* if basics.website *))\href{((( basics.website | url )))}{((( basics.website | display_url )))}((* endif *))
+    ((* for link in basics.links *)) \href{((( link.url | url )))}{((( link.label )))}((* endfor *)) \\
+\end{tabular*}
+
+((* if basics.headline *))
+\vspace{2pt}
+{\small\color{muted}((( basics.headline )))}
+((* endif *))
+
+((* for section in sections *))
+
+((* if section == 'summary' and basics.summary *))
+\section{Summary}
+\vspace{2pt}
+{\small ((( basics.summary )))}
+\vspace{-4pt}
+((* endif *))
+
+((* if section == 'education' and r.education *))
+\section{Education}
+  \resumeSubHeadingListStart
+((* for e in r.education *))
+    \resumeSubheading
+      {((( e.institution )))}{((( e.location )))}
+      {((( e.degree )))((* if e.field_of_study *)) in ((( e.field_of_study )))((* endif *))((* if e.gpa *)); \textbf{GPA: ((( e.gpa )))}((* endif *))((* if e.honors *)), \textbf{((( e.honors | texjoin )))}((* endif *))}{((( date_range(e.start_date, e.end_date) )))}
+((* if e.coursework *))
+      \resumeItemListStart
+        \courseItem{Coursework: ((( e.coursework | texjoin )))}
+      \resumeItemListEnd
+((* endif *))
+((* if e.highlights *))
+      \resumeItemListStart
+((* for h in e.highlights *))
+        \resumeItem{((( h )))}
+((* endfor *))
+      \resumeItemListEnd
+((* endif *))
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* if section == 'experience' and r.experience *))
+\section{Experience}
+  \resumeSubHeadingListStart
+((* for x in r.experience *))
+    \resumeSubheading
+      {((( x.company )))}{((( x.location )))}
+      {((( x.title )))}{((( date_range(x.start_date, x.end_date) )))}
+((* if x.highlights *))
+      \resumeItemListStart
+((* for h in x.highlights *))
+        \resumeItem{((( h )))}
+((* endfor *))
+      \resumeItemListEnd
+((* endif *))
+((* if x.technologies *))
+      \resumeItemListStart
+        \simpleItem{\textit{Technologies}{: ((( x.technologies | texjoin )))}}
+      \resumeItemListEnd
+((* endif *))
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* if section == 'projects' and r.projects *))
+\section{Projects}
+  \resumeSubHeadingListStart
+((* for p in r.projects *))
+    \resumeSubheading
+      {((( p.name )))}{((* if p.url *))\href{((( p.url | url )))}{((( p.url | display_url )))}((* endif *))}
+      {((* if p.description *))((( p.description )))((* elif p.technologies *))((( p.technologies | texjoin )))((* endif *))}{((( date_range(p.start_date, p.end_date) )))}
+((* if p.highlights *))
+      \resumeItemListStart
+((* for h in p.highlights *))
+        \resumeItem{((( h )))}
+((* endfor *))
+      \resumeItemListEnd
+((* endif *))
+((* if p.description and p.technologies *))
+      \resumeItemListStart
+        \simpleItem{\textit{Built with}{: ((( p.technologies | texjoin )))}}
+      \resumeItemListEnd
+((* endif *))
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* if section == 'skills' and r.skills *))
+\section{Skills}
+  \resumeSubHeadingListStart
+((* for g in r.skills *))
+    \simpleItem{\textbf{((( g.category )))}{: ((( g.items | texjoin )))}}
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* if section == 'certifications' and r.certifications *))
+\section{Certifications}
+  \resumeSubHeadingListStart
+((* for c in r.certifications *))
+    \simpleItem{\textbf{((( c.name )))}((* if c.issuer *)){, ((( c.issuer )))}((* endif *))((* if c.date *)){ \textnormal{---} ((( c.date )))}((* endif *))}
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* if section == 'awards' and r.awards *))
+\section{Awards}
+  \resumeSubHeadingListStart
+((* for a in r.awards *))
+    \simpleItem{\textbf{((( a.title )))}((* if a.issuer *)){, ((( a.issuer )))}((* endif *))((* if a.date *)){ \textnormal{---} ((( a.date )))}((* endif *))((* if a.description *)){. ((( a.description )))}((* endif *))}
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* if section == 'publications' and r.publications *))
+\section{Publications}
+  \resumeSubHeadingListStart
+((* for pub in r.publications *))
+    \simpleItem{((* if pub.authors *))((( pub.authors | texjoin ))). ((* endif *))\textit{((( pub.title )))}((* if pub.venue *)){, ((( pub.venue )))}((* endif *))((* if pub.date *)){, ((( pub.date )))}((* endif *))((* if pub.url *)) \href{((( pub.url | url )))}{[link]}((* endif *))}
+((* endfor *))
+  \resumeSubHeadingListEnd
+((* endif *))
+
+((* endfor *))

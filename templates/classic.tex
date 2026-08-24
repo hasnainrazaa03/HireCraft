@@ -1,0 +1,81 @@
+((# Classic — the single-column \resumeSubheading layout with a two-column
+    contact header and small-caps rules. This is the house style: it is what
+    an imported .tex of this shape already looks like, so a résumé keeps its
+    own appearance instead of being restyled on the way in. #))
+\documentclass[letterpaper,10.5pt]{article}
+
+((# geometry rather than fullpage + \addtolength: the one-page compaction
+    partial re-issues \geometry to tighten margins, which only works if the
+    package is loaded. The values below reproduce the fullpage-derived
+    layout (~0.5in all round) this style is normally set with. #))
+\usepackage[top=0.5in, bottom=0.5in, left=0.5in, right=0.5in]{geometry}
+\usepackage{titlesec}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{needspace}
+
+((# ATS-parsable PDF; guarded so the file compiles under any engine. #))
+\ifdefined\pdfgentounicode
+  \input{glyphtounicode}
+  \pdfgentounicode=1
+\fi
+
+\definecolor{accent}{HTML}{000000}
+\definecolor{muted}{HTML}{444444}
+
+\hypersetup{
+  pdftitle={((( basics.name ))) -- Resume}, pdfauthor={((( basics.name )))},
+  pdfcreator={HireCraft}
+}
+
+\pagestyle{empty}
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+\setlength{\parindent}{0pt}
+
+\titleformat{\section}{
+  \vspace{-8pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+((# ------------------------- custom commands ------------------------- #))
+\newcommand{\resumeItem}[1]{
+  \item\small{#1\vspace{-4pt}}
+}
+\newcommand{\simpleItem}[1]{
+  \item\small{#1\vspace{-8pt}}
+}
+\newcommand{\courseItem}[1]{
+  \vspace{-5pt}\item\small{#1\vspace{-2pt}}
+}
+\newcommand{\resumeSubheading}[4]{
+  \item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-3pt}
+}
+\renewcommand{\labelitemii}{$\circ$}
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}\vspace{-8pt}}
+\newcommand{\resumeItemListStart}{\begin{itemize}[leftmargin=0.10in]}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-8pt}}
+
+((# The shared body partial's contract also expects \cvsep and \entryheading;
+    defined here so this preamble stays compatible with it, even though
+    _body_classic.tex lays entries out with \resumeSubheading instead. #))
+\newcommand{\cvsep}{\hspace{5pt}\textperiodcentered\hspace{5pt}}
+\newcommand{\entryheading}[4]{%
+  \needspace{3\baselineskip}%
+  \textbf{#1}\hfill\textbf{#2}\\%
+  \textit{\color{muted}#3}\hfill\textit{\color{muted}#4}\\[2pt]%
+}
+
+((* include "partials/_compact.tex" *))
+
+\begin{document}
+((* include "partials/_body_classic.tex" *))
+\end{document}

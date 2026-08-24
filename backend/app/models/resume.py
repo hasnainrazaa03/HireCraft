@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, JsonB, TimestampMixin
+from app.services.latex.templates import DEFAULT_TEMPLATE_ID
 
 if TYPE_CHECKING:
     from app.models.application import Application
@@ -42,7 +43,9 @@ class ResumeProfile(Base, TimestampMixin):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Chosen LaTeX template id (see services.latex.templates). Presentation only.
-    template: Mapped[str] = mapped_column(String(20), default="modern", nullable=False)
+    template: Mapped[str] = mapped_column(
+        String(20), default=DEFAULT_TEMPLATE_ID, nullable=False
+    )
     # Preference: auto-compact the render until it fits a single page. Applies to
     # this résumé's preview, exports, and its tailored applications.
     one_page: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

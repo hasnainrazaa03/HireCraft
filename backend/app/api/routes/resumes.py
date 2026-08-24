@@ -33,7 +33,7 @@ from app.services.analysis import analyze_resume
 from app.services.export.docx import resume_to_docx
 from app.services.latex.compiler import LatexCompilationError
 from app.services.latex.renderer import render_and_fit, render_resume
-from app.services.latex.templates import TEMPLATES, is_valid, resolve_filename
+from app.services.latex.templates import DEFAULT_TEMPLATE_ID, TEMPLATES, is_valid, resolve_filename
 from app.services.llm.client import LlmConfigurationError, LlmError, LlmResponseError
 from app.services.llm.factory import client_for_user
 from app.services.parsing.extract import ExtractionError, extract
@@ -135,7 +135,11 @@ def create_profile(
         source_size_bytes=source_size,
         is_default=is_default,
         tags=_clean_tags(payload.tags),
-        template=payload.template if payload.template and is_valid(payload.template) else "modern",
+        template=(
+            payload.template
+            if payload.template and is_valid(payload.template)
+            else DEFAULT_TEMPLATE_ID
+        ),
         one_page=payload.one_page,
         # Label for the very first version; inherited by its snapshot on first edit.
         label=payload.version_label or "Original",

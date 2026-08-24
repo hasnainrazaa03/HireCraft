@@ -21,6 +21,16 @@ class Template:
 
 TEMPLATES: tuple[Template, ...] = (
     Template(
+        id="classic",
+        name="Classic",
+        description=(
+            "Single-column with a two-column contact header and small-caps rules — "
+            "the widely-used engineering résumé layout. The default: an imported "
+            "résumé of this shape keeps its own look instead of being restyled."
+        ),
+        filename="classic.tex",
+    ),
+    Template(
         id="modern",
         name="Modern",
         description="Navy accent with small-caps headings. Clean and professional — a strong default.",
@@ -57,7 +67,7 @@ TEMPLATES: tuple[Template, ...] = (
 
 _BY_ID = {t.id: t for t in TEMPLATES}
 
-DEFAULT_TEMPLATE_ID = "modern"
+DEFAULT_TEMPLATE_ID = "classic"
 
 
 def resolve_filename(template_id: str | None) -> str:
