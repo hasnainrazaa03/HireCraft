@@ -9,6 +9,8 @@ interface PrefillState {
   text?: string;
   title?: string;
   company?: string;
+  /** Which action the caller meant — a job card can send you here for either. */
+  intent?: "tailor" | "as_is";
 }
 
 export default function NewApplicationPage() {
@@ -31,6 +33,11 @@ export default function NewApplicationPage() {
   );
   const [profileId, setProfileId] = useState("");
   const [coverLetter, setCoverLetter] = useState(false);
+  // "tailor" rewrites the résumé for this posting (LLM, costs money);
+  // "as_is" attaches it unchanged and just tracks the application (free).
+  const [intent, setIntent] = useState<"tailor" | "as_is">(
+    prefill?.intent === "as_is" ? "as_is" : "tailor",
+  );
   const [reachMode, setReachMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clipBlocked, setClipBlocked] = useState(false);
@@ -57,8 +64,9 @@ export default function NewApplicationPage() {
     mutationFn: () =>
       api.post<ApplicationDetail>("/applications", {
         resume_profile_id: profileId || profiles.find((p) => p.is_default)?.id || null,
-        include_cover_letter: coverLetter,
-        reach_mode: reachMode,
+        include_cover_letter: intent === "tailor" && coverLetter,
+        reach_mode: intent === "tailor" && reachMode,
+        tailor: intent === "tailor",
         job:
           mode === "url"
             ? { url }
@@ -187,6 +195,44 @@ export default function NewApplicationPage() {
           )}
         </div>
 
+        {/* Two ways to add an application. Tailoring is the headline feature,
+            but a role that already fits doesn't need a rewrite — and someone
+            tracking where they've applied shouldn't have to pay for one. */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([
+            {
+              key: "tailor" as const,
+              title: "Tailor for this role",
+              blurb: "Rewrites your résumé against this posting, then scores and reports what changed.",
+              foot: "Uses AI · costs a few cents",
+            },
+            {
+              key: "as_is" as const,
+              title: "Use my résumé as it is",
+              blurb: "Attaches the résumé unchanged and tracks the application. Documents, notes, and interview prep all still work.",
+              foot: "No AI · free · instant",
+            },
+          ]).map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setIntent(opt.key)}
+              aria-pressed={intent === opt.key}
+              className={`rounded-xl border p-3.5 text-left transition ${
+                intent === opt.key
+                  ? "border-brand-500/50 bg-brand-500/[0.07]"
+                  : "border-white/[0.08] hover:border-white/[0.16]"
+              }`}
+            >
+              <div className="text-sm font-medium text-content">{opt.title}</div>
+              <div className="mt-1 text-xs leading-relaxed text-subtle">{opt.blurb}</div>
+              <div className="mt-2 text-[11px] font-medium text-muted">{opt.foot}</div>
+            </button>
+          ))}
+        </div>
+
+        {intent === "tailor" && (
+          <>
         <label className="flex items-start gap-2.5 text-sm">
           <input
             type="checkbox"
@@ -219,6 +265,8 @@ export default function NewApplicationPage() {
             </span>
           </span>
         </label>
+          </>
+        )}
 
         {error && (
           <div
@@ -234,7 +282,9 @@ export default function NewApplicationPage() {
           disabled={create.isPending}
           className="btn-primary w-full"
         >
-          {create.isPending ? "Starting…" : "Tailor my resume"}
+          {create.isPending
+            ? intent === "tailor" ? "Starting…" : "Adding…"
+            : intent === "tailor" ? "Tailor my resume" : "Track this application"}
         </button>
       </form>
     </div>

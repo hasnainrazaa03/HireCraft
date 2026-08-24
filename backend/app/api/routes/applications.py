@@ -10,12 +10,12 @@ import uuid
 import zipfile
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession, GenerationUser
+from app.api.deps import CurrentUser, DbSession, GenerationUser, enforce_generation_quota
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.application import (
@@ -174,9 +174,21 @@ def _resolve_job(db: DbSession, user_id: uuid.UUID, payload: ApplicationCreate) 
 
 @router.post("", response_model=ApplicationDetail, status_code=status.HTTP_202_ACCEPTED)
 def create_application(
-    payload: ApplicationCreate, user: GenerationUser, db: DbSession
+    payload: ApplicationCreate, request: Request, user: CurrentUser, db: DbSession
 ) -> ApplicationDetail:
-    """Create an application and queue the tailoring pipeline."""
+    """Create an application, tailoring the résumé unless asked not to.
+
+    With ``tailor`` false this is a pure tracker entry: the job is fetched and
+    stored, the chosen résumé is attached and rendered as it stands, and no LLM
+    runs. Applying without rewriting is the common case for a role that already
+    fits, and it shouldn't cost anything or wait on a queue.
+    """
+    # The generation quota guards LLM spend, so it applies only to the path that
+    # spends it. Checked here rather than as a dependency because whether this
+    # request generates anything is part of its body.
+    if payload.tailor:
+        enforce_generation_quota(request, user)
+
     profile = _resolve_resume(db, user.id, payload.resume_profile_id)
     job = _resolve_job(db, user.id, payload)
 
@@ -185,8 +197,8 @@ def create_application(
         job_id=job.id,
         resume_profile_id=profile.id,
         pipeline_status=PipelineStatus.PENDING,
-        include_cover_letter=payload.include_cover_letter,
-        reach_mode=payload.reach_mode,
+        include_cover_letter=payload.include_cover_letter and payload.tailor,
+        reach_mode=payload.reach_mode and payload.tailor,
         notes=payload.notes,
     )
     db.add(application)
@@ -194,6 +206,16 @@ def create_application(
     log_event(application, "created", "Application created")
     db.commit()
     db.refresh(application)
+
+    if not payload.tailor:
+        _attach_untailored(db, application, profile)
+        db.refresh(application)
+        logger.info(
+            "application.tracked",
+            application_id=str(application.id),
+            user_id=str(user.id),
+        )
+        return _to_detail(application)
 
     _queue_run(db, application)
     db.refresh(application)
@@ -205,6 +227,67 @@ def create_application(
         user_id=str(user.id),
     )
     return _to_detail(application)
+
+
+def _attach_untailored(db: DbSession, application: Application, profile: ResumeProfile) -> None:
+    """Finish an untailored application: the résumé as it stands, rendered.
+
+    ``tailored_resume`` holds the profile's own content unchanged — the whole
+    point of this path — so every downstream reader (documents, exports, scoring,
+    interview prep) works without a special case. There is deliberately no
+    guardrail report: nothing was written, so there is nothing to have vetted,
+    and inventing a clean one would report a check that never ran.
+
+    Rendering is best-effort. The tracker entry is what the user asked for; a
+    LaTeX failure should leave them with the application, not an error.
+    """
+    application.tailored_resume = dict(profile.content or {})
+    application.diff = []
+    application.pipeline_status = PipelineStatus.COMPLETED
+
+    try:
+        resume = MasterResume.model_validate(profile.content)
+        compiled, resume_tex, rendered = render_and_fit(
+            resume,
+            str(settings.templates_dir),
+            template_name=resolve_filename(profile.template),
+            one_page=profile.one_page,
+            job_name="resume",
+        )
+        # Store what the PDF actually contains: one-page fitting may have
+        # trimmed bullets, and the stored copy must match the document.
+        application.tailored_resume = rendered.model_dump(mode="json")
+        for existing in list(application.artifacts):
+            db.delete(existing)
+        db.flush()
+        for kind, filename, data, content_type in (
+            (ArtifactKind.RESUME_PDF, "resume.pdf", compiled.pdf_bytes, "application/pdf"),
+            (ArtifactKind.RESUME_TEX, "resume.tex", resume_tex.encode("utf-8"), "application/x-tex"),
+        ):
+            relative = storage.build_relative_path(application.user_id, application.id, filename)
+            size = storage.save_bytes(relative, data)
+            db.add(
+                ApplicationArtifact(
+                    application_id=application.id,
+                    kind=kind,
+                    storage_path=relative,
+                    size_bytes=size,
+                    content_type=content_type,
+                )
+            )
+        log_event(application, "tracked", f"Tracked with {profile.name}, untailored")
+    except Exception as exc:  # noqa: BLE001 - the tracker entry matters more
+        logger.warning(
+            "application.untailored_render_failed",
+            application_id=str(application.id),
+            error=str(exc)[:300],
+        )
+        log_event(
+            application,
+            "tracked",
+            f"Tracked with {profile.name}, untailored (PDF unavailable)",
+        )
+    db.commit()
 
 
 def _to_detail(application: Application) -> ApplicationDetail:

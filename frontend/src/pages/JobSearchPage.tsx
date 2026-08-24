@@ -258,10 +258,11 @@ export default function JobSearchPage() {
     localStorage.setItem(SAVED_KEY, JSON.stringify([...saved]));
   }, [saved]);
 
-  function tailor(job: JobSearchResult) {
-    navigate("/new", {
-      state: job.url ? { url: job.url } : { text: job.snippet, title: job.title, company: job.company },
-    });
+  function handoff(job: JobSearchResult, intent: "tailor" | "as_is") {
+    const source = job.url
+      ? { url: job.url }
+      : { text: job.description || job.snippet, title: job.title, company: job.company };
+    navigate("/new", { state: { ...source, intent } });
   }
 
   // Below this width there isn't room for a list and a panel side by side, so
@@ -283,7 +284,8 @@ export default function JobSearchPage() {
       resumeId={mode === "feed" ? feedResume : undefined}
       job={modal} saved={saved.has(jobKey(modal))}
       onSave={() => toggleSave(modal)}
-      onTailor={() => tailor(modal)}
+      onTailor={() => handoff(modal, "tailor")}
+      onTrack={() => handoff(modal, "as_is")}
       onClose={() => setModal(null)}
     />
   );
@@ -514,7 +516,8 @@ export default function JobSearchPage() {
                 scoredWith={mode === "feed" ? feedResumes.find((r) => r.id === feedResume)?.name : undefined}
                 key={jobKey(job)} job={job} saved={saved.has(jobKey(job))}
                 onSave={() => toggleSave(job)}
-                onTailor={() => tailor(job)}
+                onTailor={() => handoff(job, "tailor")}
+                onTrack={() => handoff(job, "as_is")}
                 onOpen={() => setModal(job)}
               />
             ))}
@@ -566,8 +569,9 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
 
 // --- card (matches the reference: logo, title, ring, meta, skills, actions) -
 
-function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
-  job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onOpen: () => void;
+function JobCard({ job, saved, onSave, onTailor, onTrack, onOpen, scoredWith }: {
+  job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void;
+  onTrack: () => void; onOpen: () => void;
   /** Name of the résumé this card's match score was computed against. */
   scoredWith?: string;
 }) {
@@ -667,6 +671,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
                 View More <IconArrowRight className="h-4 w-4" />
               </button>
               <div className="flex items-center gap-1.5">
+                <button onClick={onTrack} className="btn-secondary btn-sm" title="Add to your tracker with your résumé as it is — no AI, no cost">Track</button>
                 <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor Resume</button>
                 <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "!bg-brand-500/20 !text-brand-200" : ""}`} title={saved ? "Saved" : "Save"} aria-label={saved ? "Remove from saved" : "Save job"} aria-pressed={saved}>
                   <IconBookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} />
@@ -701,6 +706,7 @@ function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
           )}
           <div className="mt-3 flex items-center justify-between gap-2">
             <button onClick={onOpen} className="btn-ghost btn-sm">Full details</button>
+            <button onClick={onTrack} className="btn-secondary btn-sm" title="Add to your tracker with your résumé as it is — no AI, no cost">Track</button>
             <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor</button>
           </div>
         </div>
@@ -713,8 +719,9 @@ function JobCard({ job, saved, onSave, onTailor, onOpen, scoredWith }: {
 
 type Tab = "overview" | "match" | "requirements" | "recruiters";
 
-function JobDetail({ job: initial, saved, onSave, onTailor, onClose, resumeId }: {
-  job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void; onClose: () => void;
+function JobDetail({ job: initial, saved, onSave, onTailor, onTrack, onClose, resumeId }: {
+  job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void;
+  onTrack: () => void; onClose: () => void;
   /** Résumé the re-fetched posting should be re-scored against. */
   resumeId?: string;
 }) {
@@ -791,6 +798,11 @@ function JobDetail({ job: initial, saved, onSave, onTailor, onClose, resumeId }:
           <div className="mt-5 flex flex-wrap gap-3">
             <button onClick={onTailor} className={`${GRADIENT_BTN} flex-1 sm:flex-none`} style={GRADIENT_STYLE}>
               <IconSparkles className="h-4 w-4" /> Tailor My Resume
+            </button>
+            {/* Applying without a rewrite is the common case for a role that
+                already fits, and it costs nothing. */}
+            <button onClick={onTrack} className="btn-secondary" title="Add to your tracker with your résumé as it is — no AI, no cost">
+              Apply as-is
             </button>
             <button onClick={onSave} className={`btn-secondary ${saved ? "!border-brand-500/40 !bg-brand-500/20 !text-brand-200" : ""}`}>
               <IconBookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} /> {saved ? "Saved" : "Save Job"}

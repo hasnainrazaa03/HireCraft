@@ -293,6 +293,10 @@ class ApplicationCreate(ApiModel):
     job: JobCreate | None = None
     include_cover_letter: bool = False
     reach_mode: bool = False
+    # False tracks the application against the résumé exactly as it stands: no
+    # rewriting, no LLM call, no cost. The tracker, documents, and interview prep
+    # all work the same — the only thing that doesn't happen is the tailoring.
+    tailor: bool = True
     notes: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
