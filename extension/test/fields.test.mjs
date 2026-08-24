@@ -83,6 +83,10 @@ test("labels map to the field a human would expect", () => {
     ["End date year *", "end_year"],
     ["What year did you graduate from your most recent degree program? *", "graduation_year"],
     ["What is your major GPA (on a 4.0 scale) for your most recent degree program? *", "gpa"],
+    ["Are you legally authorized to work in the United States? *", "authorized_to_work"],
+    ["Are you eligible to work in the US?", "authorized_to_work"],
+    ["Will you now or in the future require sponsorship for employment visa status? *", "requires_sponsorship"],
+    ["Do you require visa sponsorship?", "requires_sponsorship"],
   ];
   for (const [label, expected] of cases) {
     assert.equal(claim(label), expected, `${label} should map to ${expected}`);
@@ -215,6 +219,8 @@ test("every field can produce a value from a full profile", () => {
     website: "https://ada.dev",
     years_experience: 3.5,
     open_to_relocation: true,
+    authorized_to_work: true,
+    requires_sponsorship: true,
     education: {
       school: "University of Southern California",
       degree: "M.S. in Computer Science",
@@ -264,4 +270,18 @@ test("the résumé is not put in another upload box", () => {
   // The trap: a section naming both must not attach. Landing the résumé in a
   // transcript box looks filled and is wrong, which is worse than empty.
   assert.equal(verdict("Attach your resume or cover letter"), "skip");
+});
+
+test("an unanswered work-authorization question is left blank, not guessed", () => {
+  // These two are independent — someone on F-1 OPT is authorized to work now
+  // *and* will need sponsorship later — and both are consequential. An empty
+  // box an employer asks about is far better than a wrong answer about
+  // somebody's right to work, so an unset value must produce nothing.
+  const by = Object.fromEntries(FIELDS.map((f) => [f.key, f]));
+  for (const key of ["authorized_to_work", "requires_sponsorship"]) {
+    assert.equal(by[key].from({}), "", `${key} must be blank when unanswered`);
+    assert.equal(by[key].from({ [key]: null }), "", `${key} must be blank when null`);
+    assert.equal(by[key].from({ [key]: true }), "Yes");
+    assert.equal(by[key].from({ [key]: false }), "No");
+  }
 });

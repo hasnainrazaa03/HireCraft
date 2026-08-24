@@ -111,6 +111,11 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         "website": pick(profile.website_url if profile else None, "website"),
         "work_authorization": (profile.work_authorization if profile else "") or "",
         "visa_status": (profile.visa_status if profile else "") or "",
+        # None means unanswered, and the filler must leave the question alone
+        # rather than guess — telling an employer the wrong thing here is worse
+        # than an empty box they will ask about.
+        "authorized_to_work": (profile.authorized_to_work if profile else None),
+        "requires_sponsorship": (profile.requires_sponsorship if profile else None),
         "years_experience": (profile.years_experience if profile else None),
         "open_to_relocation": bool(profile.open_to_relocation) if profile else False,
         # The most recent degree, which is what "School", "Degree", "Graduation

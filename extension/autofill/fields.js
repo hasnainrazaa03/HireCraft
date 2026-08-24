@@ -147,6 +147,37 @@ const FIELDS = [
     match: [/\bgpa\b/, /\bgrade\s*point\s*average\b/],
   },
   {
+    key: "authorized_to_work",
+    label: "Authorized to work in the US",
+    // Only answered from a stored decision. `undefined` leaves the question
+    // alone: an empty box an employer asks about is far better than a wrong
+    // answer to a question about someone's right to work.
+    from: (p) =>
+      p.authorized_to_work == null ? "" : p.authorized_to_work ? "Yes" : "No",
+    match: [
+      /\b(legally\s*)?authoriz(ed|ation)\s*to\s*work\b/,
+      /\beligible\s*to\s*work\b/,
+      /\bwork\s*authoriz/,
+      /\blegally\s*(be\s*)?employed\b/,
+    ],
+  },
+  {
+    key: "requires_sponsorship",
+    label: "Requires sponsorship",
+    from: (p) =>
+      p.requires_sponsorship == null ? "" : p.requires_sponsorship ? "Yes" : "No",
+    // Listed after the authorization question because several forms word this
+    // one as "…require sponsorship for employment visa status", which contains
+    // "sponsorship" and "employment" both.
+    match: [
+      /\brequire\s*(visa\s*)?sponsorship\b/,
+      /\bneed\s*sponsorship\b/,
+      /\bsponsorship\b.*\b(now|future|employment)\b/,
+      /\b(now|future)\b.*\bsponsorship\b/,
+      /\bvisa\s*sponsorship\b/,
+    ],
+  },
+  {
     key: "years_experience",
     label: "Years of experience",
     from: (p) => (p.years_experience == null ? "" : String(p.years_experience)),

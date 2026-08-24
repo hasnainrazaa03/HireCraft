@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +64,13 @@ class CareerProfile(Base, TimestampMixin):
 
     work_authorization: Mapped[str | None] = mapped_column(String(120))
     visa_status: Mapped[str | None] = mapped_column(String(120))
+    # Nearly every US application asks these two as a yes/no pair, and they are
+    # consequential enough that they are answered from a stored decision rather
+    # than inferred from the free-text status above. They are also genuinely
+    # independent: someone on F-1 OPT is authorized to work now *and* will need
+    # sponsorship later, so one cannot be derived from the other.
+    authorized_to_work: Mapped[bool | None] = mapped_column(Boolean)
+    requires_sponsorship: Mapped[bool | None] = mapped_column(Boolean)
     # Fractional years are real (e.g. 2.5), so store one decimal place.
     # asdecimal=False returns a plain float, keeping the API free of Decimal.
     years_experience: Mapped[float | None] = mapped_column(Numeric(4, 1, asdecimal=False))
