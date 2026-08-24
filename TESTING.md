@@ -67,7 +67,7 @@ Confirms the app is up before deep testing.
 - ✅ **T-SMOKE-03** Every left-nav item opens without a blank screen or error: Dashboard, Copilot, Applications, Resumes, Career Profile, Writing Voice, Cover Letters, Company Intel, Interview Prep, Job Search, Analytics, Templates.
   - Notes: PASS. All 12 nav destinations open and render. Copilot empty state, Cover Letters → Saved letters, Interview Prep and Job Search all clean on an empty account.
 - ⬜ **T-SMOKE-04** Job Search shows cards; open one job's **View More** modal; close it.
-  - Notes: *Blocked until the feed is populated — the wipe cleared all 2,529 scraped jobs. Run the scraper (§10) first, then come back.*
+  - Notes: *Unblocked — scraper re-run 2026-08-23, **2,513 jobs** in the feed.* Most rows arrive with title/company/location only; the description is fetched **on demand** when you open a card, by design. **Fixed while unblocking this (commit 24717d7):** that on-demand fetch silently failed for every **Workday** posting (432 rows — the public page is a JS shell and there was no handler, so the card opened with no description and scored against nothing). Now read via Workday's `cxs` JSON API; **SmartRecruiters** (100 rows) added the same way. Greenhouse/Lever/Ashby re-checked, unchanged. *Still unreadable:* `apply.workable.com` (27) and the JS-only career sites bytedance/lifeattiktok (326) — a card there will show no description.
 
 ---
 
