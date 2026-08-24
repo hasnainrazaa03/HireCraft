@@ -659,6 +659,11 @@ function Meta({ icon, children }: { icon: React.ReactNode; children: React.React
 }
 
 function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult; onWhy: () => void; onImprove: () => void; fetching?: boolean }) {
+  // Whether a résumé was actually compared against this posting. Without one
+  // there is no analysis, and the empty lists below must say so rather than
+  // render as findings — "None detected" under Potential Gaps reads as "you
+  // have no gaps", which is the opposite of what an unscored card knows.
+  const scored = job.match_score != null;
   return (
     <div className="space-y-6">
       <div className="grid gap-5 md:grid-cols-2">
@@ -688,7 +693,13 @@ function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult
               ))}
               {job.strengths.length > 6 && <li className="badge-brand mt-1 inline-block">+{job.strengths.length - 6} more</li>}
             </ul>
-          ) : <p className="text-sm text-subtle">No overlapping skills detected from this posting.</p>}
+          ) : (
+            <p className="text-sm text-subtle">
+              {scored
+                ? "No overlapping skills detected from this posting."
+                : "Pick a résumé above to see which of your skills this posting asks for."}
+            </p>
+          )}
         </div>
       </div>
 
@@ -710,7 +721,7 @@ function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult
             <ul className="space-y-1.5">
               {job.strengths.length ? job.strengths.map((s) => (
                 <li key={s} className="flex items-center gap-2 text-sm text-content"><IconCheck className="h-4 w-4 text-emerald" /> {s}</li>
-              )) : <li className="text-sm text-subtle">—</li>}
+              )) : <li className="text-sm text-subtle">{scored ? "—" : "Not analysed yet"}</li>}
             </ul>
           </div>
           <div>
@@ -718,7 +729,7 @@ function OverviewTab({ job, onWhy, onImprove, fetching }: { job: JobSearchResult
             <ul className="space-y-1.5">
               {job.gaps.length ? job.gaps.map((g) => (
                 <li key={g} className="flex items-center gap-2 text-sm text-muted"><span className="text-coral">⚠</span> {g}</li>
-              )) : <li className="text-sm text-subtle">None detected</li>}
+              )) : <li className="text-sm text-subtle">{scored ? "None detected" : "Not analysed yet"}</li>}
             </ul>
             <button onClick={onImprove} className="btn-primary btn-sm mt-3"><IconSparkles className="h-4 w-4" /> Improve Your Match</button>
           </div>
