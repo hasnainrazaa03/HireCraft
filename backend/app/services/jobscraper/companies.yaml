@@ -49,12 +49,32 @@ greenhouse:
   - flyzipline
   - elastic
   - spacex
+  # Added 2026-08-23, each probed live against the Greenhouse boards API.
+  - okta
+  - fivetran
+  - twilio
+  - monzo
+  - sigmacomputing
+  - faire
+  - checkr
+  - ridgeline
+  - attentive
+  - amplitude
+  - coursera
+  - starburst
+  - airtable
+  - modernhealth
+  - truelayer
+  - imbue
 
 lever:
   - palantir
   - zoox
   - shieldai
   - anyscale
+  # Probed 2026-08-23. Lever's public postings API rejected every other
+  # candidate tried, so the list stays short by evidence rather than by choice.
+  - ro
 
 ashby:
   - openai
@@ -83,6 +103,24 @@ ashby:
   - midjourney
   - lovable
   - zed
+  # Added 2026-08-23, each probed live against the Ashby job-board API.
+  - langchain
+  - deepgram
+  - baseten
+  - suno
+  - exa
+  - attio
+  - sardine
+  - vapi
+  - cartesia
+  - warp
+  - bland
+  - pika
+  - browserbase
+  - krea
+  - greptile
+  - runway
+  - tldraw
 
 workday:
   - {tenant: nvidia,     host: wd5,  site: NVIDIAExternalCareerSite}
@@ -93,6 +131,15 @@ workday:
   - {tenant: boeing,     host: wd1,  site: EXTERNAL_CAREERS}
   - {tenant: autodesk,   host: wd1,  site: Ext}
   - {tenant: disney,     host: wd5,  site: disneycareer}
+  # Added 2026-08-23, each probed live against the Workday cxs API. These are
+  # large enterprise boards, so most of what they return is filtered out by
+  # title relevance before it reaches the feed.
+  - {tenant: ngc,        host: wd1,  site: Northrop_Grumman_External_Site}
+  - {tenant: capitalone, host: wd12, site: Capital_One}
+  - {tenant: hpe,        host: wd5,  site: Jobsathpe}
+  - {tenant: medtronic,  host: wd1,  site: MedtronicCareers}
+  - {tenant: intel,      host: wd1,  site: External}
+  - {tenant: target,     host: wd5,  site: targetcareers}
 
 # Aggregators (no config needed; toggle here)
 simplify_internships: true     # github.com/SimplifyJobs/Summer2027-Internships
