@@ -22,6 +22,11 @@ from app.models.scraped_job import ScrapedJob
 from app.schemas.jobsearch import JobSearchResult
 from app.schemas.resume import MasterResume
 from app.services import feature_flags
+from app.services.degrees import (
+    GRADUATE_STATED,
+    MASTERS_ELIGIBLE,
+    classify as classify_degree,
+)
 from app.services.job_rerank import rerank_jobs
 from app.services.jobsearch import search_jobs
 from app.services.scraper import ScrapeError, scrape_job
@@ -293,6 +298,7 @@ def _feed_row_to_result(
         strengths=list((fit["strengths"] if fit else []) or []),
         gaps=list((fit["gaps"] if fit else []) or []),
         level=row.level,
+        degree_level=row.degree_level or "unspecified",
         bucket=row.bucket or None,
         terms=list(row.terms or []),
         sponsorship=row.sponsorship or "",
@@ -382,6 +388,17 @@ def job_feed(
         default=0, ge=0, le=3650,
         description="Only postings first seen within this many days (0 = any age)",
     ),
+    degree: str = Query(
+        default="masters_eligible",
+        pattern="^(any|masters_eligible|graduate_stated|bachelors|undergrad_only|phd)$",
+        description=(
+            "Degree filter. 'masters_eligible' (default) drops postings restricted "
+            "to undergraduates and those requiring a doctorate, keeping everything "
+            "a master's candidate can apply to — including postings that state a "
+            "bachelor's minimum, which a master's exceeds, and postings that state "
+            "no degree at all."
+        ),
+    ),
     sort: str = Query(default="match", pattern="^(match|newest|company)$"),
     limit: int = Query(default=60, ge=1, le=300),
 ) -> list[JobSearchResult]:
@@ -409,6 +426,13 @@ def job_feed(
         stmt = stmt.where(ScrapedJob.remote.is_(True))
     if location:
         stmt = stmt.where(ScrapedJob.location.ilike(f"%{location}%"))
+    if degree == "masters_eligible":
+        stmt = stmt.where(ScrapedJob.degree_level.in_(sorted(MASTERS_ELIGIBLE)))
+    elif degree == "graduate_stated":
+        stmt = stmt.where(ScrapedJob.degree_level.in_(sorted(GRADUATE_STATED)))
+    elif degree != "any":
+        stmt = stmt.where(ScrapedJob.degree_level == degree)
+
     if posted_within:
         cutoff = datetime.now(UTC) - timedelta(days=posted_within)
         # A posting with no date is of unknown age, not "old" — excluding it from
@@ -551,6 +575,7 @@ def fetch_feed_description(
             scraped = None
         if scraped is not None and scraped.text:
             row.description = scraped.text[:20000]
+            row.degree_level = classify_degree(row.description).value
             row.location = row.location or (scraped.location or "")
             db.commit()
             db.refresh(row)

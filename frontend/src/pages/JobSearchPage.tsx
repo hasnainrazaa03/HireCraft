@@ -188,6 +188,9 @@ export default function JobSearchPage() {
   const [feedMinScore, setFeedMinScore] = useState(0);
   // Age cutoff in days; 0 = any age.
   const [feedPostedWithin, setFeedPostedWithin] = useState(0);
+  // Defaults to what a master's candidate can actually apply to — see the
+  // control's help text for what that does and doesn't exclude.
+  const [feedDegree, setFeedDegree] = useState("masters_eligible");
   const [feedQuery, setFeedQuery] = useState("");
 
   const live = useQuery({
@@ -224,6 +227,7 @@ export default function JobSearchPage() {
   if (feedRemote) feedParams.set("remote_only", "true");
   if (feedMinScore) feedParams.set("min_score", String(feedMinScore));
   if (feedPostedWithin) feedParams.set("posted_within", String(feedPostedWithin));
+  feedParams.set("degree", feedDegree);
   if (feedQuery.trim()) feedParams.set("q", feedQuery.trim());
 
   const feed = useQuery({
@@ -391,6 +395,30 @@ export default function JobSearchPage() {
                 </select>
               </label>
               <label className="block">
+                <span className="label">Education</span>
+                <select className="input mt-1" value={feedDegree} onChange={(e) => setFeedDegree(e.target.value)}>
+                  <option value="masters_eligible">Master's eligible</option>
+                  <option value="graduate_stated">Graduate degree stated</option>
+                  <option value="bachelors">Bachelor's stated</option>
+                  <option value="undergrad_only">Undergraduate only</option>
+                  <option value="phd">PhD required</option>
+                  <option value="any">Any</option>
+                </select>
+                {/* A filter that hides things by default has to say what it
+                    hides. A stated bachelor's minimum is kept on purpose — a
+                    master's exceeds it — so the only exclusions are postings a
+                    master's candidate genuinely can't apply to. */}
+                <span className="mt-1 block text-[11px] leading-snug text-subtle">
+                  {feedDegree === "masters_eligible"
+                    ? "Hides undergraduate-only and PhD-required roles. Keeps roles stating a bachelor's minimum — a master's exceeds it."
+                    : feedDegree === "graduate_stated"
+                      ? "Only roles that name a master's or graduate degree. Hides roles that state no degree at all."
+                      : feedDegree === "any"
+                        ? "No education filtering."
+                        : "Showing only this level."}
+                </span>
+              </label>
+              <label className="block">
                 <span className="label">Date posted</span>
                 <select className="input mt-1" value={feedPostedWithin} onChange={(e) => setFeedPostedWithin(Number(e.target.value))}>
                   <option value={0}>Any time</option>
@@ -428,12 +456,13 @@ export default function JobSearchPage() {
                     {b} ({n})
                   </FilterPill>
                 ))}
-                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedPostedWithin || feedQuery) && (
+                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedPostedWithin || feedQuery || feedDegree !== "masters_eligible") && (
                   <button
                     onClick={() => {
                       setBucket(""); setFeedLevel(""); setFeedSource("");
                       setFeedLocation(""); setFeedRemote(false); setFeedMinScore(0);
                       setFeedPostedWithin(0); setFeedQuery("");
+                      setFeedDegree("masters_eligible");
                     }}
                     className="btn-ghost btn-sm text-subtle hover:text-content"
                   >

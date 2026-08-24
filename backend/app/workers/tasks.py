@@ -497,6 +497,7 @@ def hydrate_feed_descriptions(limit: int = _HYDRATE_PER_RUN) -> int:
 
     from app.core.rate_limit import get_redis
     from app.models.scraped_job import ScrapedJob
+    from app.services.degrees import classify
     from app.services.scraper import ScrapeError, scrape_job
 
     filled = 0
@@ -529,6 +530,7 @@ def hydrate_feed_descriptions(limit: int = _HYDRATE_PER_RUN) -> int:
                 scraped = None
             if scraped is not None and scraped.text:
                 row.description = scraped.text[:20000]
+                row.degree_level = classify(row.description).value
                 if not row.location and scraped.location:
                     row.location = scraped.location[:500]
                 filled += 1

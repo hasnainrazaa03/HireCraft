@@ -25,6 +25,7 @@ import yaml
 
 from app.core.logging import get_logger
 from app.models.scraped_job import ScrapedJob
+from app.services.degrees import classify
 from app.services.jobscraper.filters import SENIOR_RE, Filters
 from app.services.jobscraper.models import Job
 from app.services.jobscraper.scorer import Scorer
@@ -196,6 +197,7 @@ def persist(
         incoming = (job.description or "")[:20000]
         if len(incoming) > len(row.description or ""):
             row.description = incoming
+            row.degree_level = classify(row.description).value
         row.remote = job.remote
         row.posted_at = job.posted_at
         row.level = _clip(job.level, 32) or "unknown"

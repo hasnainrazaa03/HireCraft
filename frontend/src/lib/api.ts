@@ -1244,6 +1244,8 @@ export interface JobSearchResult {
   // --- scraped-feed extras (absent/empty for the live board sources) ------
   id?: string | null;
   level?: string | null;
+  /** Which degrees the posting will consider (see backend services/degrees.py). */
+  degree_level?: string;
   bucket?: string | null;
   terms?: string[];
   sponsorship?: string;

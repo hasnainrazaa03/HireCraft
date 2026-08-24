@@ -40,6 +40,11 @@ class ScrapedJob(Base, TimestampMixin):
         nullable=False,
     )
     fingerprint: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Which degree levels the posting will consider (see services.degrees).
+    # Derived from the description, so it is "unspecified" until one arrives.
+    degree_level: Mapped[str] = mapped_column(
+        String(24), default="unspecified", nullable=False, index=True
+    )
 
     # --- posting -----------------------------------------------------------
     source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

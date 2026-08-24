@@ -33,6 +33,8 @@ class JobSearchResult(BaseModel):
     # Stable id for feed rows, so the UI can mark one saved/applied/dismissed.
     id: str | None = None
     level: str | None = None          # intern | new_grad | early
+    # Which degrees the posting will consider (see services.degrees).
+    degree_level: str = "unspecified"
     bucket: str | None = None         # "Internship · Summer 2027", "Full-time · …"
     terms: list[str] = []             # ["Summer 2027"]
     sponsorship: str = ""             # what the posting says about visa support
