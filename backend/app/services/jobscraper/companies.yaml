@@ -145,3 +145,8 @@ workday:
 simplify_internships: true     # github.com/SimplifyJobs/Summer2027-Internships
 simplify_new_grad: true        # github.com/SimplifyJobs/New-Grad-Positions
 hackernews_who_is_hiring: true # latest "Ask HN: Who is hiring?" thread
+# github.com/speedyapply/2027-AI-College-Jobs — AI/ML-focused, and the only
+# source in the feed that reports salary. Overlaps SimplifyJobs, which costs
+# nothing: postings are deduplicated by URL.
+speedyapply_new_grad: true     # NEW_GRAD_USA.md
+speedyapply_internships: true  # README.md

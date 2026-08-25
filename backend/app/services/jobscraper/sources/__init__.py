@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 from ..models import Job
-from . import greenhouse, lever, ashby, workday, simplify, hackernews
+from . import greenhouse, lever, ashby, workday, simplify, speedyapply, hackernews
 
 log = logging.getLogger("jobscraper.sources")
 ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby}
@@ -27,6 +27,10 @@ def build_tasks(companies: dict, only: set[str] | None, want_title: Callable[[st
         tasks.append(("simplify", "internships", simplify.fetch_internships))
     if (not only or "simplify" in only) and companies.get("simplify_new_grad", True):
         tasks.append(("simplify", "new-grad", simplify.fetch_new_grad))
+    if (not only or "speedyapply" in only) and companies.get("speedyapply_new_grad", True):
+        tasks.append(("speedyapply", "new-grad", speedyapply.fetch_new_grad))
+    if (not only or "speedyapply" in only) and companies.get("speedyapply_internships", True):
+        tasks.append(("speedyapply", "internships", speedyapply.fetch_internships))
     if (not only or "hn" in only) and companies.get("hackernews_who_is_hiring", True):
         tasks.append(("hn", "who-is-hiring", hackernews.fetch))
     return tasks
