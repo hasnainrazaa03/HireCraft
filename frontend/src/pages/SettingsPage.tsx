@@ -737,8 +737,9 @@ function ExtensionSection() {
 
           <p className="text-xs leading-relaxed text-subtle">
             This key can read the details it fills into forms, download your résumé
-            as a PDF, and record an application you've made. It can't change your
-            account, and it can't start a paid AI run.
+            as a PDF, record an application you've made, and — only when you tick the
+            box on a posting — draft a cover letter, which uses AI credit. It can't
+            change your account or anything else.
           </p>
         </div>
       )}

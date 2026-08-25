@@ -649,6 +649,7 @@ export interface ApplicationSummary {
   job_title: string | null;
   company: string | null;
   total_cost_usd: number;
+  applied_at: string | null;
   interview_at: string | null;
   reminder_at: string | null;
   has_notes: boolean;

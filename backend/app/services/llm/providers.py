@@ -49,8 +49,27 @@ _ANTHROPIC_NO_TEMPERATURE: set[str] = set()
 
 
 def _temperature_rejected(exc: Exception) -> bool:
+    """Is this the model (or SDK) refusing the temperature parameter?
+
+    Two shapes, and only the first was handled originally.
+
+    The API can reject it in the response — "temperature is deprecated for this
+    model". But a newer SDK drops the parameter from the method signature
+    altogether, and then it never reaches the API at all: Python raises
+    ``TypeError: Messages.create() got an unexpected keyword argument
+    'temperature'`` before the request is made. That form was not recognised, so
+    the retry never fired and every structured call failed — which took résumé
+    import down completely on Claude Sonnet 5.
+    """
     msg = str(exc).lower()
-    return "temperature" in msg and ("deprecat" in msg or "unsupported" in msg or "not support" in msg)
+    if "temperature" not in msg:
+        return False
+    return (
+        "deprecat" in msg
+        or "unsupported" in msg
+        or "not support" in msg
+        or "unexpected keyword argument" in msg
+    )
 
 
 class AnthropicClient:

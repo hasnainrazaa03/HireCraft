@@ -332,6 +332,7 @@ class ApplicationSummary(ApiModel):
     job_title: str | None = None
     company: str | None = None
     total_cost_usd: float
+    applied_at: datetime | None = None
     interview_at: datetime | None = None
     reminder_at: datetime | None = None
     has_notes: bool = False
@@ -396,6 +397,7 @@ class ApplicationDetail(ApiModel):
     include_cover_letter: bool
     reach_mode: bool = False
     notes: str | None
+    applied_at: datetime | None = None
     interview_at: datetime | None = None
     reminder_at: datetime | None = None
     tailored_resume: dict[str, Any] | None

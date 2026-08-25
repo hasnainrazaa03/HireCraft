@@ -29,6 +29,7 @@
       ],
       "js": [
         "autofill/visa.js",
+        "autofill/submission.js",
         "autofill/fields.js",
         "autofill/fill.js",
         "autofill/adapters.js",

@@ -10,8 +10,10 @@ happened. It cannot read or change anything else about the account.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import DbSession, ExtensionUser
@@ -19,7 +21,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.profile import CareerProfile
 from app.models.resume import ResumeProfile
-from app.schemas.api import ApplicationCreate, ApplicationDetail
+from app.schemas.api import ApplicationCreate, ApplicationDetail, JobCreate
 from app.services.latex.compiler import LatexCompilationError
 from app.services.latex.renderer import render_and_fit
 from app.services.latex.templates import resolve_filename
@@ -29,6 +31,28 @@ from app.services import storage
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/extension", tags=["extension"])
+
+
+class ExtensionTrackRequest(BaseModel):
+    """Record a posting the user is applying to, at a given stage."""
+
+    job: JobCreate
+    resume_profile_id: uuid.UUID | None = None
+    #: Where the user is with it. "draft" while filling, "applied" once the
+    #: form has gone through — the extension sends the latter when it sees a
+    #: submission, so the date recorded is the date it happened.
+    status: str = "draft"
+    notes: str | None = Field(default=None, max_length=4000)
+
+
+class ExtensionCoverLetterRequest(BaseModel):
+    """Draft a cover letter for the posting on the page."""
+
+    job_text: str = Field(min_length=40, max_length=20000)
+    company: str | None = Field(default=None, max_length=200)
+    role: str | None = Field(default=None, max_length=200)
+    resume_profile_id: uuid.UUID | None = None
+    tone: str = "modern"
 
 
 def _split_name(full_name: str | None) -> tuple[str, str]:
@@ -195,13 +219,17 @@ def extension_resume_pdf(
     "/track", response_model=ApplicationDetail, status_code=status.HTTP_201_CREATED
 )
 def extension_track(
-    payload: ApplicationCreate, user: ExtensionUser, db: DbSession
+    payload: ExtensionTrackRequest, user: ExtensionUser, db: DbSession
 ) -> ApplicationDetail:
-    """Record an application the user is filling in on an employer's site.
+    """Record an application the user is filling in, or has just submitted.
 
-    Always untailored, whatever the payload says: the extension's job is to note
-    that an application happened, and this key must not be able to start a
-    billable generation run.
+    Always untailored: the extension's job is to note that an application
+    happened, not to rewrite a résumé behind the user's back.
+
+    ``status`` is what makes this a tracker rather than a bookmark. The
+    extension sends "applied" when it sees a submission go through, and the
+    stage is stamped with the time it happened rather than the time anyone
+    remembers to record it.
     """
     from app.api.routes.applications import (
         _attach_untailored,
@@ -212,27 +240,149 @@ def extension_track(
     from app.models.application import Application, PipelineStatus
     from app.services.activity import log_event
 
-    profile = _resolve_resume(db, user.id, payload.resume_profile_id)
-    job = _resolve_job(db, user.id, payload)
+    from app.models.application import TrackerStatus
 
-    application = Application(
-        user_id=user.id,
-        job_id=job.id,
-        resume_profile_id=profile.id,
-        pipeline_status=PipelineStatus.PENDING,
-        include_cover_letter=False,
-        reach_mode=False,
-        notes=payload.notes,
+    from app.models.job import Job
+
+    profile = _resolve_resume(db, user.id, payload.resume_profile_id)
+
+    # One posting, one application. The extension calls this twice for the same
+    # job — once while filling the form, once when it sees the submission — and
+    # the second call must advance the first row rather than leave two
+    # half-told versions of the same application in the tracker.
+    #
+    # Matching on the URL rather than on a freshly resolved job id is the whole
+    # point: _resolve_job scrapes and inserts a *new* Job each time it is
+    # called, so a lookup by its id never matches the earlier row, and every
+    # call created another application. Reusing the stored job also means the
+    # posting is not re-fetched from the employer on the second call.
+    job = None
+    if payload.job.url:
+        job = (
+            db.query(Job)
+            .filter(Job.user_id == user.id, Job.url == payload.job.url)
+            .order_by(Job.created_at.desc())
+            .first()
+        )
+    if job is None:
+        job = _resolve_job(
+            db,
+            user.id,
+            ApplicationCreate(
+                job=payload.job,
+                resume_profile_id=payload.resume_profile_id,
+                tailor=False,
+            ),
+        )
+
+    application = (
+        db.query(Application)
+        .filter(Application.user_id == user.id, Application.job_id == job.id)
+        .first()
     )
-    db.add(application)
-    db.flush()
-    log_event(application, "created", "Application created from the browser extension")
+    fresh = application is None
+    if fresh:
+        application = Application(
+            user_id=user.id,
+            job_id=job.id,
+            resume_profile_id=profile.id,
+            pipeline_status=PipelineStatus.PENDING,
+            include_cover_letter=False,
+            reach_mode=False,
+            notes=payload.notes,
+        )
+        db.add(application)
+        db.flush()
+        log_event(application, "created", "Added from the browser extension")
+
+    stage = TrackerStatus(payload.status)
+    if application.tracker_status != stage:
+        log_event(
+            application,
+            "status_changed",
+            f"Status → {stage.value.replace('_', ' ').title()} (browser extension)",
+            {"from": application.tracker_status.value, "to": stage.value},
+        )
+        application.tracker_status = stage
+    if stage is TrackerStatus.APPLIED and not application.applied_at:
+        application.applied_at = datetime.now(UTC)
     db.commit()
     db.refresh(application)
 
-    _attach_untailored(db, application, profile)
-    db.refresh(application)
+    if fresh:
+        _attach_untailored(db, application, profile)
+        db.refresh(application)
     logger.info(
-        "extension.tracked", application_id=str(application.id), user_id=str(user.id)
+        "extension.tracked",
+        application_id=str(application.id),
+        user_id=str(user.id),
+        status=stage.value,
+        created=fresh,
     )
     return _to_detail(application)
+
+
+@router.post("/cover-letter", response_model=dict)
+def extension_cover_letter(
+    payload: ExtensionCoverLetterRequest, user: ExtensionUser, db: DbSession
+) -> dict:
+    """Draft a cover letter for the posting the user is looking at.
+
+    The one endpoint on this key that costs money, and the reason it is allowed
+    is that it cannot happen quietly: the user ticks a box on the page and waits
+    for the result. The rule the key enforces is that nothing bills *silently*,
+    not that nothing bills at all.
+
+    The draft is checked for the phrasings that make writing read as machine-
+    generated and the count is returned with it, so the reader can see whether
+    the instruction took rather than having to judge it cold.
+    """
+    from app.services.evidence import evidence_lines
+    from app.services.llm.client import LlmError, LlmResponseError
+    from app.services.llm.usage import UsageLedger
+    from app.services.pipeline import compose_cover_letter
+    from app.services.writing_tells import find_tells, uniformity
+
+    from app.api.routes.studio import _client_for, _greeting, _record, _voice_for
+
+    profile = _resolve_resume(db, user.id, payload.resume_profile_id)
+    resume = MasterResume.model_validate(profile.content)
+
+    ledger = UsageLedger()
+    try:
+        paragraphs, report = compose_cover_letter(
+            resume,
+            payload.job_text,
+            company=payload.company,
+            role=payload.role,
+            tone=payload.tone,
+            # The user's own writing samples, when they have given any. This is
+            # the whole point of the Writing Voice page.
+            voice=_voice_for(db, user.id),
+            evidence=evidence_lines(db, user.id),
+            client=_client_for(user),
+            ledger=ledger,
+        )
+    except LlmResponseError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "The AI returned an incomplete letter. Please try again.",
+        ) from exc
+    except LlmError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"The AI service is unavailable: {exc}"
+        ) from exc
+
+    _record(db, user.id, ledger)
+    body = "\n\n".join(paragraphs)
+    return {
+        "greeting": _greeting(None, payload.company),
+        "paragraphs": paragraphs,
+        "signature": resume.basics.name,
+        "cost_usd": ledger.cost_usd,
+        "resume_name": profile.name,
+        # Style signals, so the reader can judge the draft rather than trust it.
+        "tells": find_tells(body)[:8],
+        "uniformity": round(uniformity(body), 2),
+        "guardrail_report": report.model_dump(mode="json") if report else None,
+    }

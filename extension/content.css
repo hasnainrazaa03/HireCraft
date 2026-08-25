@@ -192,3 +192,54 @@
 .hc-visa-warn  { border-color: rgba(251, 191, 36, 0.3);  background: rgba(251, 191, 36, 0.1);  color: #fcd34d; }
 .hc-visa-bad   { border-color: rgba(248, 113, 113, 0.32); background: rgba(248, 113, 113, 0.1); color: #fca5a5; }
 .hc-visa-quiet { border-color: rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.04); color: #9a9aad; }
+
+/* --- résumé picker, cover-letter option, drafted letter ------------------ */
+.hc-field { display: block; margin-bottom: 8px; }
+.hc-field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #9a9aad;
+}
+.hc-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #2c2c3a;
+  background: #1c1c26;
+  color: #e9e9f0;
+  font-family: inherit;
+  font-size: 12px;
+}
+.hc-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #cfcfe0;
+  cursor: pointer;
+}
+.hc-check input { margin: 0; accent-color: #7c4dff; }
+.hc-hint { margin-bottom: 9px; font-size: 10.5px; line-height: 1.4; color: #6f6f82; }
+
+.hc-letter {
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+.hc-letter-head { font-size: 11px; font-weight: 600; color: #b9a6ff; }
+.hc-letter-body {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: #cfcfe0;
+}
+.hc-letter-meta { margin-top: 6px; font-size: 10.5px; color: #8a8a9e; }
+.hc-small { margin-top: 7px; padding: 5px 9px; font-size: 11px; flex: 0 0 auto; }

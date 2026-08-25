@@ -88,10 +88,24 @@ const HANDLERS = {
   async resume({ resumeId }) {
     return { dataUrl: await resumeDataUrl(resumeId) };
   },
-  async track({ url, resumeId }) {
-    const body = { job: { url }, tailor: false };
+  async track({ url, resumeId, status }) {
+    const body = { job: { url }, status: status || "draft" };
     if (resumeId) body.resume_profile_id = resumeId;
     return (await callApi("/extension/track", { method: "POST", body })).json();
+  },
+  async coverLetter({ jobText, company, role, resumeId, tone }) {
+    return (
+      await callApi("/extension/cover-letter", {
+        method: "POST",
+        body: {
+          job_text: jobText,
+          company: company || null,
+          role: role || null,
+          resume_profile_id: resumeId || null,
+          tone: tone || "modern",
+        },
+      })
+    ).json();
   },
 };
 

@@ -143,6 +143,10 @@ class Application(Base, TimestampMixin):
         JsonB, default=list, nullable=False
     )
     # Tracker v2: a scheduled interview and an optional follow-up reminder.
+    # When the application was actually submitted. Distinct from created_at,
+    # which is when the row appeared — a job can sit in the tracker for a week
+    # before it is sent, and "applied 3 days ago" has to mean the sending.
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     interview_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

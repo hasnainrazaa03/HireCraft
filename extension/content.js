@@ -34,8 +34,13 @@ const state = {
   busy: false,
   status: "",
   report: null,
-  tracked: false,
+  /** The tracker stage this application is at, as far as we know. */
+  stage: null,
+  profile: null,
+  /** Which résumé to attach — chosen before filling, not assumed. */
   resumeId: null,
+  wantCoverLetter: false,
+  letter: null,
 };
 
 function ask(message) {
@@ -132,15 +137,86 @@ function renderPanel() {
     );
   }
 
+  // Choose the résumé before filling rather than after. Attaching the default
+  // and letting the user notice afterwards means re-doing the upload, and on
+  // some forms it means starting the application again.
+  if (state.profile?.resumes?.length) {
+    const row = el("label", "hc-field");
+    row.append(el("span", "hc-field-label", "Résumé"));
+    const select = el("select", "hc-select");
+    for (const r of state.profile.resumes) {
+      const option = el("option", null, r.name + (r.is_default ? " (default)" : ""));
+      option.value = r.id;
+      if (r.id === state.resumeId) option.selected = true;
+      select.append(option);
+    }
+    select.onchange = (e) => {
+      state.resumeId = e.target.value;
+    };
+    select.disabled = state.busy;
+    row.append(select);
+    panel.append(row);
+
+    const check = el("label", "hc-check");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = state.wantCoverLetter;
+    box.disabled = state.busy;
+    box.onchange = (e) => {
+      state.wantCoverLetter = e.target.checked;
+      render();
+    };
+    check.append(box, el("span", null, "Also draft a cover letter"));
+    panel.append(check);
+    if (state.wantCoverLetter) {
+      panel.append(
+        el("div", "hc-hint", "Uses AI credit — a few cents. Written from this posting and the résumé above.")
+      );
+    }
+  }
+
+  if (state.letter) {
+    const box = el("div", "hc-letter");
+    box.append(el("div", "hc-letter-head", `Cover letter · ${state.letter.paragraphs.length} paragraphs`));
+    box.append(el("div", "hc-letter-body", state.letter.paragraphs.join("\n\n")));
+    // Style signals rather than a verdict: the reader decides, but they should
+    // not have to judge machine-written phrasing cold.
+    const tells = state.letter.tells?.length || 0;
+    box.append(
+      el(
+        "div",
+        "hc-letter-meta",
+        tells
+          ? `${tells} phrase${tells === 1 ? "" : "s"} that read as AI-written — worth an edit`
+          : "No machine-writing tells found"
+      )
+    );
+    const copy = el("button", "hc-btn hc-small", "Copy letter");
+    copy.onclick = async () => {
+      const full = [state.letter.greeting, ...state.letter.paragraphs, state.letter.signature]
+        .filter(Boolean)
+        .join("\n\n");
+      try {
+        await navigator.clipboard.writeText(full);
+        copy.textContent = "Copied";
+      } catch {
+        copy.textContent = "Select it and copy";
+      }
+    };
+    box.append(copy);
+    panel.append(box);
+  }
+
   const actions = el("div", "hc-actions");
   const fill = el("button", "hc-btn hc-primary", state.busy ? "Filling…" : "Fill this form");
   fill.disabled = state.busy;
   fill.onclick = runFill;
   actions.append(fill);
 
-  const track = el("button", "hc-btn", state.tracked ? "Tracked ✓" : "Track application");
-  track.disabled = state.busy || state.tracked;
-  track.onclick = runTrack;
+  const STAGE_LABEL = { draft: "Tracked ✓", applied: "Applied ✓" };
+  const track = el("button", "hc-btn", STAGE_LABEL[state.stage] || "Track application");
+  track.disabled = state.busy || state.stage === "applied";
+  track.onclick = () => runTrack("draft");
   actions.append(track);
   panel.append(actions);
 
@@ -155,6 +231,7 @@ function renderLauncher() {
   button.onclick = () => {
     state.open = true;
     render();
+    loadProfile();
   };
   // A count of what was filled, so a collapsed launcher still reports.
   if (state.report?.filled?.length) {
@@ -204,33 +281,56 @@ function highlight(node) {
   setTimeout(() => node.classList.remove("hc-filled-flash"), 1200);
 }
 
+/** Fetch the profile once, so the résumé picker has something to show. */
+async function loadProfile() {
+  if (state.profile || state.busy) return;
+  const reply = await ask({ type: "profile" });
+  if (!reply.ok) {
+    setStatus(reply.error);
+    return;
+  }
+  state.profile = reply.data;
+  const preferred =
+    reply.data.resumes?.find((r) => r.is_default) || reply.data.resumes?.[0];
+  state.resumeId = state.resumeId || preferred?.id || null;
+  render();
+}
+
 async function runFill() {
   state.busy = true;
   state.status = "Reading your HireCraft profile…";
   render();
 
-  const profileReply = await ask({ type: "profile" });
-  if (!profileReply.ok) {
-    Object.assign(state, { busy: false, status: profileReply.error });
-    render();
-    return;
+  if (!state.profile) {
+    const reply = await ask({ type: "profile" });
+    if (!reply.ok) {
+      Object.assign(state, { busy: false, status: reply.error });
+      render();
+      return;
+    }
+    state.profile = reply.data;
   }
-  const profile = profileReply.data;
+  const profile = state.profile;
+
+  // Whichever résumé the user picked, not whichever happens to be default.
+  const chosen =
+    profile.resumes?.find((r) => r.id === state.resumeId) ||
+    profile.resumes?.find((r) => r.is_default) ||
+    profile.resumes?.[0];
+  state.resumeId = chosen?.id || null;
 
   let resumeFile = null;
-  const preferred = profile.resumes?.find((r) => r.is_default) || profile.resumes?.[0];
-  if (preferred) {
-    setStatus(`Fetching ${preferred.name}…`);
-    const pdf = await ask({ type: "resume", resumeId: preferred.id });
+  if (chosen) {
+    setStatus(`Fetching ${chosen.name}…`);
+    const pdf = await ask({ type: "resume", resumeId: chosen.id });
     if (pdf.ok) {
       resumeFile = window.HIRECRAFT_FILL.fileFromDataUrl(
         pdf.data.dataUrl,
-        `${preferred.name.replace(/\s+/g, "_")}.pdf`
+        `${chosen.name.replace(/\s+/g, "_")}.pdf`
       );
     }
   }
 
-  state.resumeId = preferred?.id || null;
   setStatus("Filling…");
 
   const report = await window.HIRECRAFT_FILL.fillForm(profile, {
@@ -249,25 +349,154 @@ async function runFill() {
 
   Object.assign(state, { busy: false, status: "", report });
   render();
+
+  if (state.wantCoverLetter && !state.letter) await runCoverLetter();
 }
 
-async function runTrack() {
+async function runCoverLetter() {
   state.busy = true;
-  setStatus("Recording this application…");
+  setStatus("Writing a cover letter from this posting…");
+  const reply = await ask({
+    type: "coverLetter",
+    jobText: window.HIRECRAFT_VISA.pageText(),
+    company: guessCompany(),
+    role: document.title.split(/[|\-–]/)[0].trim().slice(0, 120),
+    resumeId: state.resumeId,
+  });
+  state.busy = false;
+  if (!reply.ok) {
+    setStatus(reply.error);
+    return;
+  }
+  state.letter = reply.data;
+  setStatus(`Drafted · $${(reply.data.cost_usd || 0).toFixed(3)}`);
+  render();
+}
+
+/** The employer's name, as well as the page will tell us. */
+function guessCompany() {
+  const meta = document.querySelector('meta[property="og:site_name"]')?.content;
+  if (meta) return meta.slice(0, 120);
+  const host = location.hostname.replace(/^www\./, "").split(".")[0];
+  // ATS hosts name the ATS, not the employer; the path's first segment does.
+  if (/greenhouse|lever|ashbyhq|myworkdayjobs|smartrecruiters/.test(location.hostname)) {
+    const segment = location.pathname.split("/").filter(Boolean)[0] || "";
+    return segment.replace(/[-_]/g, " ").slice(0, 120);
+  }
+  return host;
+}
+
+async function runTrack(stage = "draft") {
+  state.busy = true;
+  setStatus(stage === "applied" ? "Recording that you applied…" : "Adding to your tracker…");
   const reply = await ask({
     type: "track",
     url: location.href,
     resumeId: state.resumeId,
+    status: stage,
   });
   Object.assign(state, {
     busy: false,
-    tracked: reply.ok,
-    status: reply.ok ? "Saved to your HireCraft tracker." : reply.error,
+    stage: reply.ok ? stage : state.stage,
+    status: reply.ok
+      ? stage === "applied"
+        ? "Marked as applied in HireCraft."
+        : "Saved to your HireCraft tracker."
+      : reply.error,
   });
   render();
 }
 
 // --- mounting ----------------------------------------------------------------
+
+/**
+ * Notice when an application actually goes through, and record it as applied.
+ *
+ * Worth doing because the alternative is remembering: the moment you submit is
+ * the moment you stop thinking about a job and start thinking about the next
+ * one, and a tracker filled in from memory a week later is a tracker with holes
+ * in it.
+ *
+ * Three signals, because no single one is reliable across these ATSs:
+ *
+ *   The form's own submit event. Fires on a classic post, misses a React form
+ *   that submits over fetch and never leaves the page.
+ *   Navigation to a confirmation URL, which most ATSs use.
+ *   Confirmation text appearing in the page, which is what a single-page form
+ *   does instead of navigating.
+ *
+ * Deliberately requires the page to have looked like an application form
+ * beforehand, so a "thank you" in a careers-page footer is not mistaken for a
+ * submission. It never fires twice, and the user can still record it by hand if
+ * every signal misses.
+ */
+function watchForSubmission() {
+  let done = false;
+
+  const record = (how) => {
+    if (done || state.stage === "applied") return;
+    done = true;
+    // Open the panel: the user should see the claim being made about their
+    // application, not find out later that something was recorded silently.
+    state.open = true;
+    setStatus("Looks like you submitted — recording it…");
+    render();
+    runTrack("applied");
+    console.debug("[HireCraft] submission detected via", how);
+  };
+
+  // 1. A classic form post.
+  document.addEventListener(
+    "submit",
+    (event) => {
+      const form = event.target;
+      if (form instanceof HTMLFormElement && form.querySelector('input[type="file"], input[type="email"]')) {
+        // Let the submission proceed first; recording a submit that the page
+        // then rejects for a missing field would be a lie.
+        setTimeout(() => {
+          if (window.HIRECRAFT_SUBMISSION.isConfirmationText(document.body.innerText)) {
+            record("submit + confirmation");
+          }
+        }, 2500);
+      }
+    },
+    true
+  );
+
+  // 2. A confirmation URL, including the SPA history changes that do not reload.
+  let lastUrl = location.href;
+  const checkUrl = () => {
+    if (location.href === lastUrl) return;
+    lastUrl = location.href;
+    if (window.HIRECRAFT_SUBMISSION.isConfirmationUrl(location.pathname)) record("confirmation url");
+  };
+  for (const method of ["pushState", "replaceState"]) {
+    const original = history[method];
+    history[method] = function (...args) {
+      const result = original.apply(this, args);
+      queueMicrotask(checkUrl);
+      return result;
+    };
+  }
+  window.addEventListener("popstate", checkUrl);
+  if (window.HIRECRAFT_SUBMISSION.isConfirmationUrl(location.pathname)) record("confirmation url");
+
+  // 3. Confirmation text appearing where a form used to be.
+  let pending = 0;
+  const observer = new MutationObserver(() => {
+    if (done || pending) return;
+    pending = requestAnimationFrame(() => {
+      pending = 0;
+      if (window.HIRECRAFT_SUBMISSION.isConfirmationText(document.body.innerText)) {
+        observer.disconnect();
+        record("confirmation text");
+      }
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  // A form left open for an hour is not a submission; stop watching eventually.
+  setTimeout(() => observer.disconnect(), 30 * 60 * 1000);
+}
 
 function mount() {
   if (document.getElementById(ROOT_ID)) return;
@@ -282,6 +511,9 @@ function mount() {
   root.id = ROOT_ID;
   document.body.append(root);
   render();
+  // Only after the page has been judged an application form, so a "thank you"
+  // in a careers-page footer cannot be read as a submission.
+  watchForSubmission();
 }
 
 if (looksLikeApplicationForm()) {
