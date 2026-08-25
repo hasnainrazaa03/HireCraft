@@ -45,6 +45,10 @@ const SALARY_PERIODS = [
   ["hourly", "Per hour"],
 ] as const;
 
+/** Three-state select helpers: null is "not answered", not "no". */
+const yesNo = (v: boolean | null) => (v == null ? "" : v ? "yes" : "no");
+const fromYesNo = (v: string) => (v === "" ? null : v === "yes");
+
 export default function ProfilePage() {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -106,6 +110,14 @@ export default function ProfilePage() {
         <Field label="Professional headline">
           <input className="input" value={form.headline ?? ""} onChange={(e) => set("headline", e.target.value)} placeholder="Backend Engineer focused on distributed systems" />
         </Field>
+        {/* An application is an employment record, so its "First name" box wants
+            the name on your documents. A form asking for a preferred name is
+            asking the opposite question, so both are stored. */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Legal first name"><input className="input" value={form.legal_first_name ?? ""} onChange={(e) => set("legal_first_name", e.target.value)} placeholder="As it appears on your documents" /></Field>
+          <Field label="Legal last name"><input className="input" value={form.legal_last_name ?? ""} onChange={(e) => set("legal_last_name", e.target.value)} /></Field>
+          <Field label="Preferred name"><input className="input" value={form.preferred_name ?? ""} onChange={(e) => set("preferred_name", e.target.value)} placeholder="The name you go by" /></Field>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {/* Not a <label>-wrapping Field: PhoneInput is a composite (button +
               number field + a dropdown with its own search box). A wrapping
@@ -116,6 +128,12 @@ export default function ProfilePage() {
             <PhoneInput value={form.phone} onChange={(v) => set("phone", v)} />
           </div>
           <Field label="Location"><input className="input" value={form.location ?? ""} onChange={(e) => set("location", e.target.value)} placeholder="Los Angeles, CA" /></Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Country"><input className="input" value={form.country ?? ""} onChange={(e) => set("country", e.target.value)} placeholder="United States" /></Field>
+          {/* Separate from the login address: an application should reach you
+              where you want to be reached, not necessarily where you sign in. */}
+          <Field label="Contact email"><input type="email" className="input" value={form.contact_email ?? ""} onChange={(e) => set("contact_email", e.target.value)} placeholder="The address employers should use" /></Field>
         </div>
       </Section>
 
@@ -144,6 +162,31 @@ export default function ProfilePage() {
           </Field>
           <Field label="Years of experience"><input type="number" min={0} step={0.5} inputMode="decimal" className="input" value={form.years_experience ?? ""} onChange={(e) => set("years_experience", e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 2.5" /></Field>
         </div>
+        {/* The two questions nearly every US application asks. Independent on
+            purpose: on F-1 OPT you are authorized to work now *and* will need
+            sponsorship later, so neither answer follows from the other.
+            "Not answered" is a real third state — the autofiller leaves the
+            question blank rather than guessing at your right to work. */}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Legally authorized to work in the US?">
+            <select className="input" value={yesNo(form.authorized_to_work)} onChange={(e) => set("authorized_to_work", fromYesNo(e.target.value))}>
+              <option value="">Not answered</option>
+              <option value="yes" className="bg-surface">Yes</option>
+              <option value="no" className="bg-surface">No</option>
+            </select>
+          </Field>
+          <Field label="Will you now or in future require sponsorship?">
+            <select className="input" value={yesNo(form.requires_sponsorship)} onChange={(e) => set("requires_sponsorship", fromYesNo(e.target.value))}>
+              <option value="">Not answered</option>
+              <option value="yes" className="bg-surface">Yes</option>
+              <option value="no" className="bg-surface">No</option>
+            </select>
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-subtle">
+          Left unanswered, the browser extension skips these on application forms
+          rather than guessing.
+        </p>
       </Section>
 
       <Section title="Preferences">

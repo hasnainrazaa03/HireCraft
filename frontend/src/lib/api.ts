@@ -445,8 +445,16 @@ export interface CareerProfile {
   github_url: string | null;
   portfolio_url: string | null;
   website_url: string | null;
+  country: string | null;
+  legal_first_name: string | null;
+  legal_last_name: string | null;
+  preferred_name: string | null;
+  contact_email: string | null;
   work_authorization: string | null;
   visa_status: string | null;
+  /** null means unanswered — the autofiller leaves the question blank. */
+  authorized_to_work: boolean | null;
+  requires_sponsorship: boolean | null;
   years_experience: number | null;
   preferred_roles: string[];
   preferred_industries: string[];

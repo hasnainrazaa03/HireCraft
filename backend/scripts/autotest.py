@@ -157,7 +157,15 @@ def main() -> int:
     def _profile():
         got = c.get("/profile")
         d = got.json()
-        return got.status_code == 200 and bool(d.get("headline")), "career profile set", None
+        # Headline is optional and often deliberately blank, so it was a poor
+        # proxy for "the profile is populated". What autofill actually needs is
+        # a contactable person: a phone or an email, and a location.
+        filled = [k for k in ("phone", "contact_email", "location", "linkedin_url") if d.get(k)]
+        return (
+            got.status_code == 200 and len(filled) >= 2,
+            f"{len(filled)}/4 contact fields set ({', '.join(filled) or 'none'})",
+            None,
+        )
 
     check("profile", "career profile", _profile)
 
