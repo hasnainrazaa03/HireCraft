@@ -61,6 +61,29 @@ function freshness(unix: number | null): { label: string; stale: boolean } | nul
   return { label: timeAgo(unix), stale: days > 90 };
 }
 
+/**
+ * How a posting's visa stance should read.
+ *
+ * Only the two ends are worth a badge. "Sponsors" is rare and worth seeking
+ * out; a blocker means the application cannot succeed and is worth seeing
+ * before opening the card. Silence is the majority case and says nothing, so it
+ * gets no badge rather than a neutral one nobody needs to read.
+ */
+function visaBadge(verdict: string | undefined): { text: string; tone: string } | null {
+  switch (verdict) {
+    case "sponsors":
+      return { text: "Sponsors visas", tone: "border-emerald/30 bg-emerald/10 text-emerald" };
+    case "no_sponsorship":
+      return { text: "No sponsorship", tone: "border-amber-400/30 bg-amber-400/10 text-amber-200" };
+    case "citizenship_required":
+      return { text: "US citizens only", tone: "border-coral/30 bg-coral/10 text-coral" };
+    case "clearance_required":
+      return { text: "Clearance required", tone: "border-coral/30 bg-coral/10 text-coral" };
+    default:
+      return null;
+  }
+}
+
 const SAVED_KEY = "hirecraft.savedJobs";
 function loadSaved(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || "[]")); } catch { return new Set(); }
@@ -191,6 +214,8 @@ export default function JobSearchPage() {
   // Defaults to what a master's candidate can actually apply to — see the
   // control's help text for what that does and doesn't exclude.
   const [feedDegree, setFeedDegree] = useState("masters_eligible");
+  // Defaults to hiding what a candidate needing sponsorship cannot get.
+  const [feedVisa, setFeedVisa] = useState("open");
   const [feedQuery, setFeedQuery] = useState("");
 
   const live = useQuery({
@@ -228,6 +253,7 @@ export default function JobSearchPage() {
   if (feedMinScore) feedParams.set("min_score", String(feedMinScore));
   if (feedPostedWithin) feedParams.set("posted_within", String(feedPostedWithin));
   feedParams.set("degree", feedDegree);
+  feedParams.set("visa", feedVisa);
   if (feedQuery.trim()) feedParams.set("q", feedQuery.trim());
 
   const feed = useQuery({
@@ -395,6 +421,26 @@ export default function JobSearchPage() {
                 </select>
               </label>
               <label className="block">
+                <span className="label">Visa</span>
+                <select className="input mt-1" value={feedVisa} onChange={(e) => setFeedVisa(e.target.value)}>
+                  <option value="open">Open to sponsorship</option>
+                  <option value="sponsors">Explicitly sponsors</option>
+                  <option value="no_sponsorship">Won't sponsor</option>
+                  <option value="citizenship_required">Citizenship required</option>
+                  <option value="clearance_required">Clearance required</option>
+                  <option value="any">Any</option>
+                </select>
+                <span className="mt-1 block text-[11px] leading-snug text-subtle">
+                  {feedVisa === "open"
+                    ? "Hides roles needing citizenship or a clearance, and explicit refusals. Keeps roles that say nothing — silence isn't a no."
+                    : feedVisa === "sponsors"
+                      ? "Only roles that say outright they sponsor. A small, high-signal list."
+                      : feedVisa === "any"
+                        ? "No visa filtering."
+                        : "Showing only this category."}
+                </span>
+              </label>
+              <label className="block">
                 <span className="label">Education</span>
                 <select className="input mt-1" value={feedDegree} onChange={(e) => setFeedDegree(e.target.value)}>
                   <option value="masters_eligible">Master's eligible</option>
@@ -456,13 +502,14 @@ export default function JobSearchPage() {
                     {b} ({n})
                   </FilterPill>
                 ))}
-                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedPostedWithin || feedQuery || feedDegree !== "masters_eligible") && (
+                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedPostedWithin || feedQuery || feedDegree !== "masters_eligible" || feedVisa !== "open") && (
                   <button
                     onClick={() => {
                       setBucket(""); setFeedLevel(""); setFeedSource("");
                       setFeedLocation(""); setFeedRemote(false); setFeedMinScore(0);
                       setFeedPostedWithin(0); setFeedQuery("");
                       setFeedDegree("masters_eligible");
+                      setFeedVisa("open");
                     }}
                     className="btn-ghost btn-sm text-subtle hover:text-content"
                   >
@@ -684,6 +731,14 @@ function JobCard({ job, saved, onSave, onTailor, onTrack, onOpen, scoredWith }: 
                   </span>
                 );
               })()}
+              {(() => {
+                const badge = visaBadge(job.visa_verdict);
+                return badge ? (
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${badge.tone}`}>
+                    {badge.text}
+                  </span>
+                ) : null;
+              })()}
               <span>·</span>
               <span className="truncate text-brand-300/70">{job.source}</span>
               {job.sponsorship && (
@@ -824,6 +879,20 @@ function JobDetail({ job: initial, saved, onSave, onTailor, onTrack, onClose, re
               );
             })()}
           </div>
+          {(() => {
+            const badge = visaBadge(job.visa_verdict);
+            if (!badge) return null;
+            return (
+              <div className={`mt-3 rounded-xl border px-3 py-2 ${badge.tone}`}>
+                <div className="text-xs font-semibold">{badge.text}</div>
+                {/* The sentence that decided it. A verdict this consequential
+                    should be checkable rather than taken on trust. */}
+                {job.visa_evidence && (
+                  <p className="mt-1 text-[11px] leading-snug opacity-80">…{job.visa_evidence}…</p>
+                )}
+              </div>
+            );
+          })()}
           <div className="mt-5 flex flex-wrap gap-3">
             <button onClick={onTailor} className={`${GRADIENT_BTN} flex-1 sm:flex-none`} style={GRADIENT_STYLE}>
               <IconSparkles className="h-4 w-4" /> Tailor My Resume

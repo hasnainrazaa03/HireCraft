@@ -35,6 +35,11 @@ class JobSearchResult(BaseModel):
     level: str | None = None          # intern | new_grad | early
     # Which degrees the posting will consider (see services.degrees).
     degree_level: str = "unspecified"
+    # What the posting says about sponsoring a work visa, and the sentence that
+    # decided it — a verdict this consequential should be checkable, not just
+    # asserted. The evidence is only sent for a single job, not for a list.
+    visa_verdict: str = "unstated"
+    visa_evidence: str = ""
     bucket: str | None = None         # "Internship · Summer 2027", "Full-time · …"
     terms: list[str] = []             # ["Summer 2027"]
     sponsorship: str = ""             # what the posting says about visa support

@@ -208,3 +208,38 @@ document.getElementById("inspect").addEventListener("click", async () => {
     say("Couldn't read this page.", true);
   }
 });
+
+document.getElementById("visa").addEventListener("click", async () => {
+  // Works on any job page, not only the three ATSs the content script runs on:
+  // activeTab grants access to the current tab on click, so a posting sent by a
+  // friend or living on a company's own careers site can be checked too —
+  // without asking for permission to read every site the user visits.
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["autofill/visa.js"],
+    }).then(() =>
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => window.HIRECRAFT_VISA.classifyVisa(),
+      })
+    );
+
+    const LABEL = {
+      sponsors: ["Sponsors visas", false],
+      no_sponsorship: ["Will not sponsor", true],
+      citizenship_required: ["US citizens only", true],
+      clearance_required: ["Security clearance required", true],
+      unstated: ["Sponsorship not mentioned", false],
+    };
+    const [text, blocks] = LABEL[result.verdict] || LABEL.unstated;
+    inspectOut.hidden = false;
+    inspectOut.textContent = result.evidence
+      ? `${text}\n\n…${result.evidence}…`
+      : `${text}\n\nNothing in this posting mentions sponsorship either way. That is the\ncommon case — three postings in five say nothing — so it is not a no.`;
+    say(text, blocks);
+  } catch (error) {
+    say("Couldn't read this page.", true);
+  }
+});

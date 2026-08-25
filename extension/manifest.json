@@ -28,6 +28,7 @@
         "https://*.lever.co/*"
       ],
       "js": [
+        "autofill/visa.js",
         "autofill/fields.js",
         "autofill/fill.js",
         "autofill/adapters.js",

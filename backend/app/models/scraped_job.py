@@ -45,6 +45,12 @@ class ScrapedJob(Base, TimestampMixin):
     degree_level: Mapped[str] = mapped_column(
         String(24), default="unspecified", nullable=False, index=True
     )
+    # What the posting says about sponsoring a work visa (see
+    # services.sponsorship). Derived from the description, so "unstated" until
+    # one arrives — and "unstated" genuinely means unstated, not "no".
+    visa_verdict: Mapped[str] = mapped_column(
+        String(24), default="unstated", nullable=False, index=True
+    )
 
     # --- posting -----------------------------------------------------------
     source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

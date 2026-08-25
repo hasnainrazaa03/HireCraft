@@ -1254,6 +1254,10 @@ export interface JobSearchResult {
   level?: string | null;
   /** Which degrees the posting will consider (see backend services/degrees.py). */
   degree_level?: string;
+  /** What the posting says about sponsoring a work visa. */
+  visa_verdict?: string;
+  /** The sentence that decided it — only sent for a single job. */
+  visa_evidence?: string;
   bucket?: string | null;
   terms?: string[];
   sponsorship?: string;

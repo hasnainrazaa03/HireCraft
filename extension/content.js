@@ -29,6 +29,8 @@ const LOGO_SVG = `
 
 const state = {
   open: false,
+  /** {verdict, evidence} from reading this page's posting text. */
+  visa: null,
   busy: false,
   status: "",
   report: null,
@@ -86,6 +88,20 @@ function renderPanel() {
   };
   header.append(collapse);
   panel.append(header);
+
+  // The visa verdict, read from the posting on this page. Shown before anything
+  // else because it decides whether filling the form is worth doing at all.
+  if (state.visa) {
+    const { text, tone, blocks } = window.HIRECRAFT_VISA.visaLabel(state.visa.verdict);
+    const box = el("div", `hc-visa hc-visa-${tone}`);
+    box.append(el("div", "hc-visa-head", text));
+    if (state.visa.evidence) {
+      box.append(el("div", "hc-visa-why", `…${state.visa.evidence.slice(0, 190)}…`));
+    } else if (!blocks) {
+      box.append(el("div", "hc-visa-why", "Worth confirming with the recruiter."));
+    }
+    panel.append(box);
+  }
 
   if (state.status) panel.append(el("div", "hc-status", state.status));
 
@@ -256,6 +272,12 @@ async function runTrack() {
 function mount() {
   if (document.getElementById(ROOT_ID)) return;
   if (!looksLikeApplicationForm()) return;
+  try {
+    state.visa = window.HIRECRAFT_VISA.classifyVisa();
+  } catch {
+    // A page we cannot read is not a reason to withhold the filler.
+    state.visa = null;
+  }
   const root = el("div", "hc-root");
   root.id = ROOT_ID;
   document.body.append(root);

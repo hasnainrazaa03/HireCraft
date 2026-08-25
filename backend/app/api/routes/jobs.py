@@ -27,6 +27,11 @@ from app.services.degrees import (
     MASTERS_ELIGIBLE,
     classify as classify_degree,
 )
+from app.services.sponsorship import (
+    BLOCKS_VISA_HOLDER,
+    classify as classify_visa,
+    evidence as visa_evidence,
+)
 from app.services.job_rerank import rerank_jobs
 from app.services.jobsearch import search_jobs
 from app.services.scraper import ScrapeError, scrape_job
@@ -299,6 +304,8 @@ def _feed_row_to_result(
         gaps=list((fit["gaps"] if fit else []) or []),
         level=row.level,
         degree_level=row.degree_level or "unspecified",
+        visa_verdict=row.visa_verdict or "unstated",
+        visa_evidence=visa_evidence(row.description or "") if full else "",
         bucket=row.bucket or None,
         terms=list(row.terms or []),
         sponsorship=row.sponsorship or "",
@@ -388,6 +395,16 @@ def job_feed(
         default=0, ge=0, le=3650,
         description="Only postings first seen within this many days (0 = any age)",
     ),
+    visa: str = Query(
+        default="any",
+        pattern="^(any|open|sponsors|no_sponsorship|citizenship_required|clearance_required|unstated)$",
+        description=(
+            "Visa filter. 'open' drops the postings that are closed to someone "
+            "needing sponsorship — explicit refusals, citizenship requirements and "
+            "clearance requirements — while keeping the majority that say nothing, "
+            "because silence is not a refusal."
+        ),
+    ),
     degree: str = Query(
         default="masters_eligible",
         pattern="^(any|masters_eligible|graduate_stated|bachelors|undergrad_only|phd)$",
@@ -426,6 +443,11 @@ def job_feed(
         stmt = stmt.where(ScrapedJob.remote.is_(True))
     if location:
         stmt = stmt.where(ScrapedJob.location.ilike(f"%{location}%"))
+    if visa == "open":
+        stmt = stmt.where(ScrapedJob.visa_verdict.notin_(sorted(BLOCKS_VISA_HOLDER)))
+    elif visa != "any":
+        stmt = stmt.where(ScrapedJob.visa_verdict == visa)
+
     if degree == "masters_eligible":
         stmt = stmt.where(ScrapedJob.degree_level.in_(sorted(MASTERS_ELIGIBLE)))
     elif degree == "graduate_stated":
@@ -576,6 +598,7 @@ def fetch_feed_description(
         if scraped is not None and scraped.text:
             row.description = scraped.text[:20000]
             row.degree_level = classify_degree(row.description).value
+            row.visa_verdict = classify_visa(row.description).value
             row.location = row.location or (scraped.location or "")
             db.commit()
             db.refresh(row)
