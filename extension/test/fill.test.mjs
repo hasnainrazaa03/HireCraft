@@ -308,3 +308,69 @@ test("a field that discards what it was given is not reported as filled", async 
   assert.equal(report.filled.length, 0);
   assert.match(report.missing[0].why, /discarded/);
 });
+
+test("a dropdown that ignores the click is reported, not counted as filled", async () => {
+  // The failure behind a real report that said "Requires sponsorship: Yes"
+  // filled, and four lines below listed the same question as required and
+  // empty. Clicking an option is not the same as the component accepting it,
+  // and only reading the value back afterwards can tell the two apart.
+  const stubborn = makeCombobox({ label: "Do you require sponsorship?", options: ["Yes", "No"] });
+  for (const node of stubborn.nodes) node.click = () => {}; // swallows the click
+  const window = install([stubborn]);
+
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, requires_sponsorship: true },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(report.filled.length, 0, "nothing was committed, so nothing is filled");
+  assert.match(report.missing[0].why, /didn't take it/);
+  assert.equal(stubborn.value, "", "and no probe text is left sitting in the box");
+});
+
+test("a dropdown that marks the row instead of the input still counts", async () => {
+  // Some libraries leave the input blank and set aria-selected on the option.
+  const marking = makeCombobox({ label: "Do you require sponsorship?", options: ["Yes", "No"] });
+  for (const node of marking.nodes) {
+    let selected = false;
+    node.click = () => { selected = true; };
+    node.getAttribute = (name) => (name === "aria-selected" ? String(selected) : "option");
+  }
+  const window = install([marking]);
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, requires_sponsorship: true },
+    { stepDelay: 0 }
+  );
+  assert.deepEqual(report.filled.map((f) => f.value), ["Yes"]);
+});
+
+test("a location field backed by coordinates picks a suggestion", async () => {
+  // Greenhouse's Location is required and carries hidden latitude/longitude
+  // inputs that only fill when a suggestion is chosen. Typing the city leaves
+  // both empty, so the form refuses to submit — at the very end, after
+  // everything else looked done.
+  const place = makeCombobox({
+    label: "Location",
+    options: ["Los Angeles, CA, USA", "Los Angeles County, CA, USA"],
+  });
+  // The hidden coordinate inputs that make this a place field.
+  const parent = {
+    querySelector: (sel) => (sel.includes("lat") ? { name: "latitude" } : null),
+    parentElement: null,
+  };
+  place.parentElement = parent;
+
+  const window = install([place]);
+  assert.equal(window.HIRECRAFT_FILL.needsPlacePick(place), true);
+
+  await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(place.committed, "Los Angeles, CA, USA", "the suggestion must be clicked");
+});
+
+test("an ordinary location box is still just typed into", async () => {
+  const plain = makeControl({ label: "Location" });
+  const window = install([plain]);
+  assert.equal(window.HIRECRAFT_FILL.needsPlacePick(plain), false);
+  await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(plain.value, "Los Angeles, CA");
+});

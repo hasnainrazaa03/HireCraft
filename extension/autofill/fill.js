@@ -273,10 +273,43 @@ async function chooseFromCombobox(el, value, kind, unit) {
     return { ok: false, why, offered: texts.slice(0, 12) };
   }
 
+  const chosen = texts[index];
   nodes[index].scrollIntoView?.({ block: "nearest" });
   clickLike(nodes[index]);
-  await pause(80);
-  return { ok: true, chosen: texts[index], why };
+  await pause(120);
+  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why };
+
+  // The click was ignored. Some libraries only commit from the keyboard, so
+  // try that once before giving up — arrow into the list and press Enter.
+  el.focus?.();
+  pressKey(el, "ArrowDown");
+  await pause(60);
+  pressKey(el, "Enter");
+  await pause(120);
+  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why };
+
+  // Report the failure rather than the attempt. Returning success here was the
+  // same mistake as the old `(setValue(...), true)`: the panel said a required
+  // sponsorship question was answered while the form still had it empty.
+  setValue(el, "");
+  pressKey(el, "Escape");
+  return { ok: false, why: `"${chosen}" was clicked but the dropdown didn't take it` };
+}
+
+/**
+ * Did the component actually accept the choice?
+ *
+ * Two ways to tell, because the widgets differ: most write the chosen text into
+ * the input, while some leave it blank and mark the row instead. Either is
+ * proof; neither being true means the click went nowhere.
+ */
+function committed(el, node, chosen) {
+  if (node.getAttribute?.("aria-selected") === "true") return true;
+  const { normText } = window.HIRECRAFT_OPTIONS;
+  const now = normText(String(el.value ?? "").trim());
+  if (!now) return false;
+  const want = normText(chosen);
+  return now === want || now.includes(want) || want.includes(now);
 }
 
 /**
@@ -392,6 +425,8 @@ async function fillForm(
       } else {
         result = { ok: false, why: choice.why, offered: texts.slice(0, 12) };
       }
+    } else if (field.key === "location" && needsPlacePick(el)) {
+      result = await pickPlace(el, value);
     } else if (isCombobox(el)) {
       result = await chooseFromCombobox(el, value, field.kind, field.unit);
       if (result.ok) result.actual = result.chosen;
@@ -482,6 +517,61 @@ function findUploadInput(want, reject = []) {
     }
   }
   return null;
+}
+
+/**
+ * Is this a place autocomplete whose real answer is a pair of coordinates?
+ *
+ * Greenhouse's Location field is required and carries two hidden inputs,
+ * latitude and longitude, which are only written when a suggestion is picked
+ * from its dropdown. Typing the city name fills the visible box and leaves both
+ * empty, so the form looks answered and refuses to submit — a failure that only
+ * appears at the very end, after everything else has been filled.
+ *
+ * Detected by those hidden inputs rather than by the label, because the label
+ * is just "Location" and says nothing about the coordinates behind it.
+ */
+function needsPlacePick(el) {
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+    if (
+      node.querySelector?.('input[name="latitude"], input[name="longitude"], [name*="lat"][type="hidden"]')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Fill a place field by choosing from its suggestions.
+ *
+ * Types the location, waits for the dropdown, and clicks the first suggestion —
+ * "first" rather than best-matched because a place autocomplete has already
+ * ranked them against exactly the string we typed, and second-guessing that
+ * ranking with our own text comparison would be worse, not better.
+ */
+async function pickPlace(el, value) {
+  setValue(el, value);
+  pressKey(el, value.slice(-1) || "a");
+
+  for (let tries = 0; tries < 14; tries += 1) {
+    await pause(120);
+    const nodes = optionNodes(listboxFor(el));
+    if (!nodes.length) continue;
+    const chosen = optionText(nodes[0]);
+    nodes[0].scrollIntoView?.({ block: "nearest" });
+    clickLike(nodes[0]);
+    await pause(140);
+    if (String(el.value ?? "").trim()) return { ok: true, actual: chosen };
+  }
+
+  // Leave the typed text: it is the right city, and a human can pick the
+  // suggestion in one click. Say so rather than claiming the field is done.
+  return {
+    ok: false,
+    why: "pick a suggestion from this dropdown — the form needs the coordinates behind it",
+  };
 }
 
 /**
@@ -608,4 +698,5 @@ window.HIRECRAFT_FILL = {
   requiredGaps,
   findUploadInput,
   attachFile,
+  needsPlacePick,
 };
