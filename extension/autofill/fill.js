@@ -158,6 +158,11 @@ function isCombobox(el) {
 function listboxFor(el) {
   const usable = (node) => (node && optionNodes(node).length ? node : null);
 
+  // If the control states it is closed, it has no list to read. Taking its word
+  // is what stops a search from wandering off to whichever list happens to be
+  // lying around.
+  if (el.getAttribute("aria-expanded") === "false") return null;
+
   // The widget said which list it drives. Authoritative, and the only signal
   // that cannot belong to a different field.
   const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
@@ -166,9 +171,18 @@ function listboxFor(el) {
     if (byId) return byId;
   }
 
-  // Otherwise, only this widget's own container is searched.
+  // Otherwise, this widget's own container — and only as far up as that.
+  //
+  // querySelector on an ancestor searches its entire subtree, so climbing one
+  // level too far reaches the field next door. That is how a location box came
+  // to be offered a list of international dialling codes. The walk now stops at
+  // the first ancestor holding a second visible control, which is the point at
+  // which we have left this field.
   let node = el.parentElement;
-  for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+  for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+    const visibleControls = Array.from(node.querySelectorAll?.("input,select,textarea") || [])
+      .filter((c) => (c.getBoundingClientRect?.()?.width ?? 1) > 0);
+    if (visibleControls.length > 1) break;
     const inside = usable(
       node.querySelector?.('[role="listbox"],[class*="menu"],[class*="Menu"],[class*="dropdown"]')
     );
@@ -203,7 +217,15 @@ function optionNodes(box) {
   // when a library marks up both, and the duplicate index picks the wrong row.
   const byRole = Array.from(box.querySelectorAll('[role="option"]'));
   const nodes = byRole.length ? byRole : Array.from(box.querySelectorAll("li"));
-  return nodes.filter((node) => (node.textContent || "").trim());
+  return nodes.filter((node) => {
+    if (!(node.textContent || "").trim()) return false;
+    // A closed dropdown often keeps its rows in the DOM, just hidden. Counting
+    // those made a shut phone-country list look like an open one, and the
+    // Location and School fields were offered "United States +1 · Afghanistan
+    // +93 · Åland Islands +358 …" as their choices.
+    const box2 = node.getBoundingClientRect?.();
+    return !box2 || box2.height > 0;
+  });
 }
 
 const optionText = (node) => (node.textContent || "").replace(/\s+/g, " ").trim();
@@ -788,4 +810,8 @@ window.HIRECRAFT_FILL = {
   findUploadInput,
   attachFile,
   needsPlacePick,
+  // Exported to be tested directly: choosing which list belongs to which
+  // control has now been the cause of three separate wrong answers.
+  listboxFor,
+  optionNodes,
 };

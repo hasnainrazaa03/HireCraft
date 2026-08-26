@@ -408,3 +408,76 @@ test("one field never reads the dropdown belonging to another", async () => {
     "a degree must never be committed into a work-authorisation question"
   );
 });
+
+// --- which list belongs to which control ------------------------------------
+//
+// Three separate wrong answers have come from reading the wrong option list: a
+// degree menu answering a work-authorisation question, and a phone dial-code
+// list offered to both Location and School. These test the guards directly.
+
+const rect = (w, h) => () => ({ width: w, height: h });
+
+function listNode(labels, { visible = true } = {}) {
+  const rows = labels.map((text) => ({
+    textContent: text,
+    getBoundingClientRect: rect(200, visible ? 24 : 0),
+    getAttribute: () => "option",
+  }));
+  return {
+    getBoundingClientRect: rect(200, visible ? 200 : 0),
+    querySelectorAll: (sel) => (sel.includes("option") ? rows : []),
+  };
+}
+
+test("a hidden option list is not a list", async () => {
+  // A closed dropdown usually keeps its rows in the DOM. Counting those made a
+  // shut phone-country list look open, and Location was offered dialling codes.
+  const window = install([]);
+  const { optionNodes } = window.HIRECRAFT_FILL;
+
+  assert.equal(optionNodes(listNode(["United States +1", "Albania +355"])).length, 2);
+  assert.equal(optionNodes(listNode(["United States +1"], { visible: false })).length, 0);
+  assert.equal(optionNodes(null).length, 0);
+});
+
+test("a control that says it is closed offers no list", async () => {
+  const window = install([]);
+  const { listboxFor } = window.HIRECRAFT_FILL;
+
+  const shut = {
+    getAttribute: (n) => (n === "aria-expanded" ? "false" : null),
+    parentElement: null,
+  };
+  assert.equal(listboxFor(shut), null, "believe a control that reports itself closed");
+});
+
+test("the search for a list stops before the next field", async () => {
+  const window = install([]);
+  const { listboxFor } = window.HIRECRAFT_FILL;
+
+  // The neighbour's list, sitting in a shared ancestor. Reaching it is what
+  // handed a location box a list of countries.
+  const neighboursList = listNode(["United States +1", "Afghanistan +93"]);
+  const otherField = { getBoundingClientRect: rect(200, 32) };
+  const mine = { getBoundingClientRect: rect(200, 32) };
+
+  const shared = {
+    querySelectorAll: (sel) =>
+      sel.includes("input") ? [mine, otherField] : [],
+    querySelector: () => neighboursList,
+    parentElement: null,
+  };
+  const ownContainer = {
+    querySelectorAll: (sel) => (sel.includes("input") ? [mine] : []),
+    querySelector: () => null,          // no list of its own yet
+    parentElement: shared,
+  };
+  mine.parentElement = ownContainer;
+  mine.getAttribute = () => null;
+
+  assert.equal(
+    listboxFor(mine),
+    null,
+    "the neighbour's list must be out of reach once a second control appears"
+  );
+});
