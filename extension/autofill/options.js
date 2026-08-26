@@ -355,12 +355,29 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
     }
   }
 
-  // 4. Containment, longest option first so "United States" beats "United".
-  const byLength = options
-    .map((o, i) => ({ o: normText(o), i }))
-    .filter(({ o }) => o && (o === target || o.includes(target) || target.includes(o)))
-    .sort((a, b) => b.o.length - a.o.length);
-  if (byLength.length) return { index: byLength[0].i, why: `matched "${options[byLength[0].i]}"` };
+  // 4. Containment. The best of the options that contain the value is the one
+  //    carrying the least extra material, and a match at the start beats one
+  //    buried in the middle.
+  //
+  //    Ranking by longest — the previous rule — is backwards: a longer option
+  //    containing the value has *more* that is not the value. Asked for
+  //    "Los Angeles, CA" against a city list, it answered "East Los Angeles,
+  //    California, United States" while "Los Angeles, California, United
+  //    States" sat two rows above it.
+  const contained = [];
+  options.forEach((raw, i) => {
+    const o = normText(raw);
+    if (!o) return;
+    if (o === target || o.includes(target) || target.includes(o)) {
+      const aligned = o.startsWith(target) || target.startsWith(o) ? 0 : 1;
+      contained.push({ i, aligned, extra: Math.abs(o.length - target.length) });
+    }
+  });
+  if (contained.length) {
+    contained.sort((a, b) => a.aligned - b.aligned || a.extra - b.extra);
+    const best = contained[0].i;
+    return { index: best, why: `matched "${options[best]}"` };
+  }
 
   // 5. Word overlap, as a last resort and only when most of the value is there.
   const wantTokens = tokens(want);

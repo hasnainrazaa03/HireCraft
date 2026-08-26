@@ -139,8 +139,23 @@ function setValue(el, value) {
 function displayedValue(el) {
   const own = String(el.value ?? "").trim();
   if (own) return own;
+
+  // Only a combobox keeps its value somewhere other than its input. Walking a
+  // plain input's ancestors reached the react-select next door and read *its*
+  // displayed value: the Phone box was judged to already hold "United States
+  // +1" from the country picker beside it, and End-year to hold "December"
+  // from the month picker, so both were passed over — and passed over so early
+  // that neither appeared anywhere in the report.
+  if (!isCombobox(el)) return "";
+
   let node = el.parentElement;
   for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+    // Same boundary as everywhere else: a second visible control means we have
+    // left this field and are reading someone else's answer.
+    const others = Array.from(node.querySelectorAll?.("input,select,textarea") || []).filter(
+      (c) => c !== el && (c.getBoundingClientRect?.()?.width ?? 1) > 0
+    );
+    if (others.length) return "";
     const shown = node.querySelector?.(
       "[class*='single-value'],[class*='singleValue'],[class*='multi-value'],[class*='multiValue']"
     );
@@ -573,8 +588,20 @@ async function fillForm(
     }
 
     // Don't overwrite something already on the form — the user may have typed
-    // it, or the page may have restored a draft.
-    if (displayedValue(el)) continue;
+    // it, or the page may have restored a draft. Traced, because a field that
+    // vanishes from the report entirely is the hardest kind to notice: Phone
+    // and End-year were dropped here for two runs without appearing in filled,
+    // missing, skipped or the trace.
+    const already = displayedValue(el);
+    if (already) {
+      trace.push({
+        label: raw.trim().slice(0, 70),
+        at: pathTo(el),
+        outcome: "left alone",
+        why: `already holds "${already.slice(0, 40)}"`,
+      });
+      continue;
+    }
 
     const field =
       overrides[label] ||

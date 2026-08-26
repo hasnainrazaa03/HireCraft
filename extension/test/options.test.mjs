@@ -300,3 +300,28 @@ test("with either answer unset, nothing is chosen from the sentences", () => {
   const result = chooseOption("Yes", WORK_AUTH_SENTENCES, { kind: "work_authorization" });
   assert.equal(result.index, -1);
 });
+
+test("a city match takes the closest option, not the longest", () => {
+  // From a live Point72 fill: asked for "Los Angeles, CA" against this list, it
+  // answered "East Los Angeles" — a different city — because the old rule
+  // preferred the longest option containing the value. Longer means more that
+  // is *not* the value.
+  const CITIES = [
+    "Los Angeles, California, United States",
+    "Los Angeles, California, United States",
+    "East Los Angeles, California, United States",
+    "Lake Los Angeles, California, United States",
+  ];
+  assert.equal(chose("Los Angeles, CA", CITIES, null), "Los Angeles, California, United States");
+
+  // A prefix beats a mid-string hit even when the extra material is equal.
+  assert.equal(
+    chose("York", ["New York, NY", "York, England"], null),
+    "York, England"
+  );
+  // And a more specific option still wins over a vaguer one.
+  assert.equal(
+    chose("United States", ["United", "United States", "United States Minor Outlying Islands"], null),
+    "United States"
+  );
+});

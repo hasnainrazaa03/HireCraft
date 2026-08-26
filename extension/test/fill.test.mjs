@@ -481,3 +481,35 @@ test("the search for a list stops before the next field", async () => {
     "the neighbour's list must be out of reach once a second control appears"
   );
 });
+
+test("an empty text box beside a filled dropdown is still filled", async () => {
+  // Point72 puts the phone input next to a country picker and the end-year
+  // input next to a month picker. Reading a plain input's ancestors found the
+  // neighbouring widget's displayed value, judged the box already answered, and
+  // passed over it — without recording that anywhere in the report.
+  const phone = makeControl({ label: "Phone", type: "tel" });
+  const neighboursValue = { className: "select__single-value", textContent: "United States +1" };
+  phone.parentElement = {
+    querySelector: () => neighboursValue,
+    querySelectorAll: () => [],
+    parentElement: null,
+  };
+
+  const window = install([phone]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(phone.value, "(213) 994-5086", "a plain input keeps its own value");
+  assert.deepEqual(report.filled.map((f) => f.label), ["Phone"]);
+});
+
+test("a field left alone says so, rather than vanishing", async () => {
+  const typed = makeControl({ label: "Email", type: "email" });
+  typed.value = "someone.else@example.com";
+  const window = install([typed]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(report.filled.length, 0);
+  const row = report.trace.find((e) => e.outcome === "left alone");
+  assert.ok(row, "every control considered must appear in the trace");
+  assert.match(row.why, /already holds/);
+});
