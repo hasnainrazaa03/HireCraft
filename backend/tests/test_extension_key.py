@@ -338,3 +338,48 @@ def test_month_is_spelled_out_from_a_resume_date():
     assert _month_name("") == ""
     assert _month_name("2027-13") == ""
     assert _month_name("present") == ""
+
+
+# --- résumés kept on disk ----------------------------------------------------
+
+
+def test_local_resumes_are_listed_and_cover_letters_are_not(tmp_path):
+    """A folder of PDFs, read as the extension will offer them."""
+    from app.services.local_resumes import list_local
+
+    (tmp_path / "base").mkdir()
+    (tmp_path / "base" / "MHR_AIML.pdf").write_bytes(b"%PDF-1.4")
+    (tmp_path / "base" / "MHR_AIML.tex").write_text("not a pdf")
+    (tmp_path / "applications" / "Vercel").mkdir(parents=True)
+    (tmp_path / "applications" / "Vercel" / "MHR_Vercel.pdf").write_bytes(b"%PDF-1.4")
+    # A cover letter is not a résumé, and attaching one as a résumé is worse
+    # than attaching nothing, because it looks done.
+    (tmp_path / "applications" / "Vercel" / "CoverLetter_Vercel.pdf").write_bytes(b"%PDF-1.4")
+
+    found = {item.name: item.folder for item in list_local(str(tmp_path))}
+    assert found == {"MHR_AIML": "base", "MHR_Vercel": "Vercel"}
+
+
+def test_an_id_names_a_file_without_being_a_path(tmp_path):
+    """Ids are opaque and resolved by re-listing, so no path can be asked for."""
+    from app.services.local_resumes import find_local, list_local
+
+    (tmp_path / "base").mkdir()
+    (tmp_path / "base" / "MHR_AIML.pdf").write_bytes(b"%PDF-1.4")
+    (tmp_path / "secret.pdf").write_bytes(b"%PDF-1.4")
+
+    [item] = list_local(str(tmp_path))
+    assert "/" not in item.id and ".." not in item.id
+    assert find_local(str(tmp_path), item.id).name == "MHR_AIML"
+
+    # Nothing a caller could send reaches a file the listing did not offer.
+    for attempt in ["../secret", "..%2Fsecret", "/etc/passwd", "secret.pdf", ""]:
+        assert find_local(str(tmp_path), attempt) is None
+
+
+def test_no_folder_is_not_an_error(tmp_path):
+    """The ordinary case for anyone who has not set one up."""
+    from app.services.local_resumes import find_local, list_local
+
+    assert list_local(str(tmp_path / "nope")) == []
+    assert find_local(str(tmp_path / "nope"), "whatever") is None

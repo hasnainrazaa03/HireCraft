@@ -69,6 +69,10 @@ services:
     environment: *backend-env
     volumes:
       - ./templates:/app/templates:ro
+      # A folder of résumé PDFs, read-only. Set RESUMES_DIR in .env to the
+      # folder you keep them in; unset, this points at an empty directory and
+      # the feature simply offers nothing.
+      - ${RESUMES_DIR:-./.local-resumes}:/app/local_resumes:ro
       - artifacts:/app/artifacts
       - tectonic_cache:/var/cache/tectonic
     ports:
@@ -101,6 +105,10 @@ services:
     environment: *backend-env
     volumes:
       - ./templates:/app/templates:ro
+      # A folder of résumé PDFs, read-only. Set RESUMES_DIR in .env to the
+      # folder you keep them in; unset, this points at an empty directory and
+      # the feature simply offers nothing.
+      - ${RESUMES_DIR:-./.local-resumes}:/app/local_resumes:ro
       - artifacts:/app/artifacts
       - tectonic_cache:/var/cache/tectonic
     depends_on:

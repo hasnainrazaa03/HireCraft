@@ -29,6 +29,7 @@ from app.services.latex.renderer import render_and_fit
 from app.services.latex.templates import resolve_filename
 from app.schemas.resume import MasterResume
 from app.services import storage
+from app.services.local_resumes import find_local, list_local
 
 logger = get_logger(__name__)
 
@@ -45,6 +46,10 @@ class ExtensionTrackRequest(BaseModel):
     #: submission, so the date recorded is the date it happened.
     status: str = "draft"
     notes: str | None = Field(default=None, max_length=4000)
+    #: The name of a résumé kept on disk rather than uploaded here. There is no
+    #: row to point at, so the fact of which file was sent is recorded in the
+    #: application's history instead of being lost.
+    resume_note: str | None = Field(default=None, max_length=200)
 
 
 class ExtensionCoverLetterRequest(BaseModel):
@@ -173,8 +178,16 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         # asking for the rest of them, and the résumé already has them.
         "education_all": _all_education(basics_source),
         "resumes": [
-            {"id": str(r.id), "name": r.name, "is_default": r.is_default}
+            {"id": str(r.id), "name": r.name, "is_default": r.is_default, "source": "hirecraft"}
             for r in resumes
+        ],
+        # PDFs the user keeps on disk, if a folder is mounted. Offered beside
+        # the uploaded ones because a tailored résumé for this very company is
+        # often already sitting in it, and re-uploading it to attach it would be
+        # the app declining to use what it can already see.
+        "local_resumes": [
+            {"id": item.id, "name": item.name, "folder": item.folder, "source": "local"}
+            for item in list_local(settings.local_resumes_dir)
         ],
     }
 
@@ -286,6 +299,28 @@ def _month_name(date: str) -> str:
         return ""
     index = int(parts[1])
     return _MONTHS[index - 1] if 1 <= index <= 12 else ""
+
+
+@router.get("/local-resume/{resume_id}.pdf")
+def extension_local_resume(resume_id: str, user: ExtensionUser) -> Response:
+    """One of the PDFs from the mounted folder.
+
+    Named by the opaque id this server minted, never by a path, so the file
+    served is always one this server chose to offer.
+    """
+    item = find_local(settings.local_resumes_dir, resume_id)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That résumé is no longer there.")
+    try:
+        data = item.path.read_bytes()
+    except OSError as exc:
+        logger.warning("local_resumes.read_failed", error=str(exc)[:200])
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That résumé could not be read.") from exc
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{item.name}.pdf"'},
+    )
 
 
 @router.get("/resume/{profile_id}.pdf")
@@ -411,6 +446,18 @@ def extension_track(
         application.tracker_status = stage
     if stage is TrackerStatus.APPLIED and not application.applied_at:
         application.applied_at = datetime.now(UTC)
+
+    # A résumé kept on disk has no row to point at, so which file was sent is
+    # written into the history rather than lost. Recorded once: re-tracking the
+    # same posting should not fill its timeline with the same line.
+    if payload.resume_note:
+        note = f"Sent with {payload.resume_note}"
+        already = any(
+            event.get("label") == note for event in (application.activity or [])
+        )
+        if not already:
+            log_event(application, "tracked", note, {"resume": payload.resume_note})
+
     db.commit()
     db.refresh(application)
 

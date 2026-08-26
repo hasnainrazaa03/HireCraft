@@ -115,6 +115,13 @@ class Settings(BaseSettings):
     latex_timeout_seconds: int = 120
     templates_dir: str = "/app/templates"
 
+    #: A folder of résumé PDFs kept on disk, mounted read-only into the
+    #: container. Lets the extension offer the tailored PDFs a user already
+    #: maintains — base/MHR_AIML.pdf, applications/Vercel/MHR_Vercel.pdf —
+    #: alongside the ones uploaded here, since a browser extension cannot read
+    #: local files itself and the API is already on the same machine.
+    local_resumes_dir: str = "/app/local_resumes"
+
     # --- Storage ---
     artifacts_dir: str = "/app/artifacts"
     max_upload_bytes: int = 5 * 1024 * 1024

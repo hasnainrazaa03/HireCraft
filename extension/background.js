@@ -66,7 +66,12 @@ async function callApi(path, { method = "GET", body } = {}) {
  * rebuilds the File.
  */
 async function resumeDataUrl(resumeId) {
-  const response = await callApi(`/extension/resume/${resumeId}.pdf`);
+  // Two kinds of résumé, one picker. An id prefixed "local:" names a PDF in the
+  // folder on disk; anything else is one uploaded to HireCraft.
+  const path = String(resumeId).startsWith("local:")
+    ? `/extension/local-resume/${String(resumeId).slice(6)}.pdf`
+    : `/extension/resume/${resumeId}.pdf`;
+  const response = await callApi(path);
   const blob = await response.blob();
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -88,13 +93,16 @@ const HANDLERS = {
   async resume({ resumeId }) {
     return { dataUrl: await resumeDataUrl(resumeId) };
   },
-  async track({ url, resumeId, status, company, role }) {
+  async track({ url, resumeId, resumeName, status, company, role }) {
     const body = { job: { url }, status: status || "draft" };
     // What the page said about itself, which beats anything derivable from the
     // URL — see postingIdentity in the content script.
     if (company) body.job.company = company;
     if (role) body.job.title = role;
-    if (resumeId) body.resume_profile_id = resumeId;
+    // A résumé from the folder on disk has no row here to point at, so the
+    // tracker records which file was sent rather than losing the fact.
+    if (String(resumeId || "").startsWith("local:")) body.resume_note = resumeName || "a local file";
+    else if (resumeId) body.resume_profile_id = resumeId;
     return (await callApi("/extension/track", { method: "POST", body })).json();
   },
   async coverLetter({ jobText, company, role, resumeId, tone }) {

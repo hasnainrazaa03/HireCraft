@@ -39,6 +39,8 @@ const state = {
   profile: null,
   /** Which résumé to attach — chosen before filling, not assumed. */
   resumeId: null,
+  /** What the picked résumé is called, for a file that has no row here. */
+  resumeName: null,
   wantCoverLetter: false,
   letter: null,
 };
@@ -200,40 +202,55 @@ function renderPanel() {
   // Choose the résumé before filling rather than after. Attaching the default
   // and letting the user notice afterwards means re-doing the upload, and on
   // some forms it means starting the application again.
-  if (state.profile?.resumes?.length) {
+  // One picker over both sources: the résumés uploaded here, and the PDFs in
+  // the folder on disk. A tailored résumé for this very company is often
+  // already in that folder, and making someone upload it again to attach it
+  // would be the app declining to use what it can already see.
+  const uploaded = state.profile?.resumes || [];
+  const onDisk = state.profile?.local_resumes || [];
+  if (uploaded.length || onDisk.length) {
     const row = el("label", "hc-field");
     row.append(el("span", "hc-field-label", "Résumé"));
     const select = el("select", "hc-select");
-    for (const r of state.profile.resumes) {
-      const option = el("option", null, r.name + (r.is_default ? " (default)" : ""));
-      option.value = r.id;
-      if (r.id === state.resumeId) option.selected = true;
-      select.append(option);
+
+    const add = (parent, value, label, selected) => {
+      const option = el("option", null, label);
+      option.value = value;
+      if (selected) option.selected = true;
+      parent.append(option);
+    };
+
+    if (uploaded.length) {
+      const group = el("optgroup");
+      group.label = "In HireCraft";
+      for (const r of uploaded) {
+        add(group, r.id, r.name + (r.is_default ? " (default)" : ""), r.id === state.resumeId);
+      }
+      select.append(group);
     }
+
+    // Grouped by folder, so "Vercel" sits under Vercel rather than in a list
+    // of near-identical filenames.
+    const byFolder = new Map();
+    for (const r of onDisk) {
+      if (!byFolder.has(r.folder)) byFolder.set(r.folder, []);
+      byFolder.get(r.folder).push(r);
+    }
+    for (const [folder, items] of byFolder) {
+      const group = el("optgroup");
+      group.label = `On disk · ${folder}`;
+      for (const r of items) add(group, `local:${r.id}`, r.name, `local:${r.id}` === state.resumeId);
+      select.append(group);
+    }
+
     select.onchange = (e) => {
       state.resumeId = e.target.value;
+      state.resumeName = e.target.selectedOptions[0]?.textContent || "";
     };
-    select.disabled = state.busy;
     row.append(select);
     panel.append(row);
-
-    const check = el("label", "hc-check");
-    const box = el("input");
-    box.type = "checkbox";
-    box.checked = state.wantCoverLetter;
-    box.disabled = state.busy;
-    box.onchange = (e) => {
-      state.wantCoverLetter = e.target.checked;
-      render();
-    };
-    check.append(box, el("span", null, "Also draft a cover letter"));
-    panel.append(check);
-    if (state.wantCoverLetter) {
-      panel.append(
-        el("div", "hc-hint", "Uses AI credit — a few cents. Written from this posting and the résumé above.")
-      );
-    }
   }
+
 
   if (state.letter) {
     const box = el("div", "hc-letter");
@@ -392,10 +409,37 @@ async function loadProfile() {
     return;
   }
   state.profile = reply.data;
-  const preferred =
-    reply.data.resumes?.find((r) => r.is_default) || reply.data.resumes?.[0];
-  state.resumeId = state.resumeId || preferred?.id || null;
+  const preferred = resolveResume(reply.data, state.resumeId);
+  state.resumeId = preferred?.id || null;
+  state.resumeName = preferred?.name || null;
   render();
+}
+
+/**
+ * The résumé to send, across both sources.
+ *
+ * Written once because it was written twice and neither copy knew about the
+ * folder on disk: a locally picked PDF was chosen in the dropdown and then
+ * quietly replaced by the default upload on the way to the form.
+ */
+function resolveResume(profile, wanted) {
+  const uploaded = (profile?.resumes || []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    isDefault: Boolean(r.is_default),
+  }));
+  const onDisk = (profile?.local_resumes || []).map((r) => ({
+    id: `local:${r.id}`,
+    name: `${r.name} (${r.folder})`,
+    isDefault: false,
+  }));
+  const all = [...uploaded, ...onDisk];
+  return (
+    all.find((r) => r.id === wanted) ||
+    all.find((r) => r.isDefault) ||
+    all[0] ||
+    null
+  );
 }
 
 async function runFill() {
@@ -417,12 +461,11 @@ async function runFill() {
   }
   const profile = state.profile;
 
-  // Whichever résumé the user picked, not whichever happens to be default.
-  const chosen =
-    profile.resumes?.find((r) => r.id === state.resumeId) ||
-    profile.resumes?.find((r) => r.is_default) ||
-    profile.resumes?.[0];
+  // Whichever résumé the user picked, not whichever happens to be default —
+  // and from either source.
+  const chosen = resolveResume(profile, state.resumeId);
   state.resumeId = chosen?.id || null;
+  state.resumeName = chosen?.name || null;
 
   let resumeFile = null;
   if (chosen) {
@@ -534,6 +577,7 @@ async function runTrack(stage = "draft") {
     type: "track",
     url: location.href,
     resumeId: state.resumeId,
+    resumeName: state.resumeName,
     status: stage,
     company,
     role,

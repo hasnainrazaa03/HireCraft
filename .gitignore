@@ -36,3 +36,6 @@ backups/
 
 # Vendored scraper caches
 backend/app/services/jobscraper/**/__pycache__/
+
+# Placeholder for the optional local résumé folder (see RESUMES_DIR).
+.local-resumes/
