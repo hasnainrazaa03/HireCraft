@@ -9,6 +9,9 @@
  * actually listens for.
  */
 
+/** Wait, so the user can watch a field fill rather than find the form full. */
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Normalise a label for matching: lowercase, unaccented, no punctuation.
  *

@@ -62,8 +62,12 @@ whether a field was renamed, and what to add to `autofill/adapters.js`.
   the employer's page, and MV3 content scripts are subject to CORS while the
   service worker is not.
 
-Run the field-matching tests with `node --test extension/test/fields.test.mjs` —
-no dependencies.
+Run the tests with `node --test extension/test/*.test.mjs` — no dependencies.
+
+`fill.test.mjs` runs the engine against a stub DOM rather than only checking its
+patterns, because `node --check` validates syntax and nothing else: a helper
+deleted by an edit to the comment above it passed every static check and threw
+`pause is not defined` on the first field of a real application form.
 
 ## Clipping
 
