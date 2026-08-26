@@ -151,6 +151,7 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
             "hispanic_latino": (profile.hispanic_latino if profile else None),
             "veteran_status": (profile.veteran_status if profile else None),
             "disability_status": (profile.disability_status if profile else None),
+            "military_service": (profile.military_service if profile else None),
         },
         # The most recent degree, which is what "School", "Degree", "Graduation
         # year" and "GPA" on an application form are asking about. Taken from the

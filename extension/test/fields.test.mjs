@@ -260,6 +260,7 @@ test("every field can produce a value from a full profile", () => {
       hispanic_latino: "no",
       veteran_status: "not_protected",
       disability_status: "no",
+      military_service: "no",
     },
     education: {
       school: "University of Southern California",
@@ -446,4 +447,23 @@ test("the graduation month comes from the résumé, spelled out", () => {
   const month = FIELDS.find((f) => f.key === "end_month");
   assert.equal(month.from({ education: { end_month: "December" } }), "December");
   assert.equal(month.from({ education: {} }), undefined);
+});
+
+test("military service and veteran status are separate questions", () => {
+  // "Protected veteran" is a legal category with conditions attached, so a
+  // person can have served and still answer no to it truthfully. Deriving one
+  // from the other would put a claim about someone's military service on an
+  // application on the strength of an answer to a different question.
+  assert.equal(claim("Have you served in the military?"), "military_service");
+  assert.equal(claim("Have you ever served in the US Armed Forces?"), "military_service");
+  assert.equal(claim("Military service"), "military_service");
+
+  assert.equal(claim("Veteran status"), "veteran_status");
+  assert.equal(claim("VeteranStatus"), "veteran_status");
+  assert.equal(claim("Are you a protected veteran?"), "veteran_status");
+
+  const service = FIELDS.find((f) => f.key === "military_service");
+  // Answered only from its own stored value — never from veteran_status.
+  assert.equal(service.from({ self_identification: { veteran_status: "not_protected" } }), "");
+  assert.equal(service.from({ self_identification: { military_service: "no" } }), "no");
 });

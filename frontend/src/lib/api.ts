@@ -465,6 +465,9 @@ export interface CareerProfile {
   hispanic_latino: "yes" | "no" | "decline" | null;
   veteran_status: "protected" | "not_protected" | "decline" | null;
   disability_status: "yes" | "no" | "decline" | null;
+  /* Asked separately from veteran_status: a person can have served without
+     being a protected veteran, and forms put both questions on one page. */
+  military_service: "yes" | "no" | "decline" | null;
   preferred_roles: string[];
   preferred_industries: string[];
   preferred_locations: string[];

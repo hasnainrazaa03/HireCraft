@@ -89,6 +89,10 @@ class CareerProfile(Base, TimestampMixin):
     hispanic_latino: Mapped[str | None] = mapped_column(String(40))
     veteran_status: Mapped[str | None] = mapped_column(String(40))
     disability_status: Mapped[str | None] = mapped_column(String(40))
+    # Separate from veteran_status on purpose: "protected veteran" is a legal
+    # category with conditions attached, so someone can have served and still
+    # answer no to it truthfully. Forms ask both, often on the same page.
+    military_service: Mapped[str | None] = mapped_column(String(40))
 
     # Free-form preference lists, stored as JSON arrays of strings.
     preferred_roles: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)

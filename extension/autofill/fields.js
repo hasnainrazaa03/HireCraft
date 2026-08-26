@@ -240,12 +240,28 @@ const FIELDS = [
     match: [/\bgenders?\b/, /^sex$/],
   },
   {
+    key: "military_service",
+    label: "Military service",
+    kind: "hispanic_latino",
+    // Listed before the veteran question so "Have you served in the military?"
+    // is answered from the service answer rather than from the EEOC category.
+    // They are genuinely different: "protected veteran" carries conditions a
+    // person who served may not meet, so neither answer follows from the other.
+    from: (p) => p.self_identification?.military_service || "",
+    whenEmpty: "set it once in Career Profile → Self-identification",
+    match: [
+      /\b(have\s*you\s*)?(ever\s*)?served\s*(in\s*)?(the\s*)?(us\s*|u\s*s\s*)?(armed\s*forces|military)\b/,
+      /\bmilitary\s*service\b/,
+      /\barmed\s*forces\b/,
+    ],
+  },
+  {
     key: "veteran_status",
     label: "Veteran status",
     kind: "veteran_status",
     from: (p) => p.self_identification?.veteran_status || "",
     whenEmpty: "set it once in Career Profile → Self-identification",
-    match: [/\bveterans?\b/, /\bmilitary\s*service\b/],
+    match: [/\bveterans?\b/, /\bprotected\s*veteran\b/],
   },
   {
     key: "disability_status",

@@ -695,6 +695,8 @@ the panel.**
   - Notes:
 - ⬜ **T-EXT-17** Set one answer to **Decline to answer** — it must actively select the decline option, not leave the question blank.
   - Notes:
+- ⬜ **T-EXT-27** **Military service is not the veteran question.** A form asking "Have you served in the military?" must be answered from the service answer, and one asking "Veteran status" from the EEOC one. They sit on the same page on Greenhouse forms. "Protected veteran" carries conditions a person who served may not meet, so an answer to either must never be derived from the other — doing so puts a claim about someone's military service on an application. **P0** if crossed.
+  - Notes:
 
 ### 19.5 Résumé and cover letter
 

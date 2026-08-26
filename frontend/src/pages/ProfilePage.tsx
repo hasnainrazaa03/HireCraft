@@ -220,7 +220,9 @@ export default function ProfilePage() {
           voluntary — leave any of them unanswered and the extension leaves it blank
           on the form. <span className="text-muted">Decline to answer</span> is a
           different thing: it actively picks the decline option, which is what most
-          forms expect.
+          forms expect. Service and veteran status are asked separately because
+          they are separate questions — "protected veteran" carries conditions
+          that someone who served may not meet.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Gender">
@@ -240,6 +242,14 @@ export default function ProfilePage() {
               <option value="">Not answered</option>
               <option value="yes" className="bg-surface">Yes</option>
               <option value="no" className="bg-surface">No</option>
+              <option value="decline" className="bg-surface">Decline to answer</option>
+            </select>
+          </Field>
+          <Field label="Have you served in the military?">
+            <select className="input" value={form.military_service ?? ""} onChange={(e) => set("military_service", (e.target.value || null) as CareerProfile["military_service"])}>
+              <option value="">Not answered</option>
+              <option value="no" className="bg-surface">No</option>
+              <option value="yes" className="bg-surface">Yes</option>
               <option value="decline" className="bg-surface">Decline to answer</option>
             </select>
           </Field>

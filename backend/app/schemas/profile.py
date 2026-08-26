@@ -74,6 +74,9 @@ class CareerProfileUpdate(ProfileModel):
     hispanic_latino: YesNoDecline | None = None
     veteran_status: VeteranStatus | None = None
     disability_status: DisabilityStatus | None = None
+    # Not derived from veteran_status: a person can have served without being a
+    # protected veteran, and forms ask the two questions separately.
+    military_service: YesNoDecline | None = None
 
     preferred_roles: list[str] | None = Field(default=None, max_length=20)
     preferred_industries: list[str] | None = Field(default=None, max_length=20)
@@ -121,6 +124,7 @@ class CareerProfileResponse(ProfileModel):
     hispanic_latino: YesNoDecline | None
     veteran_status: VeteranStatus | None
     disability_status: DisabilityStatus | None
+    military_service: YesNoDecline | None
     preferred_roles: list[str]
     preferred_industries: list[str]
     preferred_locations: list[str]
