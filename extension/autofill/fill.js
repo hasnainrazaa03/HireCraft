@@ -364,6 +364,9 @@ async function fillForm(
       overrides[label] ||
       window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
     if (!field || claimed.has(field.key)) continue;
+    // Left unclaimed on purpose, so a genuine country question later on the
+    // form can still be answered.
+    if (field.key === "country" && isPhoneCountryPicker(el)) continue;
 
     const value = String(field.from(profile) ?? "").trim();
     if (!value) {
@@ -482,6 +485,29 @@ function findUploadInput(want, reject = []) {
 }
 
 /**
+ * Is this the dial-code picker belonging to a phone field?
+ *
+ * Those are labelled "Country" and read "United States +1", so the country
+ * field claims them. That is worse than useless: the country slot is spent on a
+ * widget the phone number already implies, and a real country question further
+ * down the form is then skipped as already answered.
+ *
+ * Detected by looking for a telephone input in the same neighbourhood, which is
+ * what actually makes it a dial-code picker, rather than by the label — the
+ * label is the thing that misleads here.
+ */
+function isPhoneCountryPicker(el) {
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+    if (node.querySelector?.('input[type="tel"]')) return true;
+    if (/phone|dial[-_ ]?code|country[-_ ]?code/i.test(String(node.className || ""))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Required questions the form still has no answer for.
  *
  * Filling is only half of not-submitting-a-broken-application. Verkada's form
@@ -501,6 +527,19 @@ function requiredGaps() {
     const type = (el.getAttribute("type") || "text").toLowerCase();
     if (["hidden", "submit", "button", "reset", "image"].includes(type)) continue;
     if (el.disabled) continue;
+
+    // Only what a person could actually fill. A widget's hidden mirror input
+    // is not a question anyone can answer, and listing it sends the user
+    // hunting the page for a box that is not on it — which is exactly what
+    // happened: a report said "Country still empty" about the invisible half
+    // of a phone field whose visible half had just been filled.
+    //
+    // File inputs are the exception. They are routinely hidden behind an
+    // "Attach" button and are still genuinely required.
+    if (type !== "file") {
+      const box = el.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) continue;
+    }
 
     const raw = (labelFor(el) || "").replace(/\s+/g, " ").trim();
     if (!raw) continue;
@@ -535,14 +574,27 @@ function requiredGaps() {
 
 /** Every control with its resolved label — how adapters get built and debugged. */
 function inspectForm() {
-  return controls().map(({ el, raw, label }) => ({
+  const seen = controls();
+  const rows = seen.map(({ el, raw, label }) => ({
     tag: el.tagName.toLowerCase(),
     type: el.getAttribute("type") || "",
     name: el.getAttribute("name") || "",
     id: el.id || "",
     label: raw.replace(/\s+/g, " ").trim().slice(0, 90),
     normalised: label.slice(0, 90),
+    // The three things needed to explain a fill that went wrong from a report
+    // alone: what kind of control it is, whether it already holds something,
+    // and whether the form insists on it.
+    combobox: isCombobox(el),
+    value: String(el.value ?? "").slice(0, 60),
+    required:
+      el.hasAttribute("required") ||
+      el.getAttribute("aria-required") === "true" ||
+      /[*✱]/.test(raw),
+    matched: (window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label))) || {}).key
+      || (window.HIRECRAFT_SKIP.find((g) => g.match.some((re) => re.test(label))) ? "(skipped)" : ""),
   }));
+  return rows;
 }
 
 window.HIRECRAFT_FILL = {
@@ -554,4 +606,6 @@ window.HIRECRAFT_FILL = {
   isCombobox,
   setAndVerify,
   requiredGaps,
+  findUploadInput,
+  attachFile,
 };

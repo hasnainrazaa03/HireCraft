@@ -38,6 +38,8 @@ const {
   HIRECRAFT_SKIP: SKIP,
   HIRECRAFT_RESUME_FILE: RESUME,
   HIRECRAFT_NOT_RESUME: NOT_RESUME,
+  HIRECRAFT_COVER_FILE: COVER,
+  HIRECRAFT_NOT_COVER: NOT_COVER,
 } = window;
 const { normalise } = window.HIRECRAFT_FILL;
 
@@ -385,4 +387,18 @@ test("an H-1B question is not answered with a university name", () => {
 test("a location question survives an adverb", () => {
   assert.equal(claim("Where are you currently located?"), "location");
   assert.equal(claim("Where are you based?"), "location");
+});
+
+test("a cover letter goes in the cover-letter box and nowhere else", () => {
+  // Same shape as the résumé rule, and for the same reason: Verkada's form had
+  // four upload boxes, and a letter filed as a transcript looks done.
+  const wants = (label) =>
+    COVER.some((re) => re.test(normalise(label))) &&
+    !NOT_COVER.some((re) => re.test(normalise(label)));
+
+  assert.equal(wants("Cover Letter"), true);
+  assert.equal(wants("Letter of interest"), true);
+  assert.equal(wants("Resume/CV"), false);
+  assert.equal(wants("Undergraduate Transcript"), false);
+  assert.equal(wants("Writing sample"), false);
 });

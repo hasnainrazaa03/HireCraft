@@ -355,9 +355,29 @@ const NOT_RESUME = [
   /\bcertificat(e|ion)s?\b/,
 ];
 
+/**
+ * The upload box a cover letter belongs in, and the ones it must not.
+ *
+ * Mirrors RESUME_FILE/NOT_RESUME. A form with four upload boxes will take the
+ * letter into any of them, and a cover letter filed as a transcript is worse
+ * than one not attached at all — it looks done.
+ */
+const COVER_FILE = [/\bcover\s*letter\b/, /\bletter\s*of\s*(interest|motivation)\b/];
+
+const NOT_COVER = [
+  /\bresume\b/,
+  /\bcv\b/,
+  /\btranscript\b/,
+  /\bwriting\s*sample\b/,
+  /\bportfolio\s*(file|upload)\b/,
+  /\bcertificat(e|ion)s?\b/,
+];
+
 // Attached to window so the content script can read them; MV3 content scripts
 // share one scope per frame but are not modules.
 window.HIRECRAFT_FIELDS = FIELDS;
 window.HIRECRAFT_SKIP = SKIP;
 window.HIRECRAFT_RESUME_FILE = RESUME_FILE;
 window.HIRECRAFT_NOT_RESUME = NOT_RESUME;
+window.HIRECRAFT_COVER_FILE = COVER_FILE;
+window.HIRECRAFT_NOT_COVER = NOT_COVER;

@@ -347,10 +347,10 @@ def extension_cover_letter(
     generated and the count is returned with it, so the reader can see whether
     the instruction took rather than having to judge it cold.
     """
+    from app.api.routes.applications import _resolve_resume
     from app.services.evidence import evidence_lines
     from app.services.llm.client import LlmError, LlmResponseError
-    from app.services.llm.usage import UsageLedger
-    from app.services.pipeline import compose_cover_letter
+    from app.services.pipeline import UsageLedger, compose_cover_letter
     from app.services.writing_tells import find_tells, uniformity
 
     from app.api.routes.studio import _client_for, _greeting, _record, _voice_for

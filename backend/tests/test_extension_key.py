@@ -203,3 +203,124 @@ def test_career_profile_wins_over_the_resume(client, auth, user, db):
     assert body["phone"] == "555-PROFILE"          # profile wins where it has one
     assert body["github"] == "https://github.com/ada"  # résumé fills the gap
     assert len(body["resumes"]) == 1
+
+
+# --- the two routes that do work, not just read ------------------------------
+#
+# These had no tests at all, and the cost showed: the cover-letter route
+# imported UsageLedger from a module that does not exist, so every call to it
+# returned a 500. Nothing caught that, because the import is inside the function
+# — it never runs at startup, and no test ever called the route. Import errors
+# are not the interesting part of these endpoints, but they are the part that
+# takes the whole feature down, and only calling the thing finds them.
+
+
+@pytest.fixture
+def resume(db, user):
+    """A résumé that satisfies MasterResume, borrowed from conftest.
+
+    Hand-rolling one here got the shape wrong; the shared fixture is the schema
+    the rest of the suite already agrees on.
+    """
+    from tests.conftest import MASTER_RESUME_FIXTURE
+    from app.models.resume import ResumeProfile
+
+    profile = ResumeProfile(
+        user_id=user.id, name="Master", is_default=True, content=MASTER_RESUME_FIXTURE
+    )
+    db.add(profile)
+    db.commit()
+    return profile
+
+
+# The route requires a real posting's worth of text, not a stub sentence.
+JOB_TEXT = (
+    "We are hiring a Python engineer to build and maintain reporting pipelines. "
+    "You will automate report generation and work with a small platform team."
+)
+
+
+def test_cover_letter_route_runs(client, auth, user, db, resume, monkeypatch):
+    from app.services.llm.client import LlmResult, Usage
+    from app.services.pipeline import CoverLetterDraft
+
+    class StubClient:
+        def generate_structured(self, *, prompt, **kwargs):  # noqa: ANN001, ANN003
+            return LlmResult(
+                data=CoverLetterDraft(
+                    paragraphs=["I automated report generation with Python at Acme Corp."]
+                ),
+                usage=Usage(input_tokens=10, output_tokens=10, model="stub", latency_ms=1),
+                raw_text="{}",
+            )
+
+    monkeypatch.setattr("app.api.routes.studio._client_for", lambda _user: StubClient())
+
+    key = issue(client, auth)
+    response = client.post(
+        "/api/v1/extension/cover-letter",
+        headers={"X-HireCraft-Key": key},
+        json={
+            "job_text": JOB_TEXT,
+            "company": "Globex",
+            "role": "SWE",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["paragraphs"]
+    assert body["signature"]  # the résumé's own name, whatever it is
+    assert body["resume_name"] == "Master"
+    # The style signals the panel shows, so the reader can judge the draft.
+    assert isinstance(body["tells"], list)
+    assert isinstance(body["uniformity"], float)
+    assert "pdf" in body
+
+
+def test_track_route_creates_one_application_per_posting(
+    client, auth, user, db, resume, monkeypatch
+):
+    # _resolve_job reads the posting. Stubbed so this test is about tracking
+    # rather than about scraping, and so it never touches the network.
+    # Imported inside the handler from routes.applications, so it has to be
+    # patched where it is defined rather than where it is used.
+    monkeypatch.setattr(
+        "app.api.routes.applications._resolve_job",
+        lambda db, user_id, payload: _fake_job(db, user_id, str(payload.job.url)),
+    )
+    key = issue(client, auth)
+    head = {"X-HireCraft-Key": key}
+    payload = {"job": {"url": "https://job-boards.greenhouse.io/acme/jobs/1"}, "status": "applied"}
+
+    first = client.post("/api/v1/extension/track", headers=head, json=payload)
+    assert first.status_code in (200, 201), first.text
+
+    # Tracking the same posting again must update, not duplicate — the extension
+    # fires this on every submission it detects, including a re-submit.
+    second = client.post("/api/v1/extension/track", headers=head, json=payload)
+    assert second.status_code in (200, 201), second.text
+    assert first.json()["id"] == second.json()["id"]
+
+
+def _fake_job(db, user_id, url):
+    """A Job row standing in for one read off a live posting.
+
+    Reused across both track calls so the second finds the first, which is what
+    makes the de-duplication assertion mean anything.
+    """
+    from app.models.job import Job
+
+    existing = db.query(Job).filter(Job.user_id == user_id, Job.url == url).first()
+    if existing:
+        return existing
+    job = Job(
+        user_id=user_id,
+        url=url,
+        source="greenhouse",
+        title="Engineer",
+        company="Acme",
+        raw_text="We need a Python engineer.",
+    )
+    db.add(job)
+    db.commit()
+    return job

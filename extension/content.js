@@ -218,13 +218,40 @@ function renderPanel() {
       )
     );
     if (state.letter.pdf) {
-      // A form wants a file, not a paste. The anchor download is the only way
-      // to hand one over from a content script without a host permission.
+      const filename = `CoverLetter_${(state.letter.company || "letter").replace(/\W+/g, "_")}.pdf`;
+
+      // Attaching is a separate, deliberate click rather than part of drafting.
+      // The draft is the part worth reading before it goes anywhere, and a
+      // letter that uploaded itself the moment it was written would be attached
+      // to a real application before anyone had looked at it.
+      const attach = el("button", "hc-btn hc-small hc-primary", "Attach to form");
+      attach.onclick = () => {
+        const target = window.HIRECRAFT_FILL.findUploadInput(
+          window.HIRECRAFT_COVER_FILE,
+          window.HIRECRAFT_NOT_COVER
+        );
+        if (!target) {
+          attach.textContent = "No cover-letter box here";
+          return;
+        }
+        try {
+          window.HIRECRAFT_FILL.attachFile(
+            target,
+            window.HIRECRAFT_FILL.fileFromDataUrl(state.letter.pdf, filename)
+          );
+          highlight(target);
+          attach.textContent = "Attached";
+        } catch {
+          attach.textContent = "The form refused it — download instead";
+        }
+      };
+      box.append(attach);
+
       const save = el("button", "hc-btn hc-small", "Download PDF");
       save.onclick = () => {
         const link = document.createElement("a");
         link.href = state.letter.pdf;
-        link.download = `CoverLetter_${(state.letter.company || "letter").replace(/\W+/g, "_")}.pdf`;
+        link.download = filename;
         document.body.append(link);
         link.click();
         link.remove();
