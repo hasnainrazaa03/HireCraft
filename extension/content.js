@@ -399,6 +399,9 @@ async function loadProfile() {
 }
 
 async function runFill() {
+  // Written before filling rather than after: a form that posts on the very
+  // next click should still leave a trace of having been filled here.
+  rememberFilling();
   state.busy = true;
   state.status = "Reading your HireCraft profile…";
   render();
@@ -570,6 +573,73 @@ async function runTrack(stage = "draft") {
  * submission. It never fires twice, and the user can still record it by hand if
  * every signal misses.
  */
+/**
+ * Remembering that a form was filled here, so a confirmation page can be
+ * recognised after the browser has navigated away from it.
+ *
+ * The in-page watcher below only helps while the page survives. A form that
+ * posts and lands somewhere else takes the content script with it, and the
+ * script that starts on the confirmation page finds no form — because the form
+ * is gone, which is the point — and so refused to arm anything. That refusal
+ * exists to stop a "thank you" in a careers-page footer counting as a
+ * submission, and it is right to; the missing half was any memory of having
+ * been here before.
+ *
+ * The note is what makes the difference. A confirmation only counts when this
+ * browser filled a form on the same site within the last couple of hours.
+ */
+const PENDING_KEY = "hirecraft.pending";
+const PENDING_FOR = 2 * 60 * 60 * 1000;
+
+async function rememberFilling() {
+  const { company, role } = postingIdentity();
+  try {
+    await chrome.storage.local.set({
+      [PENDING_KEY]: { origin: location.origin, url: location.href, company, role, at: Date.now() },
+    });
+  } catch {
+    // Storage can be unavailable; the in-page watcher still covers the common
+    // case where the confirmation replaces the form without navigating.
+  }
+}
+
+async function pendingFill() {
+  try {
+    const stored = (await chrome.storage.local.get(PENDING_KEY))[PENDING_KEY];
+    if (!stored || stored.origin !== location.origin) return null;
+    if (Date.now() - stored.at > PENDING_FOR) return null;
+    return stored;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Did we land on a confirmation for something filled a moment ago?
+ *
+ * Runs whether or not this page has a form, since a confirmation page does not.
+ */
+async function checkArrivedAtConfirmation() {
+  const looksDone =
+    window.HIRECRAFT_SUBMISSION.isConfirmationUrl(location.pathname) ||
+    (window.HIRECRAFT_SUBMISSION.isConfirmationText(document.body?.innerText || "") &&
+      !looksLikeApplicationForm());
+  if (!looksDone) return;
+
+  const pending = await pendingFill();
+  if (!pending) return;
+
+  await chrome.storage.local.remove(PENDING_KEY).catch(() => {});
+  const reply = await ask({
+    type: "track",
+    url: pending.url,
+    status: "applied",
+    company: pending.company,
+    role: pending.role,
+  });
+  console.debug("[HireCraft] recorded a submission on arrival:", reply.ok ? "ok" : reply.error);
+}
+
 function watchForSubmission() {
   let done = false;
 
@@ -655,6 +725,10 @@ function mount() {
   // in a careers-page footer cannot be read as a submission.
   watchForSubmission();
 }
+
+// Before anything else, and regardless of whether this page has a form: the
+// page we were sent to after submitting will not have one.
+checkArrivedAtConfirmation();
 
 if (looksLikeApplicationForm()) {
   mount();
