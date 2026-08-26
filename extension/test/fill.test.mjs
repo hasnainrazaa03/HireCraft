@@ -1074,3 +1074,50 @@ test("a select is filled by matching its option text, not by writing it", async 
   );
   assert.equal(month.value, "7", "the option's value, not its text");
 });
+
+test("holding *something* is not holding the value we put there", async () => {
+  // An end-month box left reading August was reported as filled with July,
+  // because the check only asked whether the box held anything at all.
+  const month = {
+    tagName: "SELECT", id: "", disabled: false, readOnly: false,
+    selectedIndex: 2,                       // stuck on August, whatever we set
+    options: [
+      { text: "Month...", value: "" },
+      { text: "July", value: "7" },
+      { text: "August", value: "8" },
+    ],
+    value: "8",
+    getAttribute: (n) => (n === "aria-label" ? "End date month" : null),
+    hasAttribute: () => false,
+    getBoundingClientRect: rect(140, 40),
+    closest: () => null,
+    dispatchEvent: () => {},
+  };
+  const window = install([month]);
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { end_month: "July" } },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(report.filled.length, 0, "August is not July");
+  assert.ok(
+    report.missing.some((m) => /put it back/.test(m.why)) ||
+      report.trace.some((e) => e.outcome !== "filled"),
+    "and the report must say so"
+  );
+});
+
+test("a reformatted value still counts as held", async () => {
+  // The rule the check above must not break: a phone mask is the field
+  // agreeing with us, not refusing.
+  const phone = makeControl({ label: "Phone", type: "tel" });
+  let stored = "";
+  Object.defineProperty(phone, "value", {
+    get: () => stored,
+    set: (v) => { stored = String(v).replace(/\D/g, ""); },   // strips formatting
+  });
+  const window = install([phone]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(report.filled.length, 1, "the field kept the number, its own way");
+  assert.equal(report.missing.length, 0);
+});

@@ -903,7 +903,7 @@ async function fillForm(
         holds: () =>
           result.node
             ? committed(el, result.node, result.chosen ?? value)
-            : Boolean(displayedValue(el)),
+            : stillHolds(el, result.actual ?? value),
       });
       // Let the caller follow along. Watching each field fill is how you check
       // the work — a form that is simply full when you look up tells you
@@ -1567,6 +1567,27 @@ function requiredGaps() {
 }
 
 /**
+ * Does this control still hold the value we put in it?
+ *
+ * Checking only that it holds *something* is not a check: a month box left
+ * reading August was reported as filled with July, because August is something.
+ * A reformatted value still passes — a phone mask is the field agreeing, not
+ * refusing — since the comparison is against what was displayed after writing.
+ */
+function stillHolds(el, expected) {
+  const { normText } = window.HIRECRAFT_OPTIONS;
+  const want = normText(expected);
+  const now = normText(
+    isTag(el, "SELECT")
+      ? el.options?.[el.selectedIndex]?.text ?? ""
+      : displayedValue(el)
+  );
+  if (!now) return false;
+  if (!want) return true;
+  return now === want || now.includes(want) || want.includes(now);
+}
+
+/**
  * Put a value into whatever kind of control this is.
  *
  * Shared, because it was not: the second-education pass had its own two-way
@@ -1658,7 +1679,11 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
   for (const { el, raw, label, widget } of fresh) {
     const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
     if (!field || !EDUCATION.has(field.key)) continue;
-    if (displayedValue(el)) continue;
+    // No "leave it alone if it already holds something" here. This block did
+    // not exist a moment ago — the filler created it — so nothing in it is the
+    // user's answer, and everything in it is a default the form chose. Ashby
+    // pre-sets both year boxes to the current year, and honouring that skipped
+    // 2018 and 2022 and left a bachelor's dated 2026.
 
     const value = String(field.from(stand_in) ?? "").trim();
     if (!value) continue;
@@ -1669,7 +1694,7 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
       label: `${raw.trim().slice(0, 50)} (2nd education)`,
       at: pathTo(el),
       field: field.key,
-      control: widget || isCombobox(el) ? "combobox" : "text",
+      control: isTag(el, "SELECT") ? "select" : widget || isCombobox(el) ? "combobox" : "text",
       wanted: value,
       outcome: result.ok ? "filled" : "failed",
       got: result.actual ?? result.chosen ?? null,
@@ -1680,7 +1705,7 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
       filled.push({
         label: `${field.label} (2nd)`,
         value: result.actual ?? result.chosen ?? value,
-        holds: () => Boolean(displayedValue(el)),
+        holds: () => stillHolds(el, result.actual ?? result.chosen ?? value),
       });
       if (onProgress) {
         onProgress({ el, label: `${field.label} (2nd)`, value: result.actual ?? value });
