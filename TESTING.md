@@ -742,12 +742,14 @@ node extension/tools/simulate-greenhouse.mjs form.json profile.json
 
 ### 19.9 Known gaps (not bugs — unbuilt)
 
-| Gap | Scale | State |
-|---|---|---|
-| **Workday** | ~20% of the feed | No support. Multi-step wizard with iframes. |
-| **Ashby / Lever** | adapters exist | **Never run against a real form.** Treat any result as unverified. |
-| Workable / Oracle Cloud | ~100 postings | Descriptions unreadable, so no autofill either. |
-| Transcripts | required on some forms | Upload by hand — HireCraft holds no transcript. |
+| ATS | State |
+|---|---|
+| **Greenhouse** | Form schema and live markup both read. Dropdowns are react-select; verified against a real posting. Location needs a suggestion picked — hidden lat/long. |
+| **Lever** | Apply form is server-rendered and was read directly. Field names, EEO option wording and the `selectedLocation` hidden field are all handled. Not yet clicked through in a browser. |
+| **Ashby** | **Unverified, and not verifiable from outside a browser** — the page ships zero form inputs and the public API returns posting metadata only. Run **Inspect this form** on a real Ashby application and paste the output; that is the only way to check it. |
+| **Workday** | ~20% of the feed. No support at all — multi-step wizard with iframes. |
+| Workable / Oracle Cloud | ~100 postings. Descriptions unreadable, so no autofill either. |
+| Transcripts | Required on some forms. Upload by hand — HireCraft holds no transcript. |
 
 ---
 

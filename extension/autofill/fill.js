@@ -572,7 +572,10 @@ function needsPlacePick(el) {
   let node = el.parentElement;
   for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
     if (
-      node.querySelector?.('input[name="latitude"], input[name="longitude"], [name*="lat"][type="hidden"]')
+      node.querySelector?.(
+        'input[name="latitude"],input[name="longitude"],input[name="selectedLocation"],' +
+          '[name*="lat"][type="hidden"],[name*="placeId"]'
+      )
     ) {
       return true;
     }

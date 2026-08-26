@@ -117,14 +117,20 @@ const EEO = {
 
   race_ethnicity(text) {
     if (isDecline(text)) return "decline";
-    const t = normText(text);
+    // Parenthetical qualifiers are dropped first. Lever writes every option as
+    // "Asian (Not Hispanic or Latino)", "White (Not Hispanic or Latino)" and so
+    // on, so a hispanic check reading the whole string claims all of them — and
+    // an Asian applicant would be recorded as Hispanic or Latino on an EEO
+    // form. Hispanic is then tested last, so even an unparenthesised negation
+    // loses to a named race.
+    const t = normText(String(text ?? "").replace(/\([^)]*\)/g, " "));
     if (/\btwo or more\b/.test(t)) return "two_or_more";
-    if (/\bhispanic\b|\blatino\b|\blatinx\b/.test(t)) return "hispanic";
     if (/\bnative hawaiian\b|\bpacific islander\b/.test(t)) return "native_hawaiian";
     if (/\bamerican indian\b|\balaska/.test(t)) return "american_indian";
     if (/\bblack\b|\bafrican american\b/.test(t)) return "black";
     if (/\basian\b/.test(t)) return "asian";
     if (/\bwhite\b|\bcaucasian\b/.test(t)) return "white";
+    if (/\bhispanic\b|\blatino\b|\blatinx\b/.test(t)) return "hispanic";
     return null;
   },
 
@@ -136,10 +142,13 @@ const EEO = {
   veteran_status(text) {
     if (isDecline(text)) return "decline";
     const t = normText(text);
-    // Both real answers contain "protected veteran", so the negation is the
-    // whole signal and has to be tested before the affirmative.
-    if (/\b(not|am not|no)\b[^.]*\bprotected veteran\b/.test(t)) return "not_protected";
-    if (/\bidentify as\b|\bone or more\b|\byes\b/.test(t)) return "protected";
+    // The negation is the whole signal: every answer here, affirmative or not,
+    // is built on the word "veteran". Anchored on that word alone rather than
+    // on "protected veteran", because boards differ — Greenhouse offers "I am
+    // not a protected veteran" while Lever offers plain "I am not a veteran",
+    // and the second matched nothing at all.
+    if (/\b(not|no)\b[^.]{0,60}\bveterans?\b/.test(t)) return "not_protected";
+    if (/\bveterans?\b|\bidentify as\b|\bone or more\b/.test(t)) return "protected";
     return null;
   },
 

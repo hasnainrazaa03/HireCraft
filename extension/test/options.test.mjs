@@ -201,3 +201,59 @@ test("unitless ranges are unaffected", () => {
   assert.equal(parseRange("2023-2026").unit, null);
   assert.equal(chooseOption("3.67", ["3.6 - 4.0", "3.1 - 3.5"], {}).index, 0);
 });
+
+// --- Lever's wording, copied from a live apply form -------------------------
+//
+// Both lists below broke the matcher in ways the Greenhouse lists could not.
+
+const LEVER_RACE = [
+  "Hispanic or Latino",
+  "White (Not Hispanic or Latino)",
+  "Black or African American (Not Hispanic or Latino)",
+  "Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino)",
+  "Asian (Not Hispanic or Latino)",
+  "American Indian or Alaska Native (Not Hispanic or Latino)",
+  "Two or More Races (Not Hispanic or Latino)",
+  "Decline to self-identify",
+];
+const LEVER_VETERAN = ["I am a veteran", "I am not a veteran", "Decline to self-identify"];
+
+test("a parenthesised 'Not Hispanic or Latino' does not make every race hispanic", () => {
+  // Lever qualifies every option this way. Reading the whole string, the
+  // hispanic test fired on all of them, and an Asian applicant would have been
+  // recorded as Hispanic or Latino on an EEO form.
+  assert.equal(chose("asian", LEVER_RACE, "race_ethnicity"), "Asian (Not Hispanic or Latino)");
+  assert.equal(chose("white", LEVER_RACE, "race_ethnicity"), "White (Not Hispanic or Latino)");
+  assert.equal(
+    chose("black", LEVER_RACE, "race_ethnicity"),
+    "Black or African American (Not Hispanic or Latino)"
+  );
+  assert.equal(
+    chose("two_or_more", LEVER_RACE, "race_ethnicity"),
+    "Two or More Races (Not Hispanic or Latino)"
+  );
+  // And the genuinely Hispanic option is still reachable.
+  assert.equal(chose("hispanic", LEVER_RACE, "race_ethnicity"), "Hispanic or Latino");
+  assert.equal(chose("decline", LEVER_RACE, "race_ethnicity"), "Decline to self-identify");
+});
+
+test("'I am not a veteran' is understood, not just 'not a protected veteran'", () => {
+  // Greenhouse says "protected veteran"; Lever says plain "veteran". The
+  // pattern was anchored on the first, so Lever's options matched nothing.
+  assert.equal(chose("not_protected", LEVER_VETERAN, "veteran_status"), "I am not a veteran");
+  assert.equal(chose("protected", LEVER_VETERAN, "veteran_status"), "I am a veteran");
+  assert.equal(chose("decline", LEVER_VETERAN, "veteran_status"), "Decline to self-identify");
+
+  // Greenhouse's longer wording still resolves the same way.
+  assert.equal(chose("not_protected", VETERAN, "veteran_status"), "I am not a protected veteran");
+  assert.equal(
+    chose("protected", VETERAN, "veteran_status"),
+    "I identify as one or more of the classifications of a protected veteran"
+  );
+});
+
+test("Lever's gender list works unchanged", () => {
+  const LEVER_GENDER = ["Male", "Female", "Decline to self-identify"];
+  assert.equal(chose("male", LEVER_GENDER, "gender"), "Male");
+  assert.equal(chose("decline", LEVER_GENDER, "gender"), "Decline to self-identify");
+});
