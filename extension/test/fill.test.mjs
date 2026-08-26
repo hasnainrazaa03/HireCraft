@@ -760,3 +760,64 @@ test("a value that sticks is still reported as filled", async () => {
   assert.equal(report.missing.length, 0);
   assert.ok(!("holds" in report.filled[0]), "the internal re-check must not leak into the report");
 });
+
+test("a yes/no asked with buttons is answered", async () => {
+  // Ashby asks about sponsorship, being in the office, and immigration status
+  // as two boxes reading Yes and No — neither inputs nor radios, so they
+  // appeared nowhere at all: not filled, not reported, not even scanned.
+  const make = (text) => {
+    const el = {
+      innerText: text,
+      className: "_option_",
+      getAttribute: (n) => (n === "role" ? "button" : null),
+      matches: (sel) => sel.includes("button"),
+      getBoundingClientRect: rect(80, 36),
+      dispatchEvent: () => {},
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      click() { this.className = "_option_ selected"; },
+    };
+    return el;
+  };
+  const yes = make("Yes");
+  const no = make("No");
+  const wrapper = {
+    children: [yes, no],
+    querySelector: (sel) => (sel.includes("legend") ? { innerText: "Will you need sponsorship to work in the U.S.?" } : null),
+    querySelectorAll: () => [],
+    getAttribute: () => null,
+    parentElement: null,
+  };
+  yes.parentElement = wrapper;
+  no.parentElement = wrapper;
+
+  const window = {};
+  const document = {
+    querySelectorAll: (sel) =>
+      sel.includes("button") ? [yes, no] : sel.includes("radio") ? [] : [],
+    querySelector: () => null,
+    getElementById: () => null,
+  };
+  const globals = {
+    window, document,
+    CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, requires_sponsorship: true },
+    { stepDelay: 0 }
+  );
+
+  assert.match(yes.className, /selected/, "Yes must be chosen");
+  assert.ok(!/selected/.test(no.className));
+  assert.deepEqual(report.filled.map((f) => f.label), ["Requires sponsorship"]);
+});

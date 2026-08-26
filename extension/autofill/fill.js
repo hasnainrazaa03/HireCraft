@@ -372,8 +372,15 @@ function safely(read) {
   }
 }
 
-const optionText = (node) =>
-  ((node.innerText ?? node.textContent) || "").replace(/\s+/g, " ").trim();
+const optionText = (node) => {
+  const raw = (node.innerText ?? node.textContent) || "";
+  // The first line is the option; the rest is detail beneath it. Ashby prints a
+  // school's country and domain on their own lines, and joining all three made
+  // the report read "University of Southern California United States usc.edu"
+  // for a field the form had filled correctly.
+  const [first] = raw.split("\n").map((line) => line.trim()).filter(Boolean);
+  return (first || raw).replace(/\s+/g, " ").trim();
+};
 
 /** Click the way a component library expects: many commit on mousedown. */
 function clickLike(node) {
@@ -778,12 +785,15 @@ async function fillForm(
   }
 
   // Questions asked as a set of choices, which the loop above cannot see.
-  for (const group of radioGroups()) {
+  for (const group of [...radioGroups(), ...buttonGroups()]) {
     const label = normalise(group.question);
     if (!label) continue;
     const shown = group.question.replace(/\s+/g, " ").trim().slice(0, 70);
 
-    if (group.options.some((option) => option.el.checked)) {
+    const alreadyAnswered = group.buttons
+      ? group.options.some((option) => buttonChosen(option.el))
+      : group.options.some((option) => option.el.checked);
+    if (alreadyAnswered) {
       trace.push({ label: shown, outcome: "left alone", why: "already answered" });
       continue;
     }
@@ -819,18 +829,25 @@ async function fillForm(
       continue;
     }
 
-    const how = await pickRadio(group.options[index]);
+    const how = group.buttons
+      ? await pickButton(group.options[index])
+      : await pickRadio(group.options[index]);
     const took = Boolean(how);
     trace.push({
       label: shown,
       at: pathTo(group.options[index].el),
       field: field.key,
-      control: "radio",
+      control: group.buttons ? "buttons" : "radio",
       wanted: value,
       outcome: took ? "filled" : "failed",
       got: took ? texts[index] : null,
       why: took ? why : "the option would not take",
-      listbox: { from: "radio-group", count: texts.length, sample: texts.slice(0, 4), picked: how || null },
+      listbox: {
+        from: group.buttons ? "button-group" : "radio-group",
+        count: texts.length,
+        sample: texts.slice(0, 4),
+        picked: how || null,
+      },
     });
 
     if (took) {
@@ -839,6 +856,7 @@ async function fillForm(
         label: field.label,
         value: texts[index],
         holds: () => {
+          if (group.buttons) return buttonChosen(chosen) || buttonChosen(chosen.parentElement);
           const node = (chosen.id ? document.getElementById(chosen.id) : null) || chosen;
           if (node?.getAttribute?.("aria-checked") === "true") return true;
           if (!node?.checked) return false;
@@ -1189,6 +1207,68 @@ async function pickRadio(option) {
 }
 
 /**
+ * Questions answered by clicking one of a row of buttons.
+ *
+ * Ashby asks about sponsorship, being in the office, and immigration status
+ * this way: two boxes reading Yes and No, which are neither inputs nor radios
+ * and so appeared nowhere at all — not filled, not reported, not even in the
+ * form scan.
+ *
+ * The detection is deliberately loose, because a false positive costs nothing:
+ * a group is only ever acted on when its question matches a field we hold an
+ * answer for, so a tab bar or a pagination row is found, ignored, and forgotten.
+ */
+const CLICKABLE = 'button,[role="button"],[role="radio"],[role="tab"],[role="option"]';
+
+function buttonGroups() {
+  const groups = [];
+  const seen = new Set();
+
+  for (const node of document.querySelectorAll(CLICKABLE) || []) {
+    if (isOurs(node)) continue;
+    const parent = node.parentElement;
+    if (!parent || seen.has(parent)) continue;
+    seen.add(parent);
+
+    const siblings = Array.from(parent.children || []).filter((child) =>
+      child.matches?.(CLICKABLE)
+    );
+    if (siblings.length < 2 || siblings.length > 10) continue;
+
+    const options = siblings
+      .map((el) => ({ el, text: (el.innerText || "").replace(/\s+/g, " ").trim() }))
+      .filter((option) => option.text && option.text.length <= 80);
+    if (options.length < 2) continue;
+
+    const question = radioQuestion(siblings[0], options.map((o) => o.text));
+    if (question) groups.push({ question, options, buttons: true });
+  }
+  return groups;
+}
+
+/** Has this button ended up in the chosen state? */
+function buttonChosen(el) {
+  if (el.getAttribute?.("aria-pressed") === "true") return true;
+  if (el.getAttribute?.("aria-checked") === "true") return true;
+  if (el.getAttribute?.("aria-selected") === "true") return true;
+  const cls = String(el.className || "");
+  if (/(^|\s)(selected|active|checked|true)(\s|$)/i.test(cls)) return true;
+  return /_selected_|_active_|_checked_/.test(cls);
+}
+
+/** Click one button in a group and confirm it took. */
+async function pickButton(option) {
+  if (buttonChosen(option.el)) return "already";
+  clickLike(option.el);
+  await pause(180);
+  if (buttonChosen(option.el)) return "click";
+  // Some render the state on the wrapper rather than the button itself.
+  const wrapper = option.el.parentElement;
+  if (wrapper && buttonChosen(wrapper)) return "wrapper";
+  return "";
+}
+
+/**
  * Choice-shaped questions we can see but cannot yet drive.
  *
  * Reported by Inspect rather than acted on. Ashby renders its yes/no questions
@@ -1199,6 +1279,17 @@ async function pickRadio(option) {
 function choiceCandidates() {
   const out = [];
   const seen = new Set();
+
+  // Button-style groups, which carry no role and no fieldset.
+  for (const group of buttonGroups()) {
+    out.push({
+      at: pathTo(group.options[0].el),
+      role: "buttons",
+      text: group.question.replace(/\s+/g, " ").trim().slice(0, 140),
+      options: group.options.map((o) => o.text),
+    });
+  }
+
   for (const group of document.querySelectorAll('[role="radiogroup"],[role="group"],fieldset')) {
     if (isOurs(group) || seen.has(group)) continue;
     seen.add(group);
@@ -1333,5 +1424,6 @@ window.HIRECRAFT_FILL = {
   listboxFor,
   optionNodes,
   radioGroups,
+  buttonGroups,
   choiceCandidates,
 };

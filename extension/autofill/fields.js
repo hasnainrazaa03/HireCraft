@@ -140,13 +140,13 @@ const FIELDS = [
     key: "start_year",
     label: "Start year",
     from: (p) => p.education?.start_year,
-    match: [/\bstart\s*date\s*year\b/, /^start\s*year$/, /\bfrom\s*year\b/],
+    match: [/\bstart\s*date\s*year\b/, /^start\s*year$/, /\bfrom\s*year\b/, /^start\s*date\s*$/],
   },
   {
     key: "end_year",
     label: "End year",
     from: (p) => p.education?.end_year,
-    match: [/\bend\s*date\s*year\b/, /^end\s*year$/, /\bto\s*year\b/],
+    match: [/\bend\s*date\s*year\b/, /^end\s*year$/, /\bto\s*year\b/, /\bgraduation\s*year\b/],
   },
   {
     key: "end_month",
