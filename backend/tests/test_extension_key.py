@@ -324,3 +324,17 @@ def _fake_job(db, user_id, url):
     db.add(job)
     db.commit()
     return job
+
+
+def test_month_is_spelled_out_from_a_resume_date():
+    """A Greenhouse education block requires the month, and the résumé has it."""
+    from app.api.routes.extension import _month_name
+
+    assert _month_name("2027-12") == "December"
+    assert _month_name("2025-08") == "August"
+    assert _month_name("2027-01") == "January"
+    # Nothing invented from a partial or malformed date.
+    assert _month_name("2027") == ""
+    assert _month_name("") == ""
+    assert _month_name("2027-13") == ""
+    assert _month_name("present") == ""

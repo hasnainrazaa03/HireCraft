@@ -190,7 +190,30 @@ def _latest_education(content: dict) -> dict:
         # Forms ask for the year alone far more often than a full date.
         "start_year": start[:4],
         "end_year": "" if end.lower() == "present" else end[:4],
+        # ...but a Greenhouse education block asks for the month too, and it is
+        # required. The résumé already carries it, so leaving that box for the
+        # user to fill was the app declining to use what it holds.
+        "end_month": _month_name(end),
+        "start_month": _month_name(start),
     }
+
+
+#: Named rather than numeric: every form that asks writes them out, and a name
+#: matches "December", "Dec" and "12" through ordinary text matching while "12"
+#: matches only itself.
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _month_name(date: str) -> str:
+    """The month of a "YYYY-MM" résumé date, spelled out, or "" if absent."""
+    parts = (date or "").split("-")
+    if len(parts) < 2 or not parts[1].isdigit():
+        return ""
+    index = int(parts[1])
+    return _MONTHS[index - 1] if 1 <= index <= 12 else ""
 
 
 @router.get("/resume/{profile_id}.pdf")

@@ -143,6 +143,18 @@ const FIELDS = [
     match: [/\bend\s*date\s*year\b/, /^end\s*year$/, /\bto\s*year\b/],
   },
   {
+    key: "end_month",
+    label: "End month",
+    from: (p) => p.education?.end_month,
+    match: [/\bend\s*date\s*month\b/, /^end\s*month$/, /\bgraduation\s*month\b/],
+  },
+  {
+    key: "start_month",
+    label: "Start month",
+    from: (p) => p.education?.start_month,
+    match: [/\bstart\s*date\s*month\b/, /^start\s*month$/],
+  },
+  {
     key: "graduation_year",
     label: "Graduation year",
     from: (p) => p.education?.end_year,

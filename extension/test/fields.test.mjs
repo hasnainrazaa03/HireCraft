@@ -268,6 +268,8 @@ test("every field can produce a value from a full profile", () => {
       gpa: "3.67",
       start_year: "2025",
       end_year: "2027",
+      start_month: "August",
+      end_month: "December",
     },
   };
   for (const field of FIELDS) {
@@ -430,4 +432,18 @@ test("camelCase labels still find their field", () => {
   assert.equal(claim("LinkedIn Profile"), "linkedin");
   assert.equal(claim("GitHub"), "github");
   assert.equal(claim("FirstName"), "first_name");
+});
+
+test("the graduation month comes from the résumé, spelled out", () => {
+  // Greenhouse's education block requires End date month, and the résumé
+  // already carries it — leaving that box for the user was the app declining
+  // to use what it holds. Spelled out rather than numeric, so it matches
+  // "December", "Dec" and "12" through ordinary text matching.
+  assert.equal(claim("End date month"), "end_month");
+  assert.equal(claim("Start date month"), "start_month");
+  assert.equal(claim("End date year"), "end_year");
+
+  const month = FIELDS.find((f) => f.key === "end_month");
+  assert.equal(month.from({ education: { end_month: "December" } }), "December");
+  assert.equal(month.from({ education: {} }), undefined);
 });

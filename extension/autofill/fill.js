@@ -129,6 +129,28 @@ function setValue(el, value) {
 }
 
 /**
+ * What this control currently holds, as a person would read it.
+ *
+ * react-select leaves its text input empty after a selection and renders the
+ * chosen value beside it, so `el.value` is the wrong question to ask. Asking it
+ * anyway made the required-gaps list name Degree, work authorisation and
+ * sponsorship as still empty on a form where all three had just been filled.
+ */
+function displayedValue(el) {
+  const own = String(el.value ?? "").trim();
+  if (own) return own;
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+    const shown = node.querySelector?.(
+      "[class*='single-value'],[class*='singleValue'],[class*='multi-value'],[class*='multiValue']"
+    );
+    const text = shown && String(shown.textContent ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+/**
  * Is this a dropdown that isn't a native `<select>`?
  *
  * It matters because the two behave nothing alike, and treating one as the
@@ -202,12 +224,17 @@ function pathTo(node) {
  * control shares an ancestor with every other one. Anything not named is found
  * instead by watching which list appears when we act, in openListbox.
  */
-function namedListbox(el) {
+function namedListbox(el, { requireOptions = false } = {}) {
   if (el.getAttribute("aria-expanded") === "false") return null;
   const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
   if (!id) return null;
   const box = document.getElementById(id);
-  return box && optionNodes(box).length ? box : null;
+  if (!box) return null;
+  // An open menu with nothing in it is the normal state of a search-backed
+  // select — a city or school list holds thousands of entries and renders none
+  // until you type. Insisting on options here made those look unopened, so the
+  // opener kept trying, and its next move closed them.
+  return !requireOptions || optionNodes(box).length ? box : null;
 }
 
 /** Kept for callers that only need whatever list is currently associated. */
@@ -279,6 +306,7 @@ async function openListbox(el) {
   // this control opens — which is the failure that keeps recurring, because
   // every rule based on DOM position eventually finds a way to reach a sibling.
   const before = new Set(visibleListboxes());
+  const isOpen = () => el.getAttribute("aria-expanded") === "true";
 
   const mine = () => {
     const named = namedListbox(el);
@@ -298,19 +326,22 @@ async function openListbox(el) {
   // straight to openMenu, while a synthetic mousedown has to survive branching
   // on state we cannot see.
   pressKey(el, "ArrowDown");
-  for (let tries = 0; tries < 10; tries += 1) {
+  for (let tries = 0; tries < 8; tries += 1) {
     const box = mine();
-    if (box) return box;
+    if (box || isOpen()) return box;
     await pause(70);
   }
 
-  // Then the mouse, aimed at the control rather than the inner input — several
-  // widgets only listen on the wrapper.
-  clickLike(el.closest?.("[class*='control'],[class*='select-shell'],[role='combobox']") || el);
-  for (let tries = 0; tries < 12; tries += 1) {
-    const box = mine();
-    if (box) return box;
-    await pause(70);
+  // Only if it is still shut. A mousedown on an *open* react-select closes it —
+  // so the fallback used to undo the keyboard, and a search-backed select (open
+  // but empty until typed into) was toggled shut every single time.
+  if (!isOpen()) {
+    clickLike(el.closest?.("[class*='control'],[class*='select-shell'],[role='combobox']") || el);
+    for (let tries = 0; tries < 10; tries += 1) {
+      const box = mine();
+      if (box || isOpen()) return box;
+      await pause(70);
+    }
   }
   return mine();
 }
@@ -368,20 +399,27 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
 
   // An empty list means it filters as you type; a very long one means the match
   // we want may not be rendered yet.
+  const probes = [];
   if (!nodes.length || nodes.length > 60) {
     for (const probe of probesFor(value, kind)) {
       setValue(el, probe);
       pressKey(el, probe.slice(-1) || "a");
-      await pause(180);
-      box = listboxFor(el) || box;
-      nodes = optionNodes(box);
+      // Poll rather than wait once: these lists are fetched, and a single
+      // 180ms guess was shorter than the round trip on every one of them.
+      for (let tries = 0; tries < 14; tries += 1) {
+        await pause(120);
+        box = namedListbox(el) || box;
+        nodes = optionNodes(box);
+        if (nodes.length && nodes.length <= 60) break;
+      }
+      probes.push({ typed: probe, options: nodes.length });
       if (nodes.length && nodes.length <= 60) break;
     }
   }
 
   if (!nodes.length) {
     setValue(el, "");
-    return { ok: false, why: "the dropdown never opened", listbox: null };
+    return { ok: false, why: "the dropdown never opened", listbox: null, probes };
   }
 
   const texts = nodes.map(optionText);
@@ -392,6 +430,7 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
     at: pathTo(box),
     count: texts.length,
     sample: texts.slice(0, 4),
+    probes,
   };
   const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind, unit, context });
   if (index < 0) {
@@ -439,20 +478,11 @@ function committed(el, node, chosen) {
     return Boolean(now) && (now === want || now.includes(want) || want.includes(now));
   };
 
-  if (matches(el.value)) return true;
+  if (matches(displayedValue(el))) return true;
 
-  // react-select — which is what Greenhouse builds every dropdown from — leaves
-  // the text input empty after a choice and renders the selection as its own
-  // element beside it. Reading only `el.value` would report every successful
-  // selection on a Greenhouse form as a failure, which is the opposite of the
-  // bug this function was added to catch but just as wrong.
+  // Some builds mirror the value into a hidden input for form submission.
   let node2 = el.parentElement;
   for (let depth = 0; node2 && depth < 5; depth += 1, node2 = node2.parentElement) {
-    const shown = node2.querySelector?.(
-      "[class*='single-value'],[class*='singleValue'],[class*='multi-value'],[class*='multiValue']"
-    );
-    if (shown && matches(shown.textContent)) return true;
-    // Some builds mirror the value into a hidden input for form submission.
     for (const hidden of node2.querySelectorAll?.("input[type='hidden'],input[aria-hidden='true']") || []) {
       if (matches(hidden.value)) return true;
     }
@@ -544,7 +574,7 @@ async function fillForm(
 
     // Don't overwrite something already on the form — the user may have typed
     // it, or the page may have restored a draft.
-    if (el.value && String(el.value).trim()) continue;
+    if (displayedValue(el)) continue;
 
     const field =
       overrides[label] ||
@@ -823,7 +853,7 @@ function requiredGaps() {
       }
       empty = !groupChecked.get(name);
     } else {
-      empty = !String(el.value ?? "").trim();
+      empty = !displayedValue(el);
     }
     if (empty) gaps.push(raw.replace(/[*✱]/g, "").trim().slice(0, 70));
   }
