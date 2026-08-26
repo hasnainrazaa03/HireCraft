@@ -531,3 +531,33 @@ test("HireCraft's own panel is not part of the employer's form", async () => {
   assert.equal(ours.value, "", "our own control must never be written to");
   assert.deepEqual(report.filled.map((f) => f.label), ["First name"]);
 });
+
+test("a menu that refuses to close is reported, not assumed shut", async () => {
+  // The Point72 country picker stayed open through Escape, an outside click
+  // and a blur, and sat over the field below it. Every version of the close
+  // before this one reported success by saying nothing.
+  const stubborn = makeCombobox({ label: "Country", options: ["United States +1"] });
+  let expanded = "true";
+  const base = stubborn.getAttribute;
+  stubborn.getAttribute = (name) => (name === "aria-expanded" ? expanded : base(name));
+
+  const window = install([stubborn]);
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, country: "United States" },
+    { stepDelay: 0 }
+  );
+
+  const row = report.trace.find((e) => e.field === "country");
+  assert.equal(row.outcome, "filled");
+  assert.equal(row.leftOpen, true, "a stuck menu must be recorded");
+
+  // And one that does close is recorded as closed.
+  expanded = "false";
+  const ok = makeCombobox({ label: "Country", options: ["United States +1"] });
+  const w2 = install([ok]);
+  const r2 = await w2.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, country: "United States" },
+    { stepDelay: 0 }
+  );
+  assert.equal(r2.trace.find((e) => e.field === "country").leftOpen, false);
+});

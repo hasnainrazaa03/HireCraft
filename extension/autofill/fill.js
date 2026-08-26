@@ -272,17 +272,36 @@ function listboxFor(el) {
 
 /** Shut the popup, so the next field cannot inherit it. */
 async function closeListbox(el) {
-  const stillOpen = () =>
-    el.getAttribute("aria-expanded") === "true" ||
-    /menu-is-open|--is-open|\bis-open\b/.test(String(el.closest?.("[class]")?.className || ""));
+  // The open marker sits on the widget's control element, not on the input —
+  // react-select writes `select__control--menu-is-open` two levels above the
+  // box you type in. Checking only the nearest classed ancestor read the wrong
+  // element and would have called a stuck menu closed.
+  const control = () =>
+    el.closest?.("[class*='control'],[class*='select-shell'],[class*='container']") ||
+    el.parentElement ||
+    el;
+  const stillOpen = () => {
+    if (el.getAttribute("aria-expanded") === "true") return true;
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+      if (/menu-is-open|--is-open|\bis-open\b/.test(String(node.className || ""))) return true;
+    }
+    return false;
+  };
 
   // Escape while focused is what most widgets listen for.
   pressKey(el, "Escape");
   await pause(40);
   if (!stillOpen()) return true;
 
-  // Then a mousedown elsewhere — what a person does, and outside-click handlers
-  // are near-universal.
+  // Then a mousedown on the control itself. A mousedown on an *open*
+  // react-select toggles it shut — the same behaviour that made this the wrong
+  // way to open one, and therefore exactly the right way to close one.
+  clickLike(control());
+  await pause(60);
+  if (!stillOpen()) return true;
+
+  // Then outside, for widgets that only listen for a click elsewhere.
   try {
     document.body?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     document.body?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
@@ -292,12 +311,12 @@ async function closeListbox(el) {
   await pause(40);
   if (!stillOpen()) return true;
 
-  // Then give up the focus, which closes the ones that ignore both.
+  // Then give up the focus, which closes the ones that ignore all of it.
   el.blur?.();
   await pause(40);
   // Reported rather than assumed. A dropdown left hanging open sits over the
-  // next field on the page, and every previous version of this said it had
-  // closed without ever looking.
+  // next field on the page, and every version of this before the check said it
+  // had closed without ever looking.
   return !stillOpen();
 }
 
@@ -323,6 +342,7 @@ const optionText = (node) => (node.textContent || "").replace(/\s+/g, " ").trim(
 
 /** Click the way a component library expects: many commit on mousedown. */
 function clickLike(node) {
+  if (!node) return;
   for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
     try {
       node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
