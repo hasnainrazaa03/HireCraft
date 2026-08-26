@@ -900,3 +900,74 @@ test("a second education block is filled from the next degree", async () => {
   assert.equal(second.value, "RV College of Engineering", "block two takes the next degree");
   assert.equal(first.value, "University of Southern California", "block one is untouched");
 });
+
+test("a button is clicked once, not twice", async () => {
+  // clickLike dispatched a click event AND called click(). Harmless on an
+  // input; on "+ Add Education" it fired the handler twice and produced two
+  // identical bachelor's entries on a form that needed one.
+  let presses = 0;
+  const button = {
+    innerText: "+ Add Education",
+    tagName: "BUTTON",
+    getAttribute: () => null,
+    getBoundingClientRect: rect(160, 40),
+    closest: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    dispatchEvent: (e) => { if (e.type === "click") presses += 1; },
+    click: () => { presses += 1; },
+  };
+
+  const window = install([]);
+  window.HIRECRAFT_FILL.clickLike(button);
+  assert.equal(presses, 1, "exactly one press reaches the handler");
+});
+
+test("a second education block is not added when the form already has one", async () => {
+  // Two school boxes means the block exists; adding another duplicates a degree,
+  // and a duplicated degree is the user's mess to clean up.
+  const first = makeControl({ label: "School" });
+  first.value = "University of Southern California";
+  const second = makeControl({ label: "School" });
+  second.value = "RV College of Engineering";
+
+  let pressed = false;
+  const addButton = {
+    innerText: "+ Add Education", tagName: "BUTTON",
+    getAttribute: () => null, getBoundingClientRect: rect(160, 40),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, click: () => { pressed = true; },
+  };
+  const window = {};
+  const document = {
+    querySelectorAll: (sel) =>
+      sel.includes("button") ? [addButton]
+      : sel.includes("file") || sel.includes("radio") || sel.includes("checkbox") ? []
+      : [first, second],
+    querySelector: () => null,
+    getElementById: () => null,
+  };
+  const globals = {
+    window, document, CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    {
+      ...PROFILE,
+      education: { school: "University of Southern California" },
+      education_all: [{ school: "University of Southern California" }, { school: "RV College of Engineering" }],
+    },
+    { stepDelay: 0 }
+  );
+  assert.equal(pressed, false, "the add button must not be pressed again");
+  assert.ok(report.trace.some((e) => e.label === "Add education" && e.outcome === "left alone"));
+});

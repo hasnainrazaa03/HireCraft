@@ -84,7 +84,18 @@ function labelFor(el) {
     const others = Array.from(node.querySelectorAll?.("input,select,textarea") || []).filter(
       (c) => c !== el && (c.getBoundingClientRect?.()?.width ?? 1) > 0
     );
-    if (others.length) break;
+    if (others.length) {
+      // A "Start Date" heading sits above a Month box and a Year box, and
+      // neither half carries a label of its own — so the walk hit the pair,
+      // stopped, and fell through to the placeholder, leaving the catalogue
+      // matching "Month…". The group's heading plus the box's own hint names it.
+      const heading = node.querySelector?.(
+        "label,legend,[class*='label'],[class*='Label']"
+      )?.innerText?.trim();
+      const own = (el.getAttribute?.("placeholder") || el.getAttribute?.("aria-label") || "").trim();
+      if (heading && own) return `${heading} ${own}`;
+      break;
+    }
     const candidate = node.querySelector?.(
       "label,legend,[class*='label'],[class*='Label'],[class*='question'],[class*='Question']"
     );
@@ -438,15 +449,27 @@ const optionText = (node) => {
 /** Click the way a component library expects: many commit on mousedown. */
 function clickLike(node) {
   if (!node) return;
-  for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+  // The precursors first, for libraries that commit on mousedown.
+  for (const type of ["pointerdown", "mousedown", "mouseup"]) {
     try {
       node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
     } catch {
-      // MouseEvent is unavailable in a bare test DOM; the plain click below is
-      // enough there, and on a real page all four dispatch fine.
+      // MouseEvent is unavailable in a bare test DOM.
     }
   }
-  node.click?.();
+  // Then exactly one click. Dispatching a click event *and* calling click()
+  // fires a button's handler twice — harmless on an input, but it pressed "Add
+  // Education" twice and produced two identical bachelor's entries on a form
+  // that needed one.
+  if (typeof node.click === "function") {
+    node.click();
+    return;
+  }
+  try {
+    node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  } catch {
+    /* nothing left to try */
+  }
 }
 
 function pressKey(el, key) {
@@ -1542,6 +1565,16 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
   if (!button) return false;
 
   const before = new Set(controls().map((c) => c.el));
+  // Belt as well as braces: even with the click fixed, adding a block the form
+  // already has would duplicate a degree, and a duplicated degree on an
+  // application is the user's problem to clean up.
+  const schoolBoxes = controls().filter(({ label }) =>
+    window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)))?.key === "school"
+  );
+  if (schoolBoxes.length > 1) {
+    trace.push({ label: "Add education", outcome: "left alone", why: "the form already has a second block" });
+    return false;
+  }
   clickLike(button);
 
   let fresh = [];
@@ -1612,6 +1645,25 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
 function unclassified() {
   const known = new Set(controls().map((c) => c.el));
   const out = [];
+
+  // Form controls the scan dropped, which is where the month and year pickers
+  // have been hiding: a control with no resolvable label is skipped by the
+  // scan, and was skipped here too for being a form control. Between the two it
+  // appeared in nothing at all, three runs running.
+  for (const el of document.querySelectorAll("input,select,textarea") || []) {
+    if (known.has(el) || isOurs(el)) continue;
+    out.push({
+      tag: el.tagName.toLowerCase(),
+      type: el.getAttribute("type") || "",
+      name: el.getAttribute("name") || "",
+      id: el.id || "",
+      cls: String(el.className || "").slice(0, 70),
+      placeholder: el.getAttribute("placeholder") || "",
+      why: "skipped by the scan",
+      at: pathTo(el),
+    });
+  }
+
   for (const el of document.querySelectorAll("button,[role],[tabindex],[class*='select'],[class*='picker']") || []) {
     if (known.has(el) || isOurs(el)) continue;
     if (["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) continue;
@@ -1677,5 +1729,6 @@ window.HIRECRAFT_FILL = {
   checkboxQuestions,
   unclassified,
   addEducationButton,
+  clickLike,
   choiceCandidates,
 };
