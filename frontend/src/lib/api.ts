@@ -468,6 +468,8 @@ export interface CareerProfile {
   /* Asked separately from veteran_status: a person can have served without
      being a protected veteran, and forms put both questions on one page. */
   military_service: "yes" | "no" | "decline" | null;
+  /* The privacy / terms acknowledgement forms end with. null leaves it alone. */
+  consent_to_terms: boolean | null;
   preferred_roles: string[];
   preferred_industries: string[];
   preferred_locations: string[];

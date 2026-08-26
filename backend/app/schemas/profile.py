@@ -77,6 +77,9 @@ class CareerProfileUpdate(ProfileModel):
     # Not derived from veteran_status: a person can have served without being a
     # protected veteran, and forms ask the two questions separately.
     military_service: YesNoDecline | None = None
+    # Consent only — a privacy notice or a terms acknowledgement. A question of
+    # fact worded as an agreement is not answered from this.
+    consent_to_terms: bool | None = None
 
     preferred_roles: list[str] | None = Field(default=None, max_length=20)
     preferred_industries: list[str] | None = Field(default=None, max_length=20)
@@ -125,6 +128,7 @@ class CareerProfileResponse(ProfileModel):
     veteran_status: VeteranStatus | None
     disability_status: DisabilityStatus | None
     military_service: YesNoDecline | None
+    consent_to_terms: bool | None
     preferred_roles: list[str]
     preferred_industries: list[str]
     preferred_locations: list[str]

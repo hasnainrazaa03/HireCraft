@@ -194,6 +194,24 @@ function workAuthOption(text) {
   return null;
 }
 
+/**
+ * What an agreement option means.
+ *
+ * These are worded as "I agree" at least as often as "Yes", and a stored "Yes"
+ * matches neither the wording nor any part of it — Reddit's form offers exactly
+ * one option, reading "I agree", and nothing generic would ever find it.
+ */
+function consentOption(text) {
+  const t = normText(text);
+  if (/^no\b|\bi\s*do\s*not\s*(agree|consent|accept)\b|\bdecline\b|\bdisagree\b/.test(t)) {
+    return "no";
+  }
+  if (/^yes\b|^agree\b|^accept\b|\bi\s*(agree|accept|acknowledge|consent|certify|confirm)\b/.test(t)) {
+    return "yes";
+  }
+  return null;
+}
+
 /** US state abbreviations, so "CA" and "California" are the same answer. */
 const US_STATES = {
   al: "alabama", ak: "alaska", az: "arizona", ar: "arkansas", ca: "california",
@@ -368,6 +386,13 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
   const exact = options.findIndex((o) => normText(o) === target);
   if (exact >= 0) return { index: exact, why: "exact match" };
 
+  // 2c. An agreement, which is as often worded "I agree" as "Yes".
+  if (kind === "consent") {
+    const hit = options.findIndex((o) => consentOption(o) === target);
+    if (hit >= 0) return { index: hit, why: `matched "${options[hit]}"` };
+    return { index: -1, why: `no option means "${want}"` };
+  }
+
   // 2b. A place. Handled apart from everything below because a city and its
   //     state cannot be compared as one string — see matchPlace.
   if (kind === "location") return matchPlace(want, options);
@@ -482,6 +507,7 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
 window.HIRECRAFT_OPTIONS = {
   normText,
   workAuthOption,
+  consentOption,
   placeParts,
   matchPlace,
   degreeLevel,

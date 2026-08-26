@@ -254,6 +254,7 @@ test("every field can produce a value from a full profile", () => {
     open_to_relocation: true,
     authorized_to_work: true,
     requires_sponsorship: true,
+    consent_to_terms: true,
     self_identification: {
       gender: "male",
       race_ethnicity: "asian",
@@ -466,4 +467,35 @@ test("military service and veteran status are separate questions", () => {
   // Answered only from its own stored value — never from veteran_status.
   assert.equal(service.from({ self_identification: { veteran_status: "not_protected" } }), "");
   assert.equal(service.from({ self_identification: { military_service: "no" } }), "no");
+});
+
+test("privacy and terms acknowledgements are recognised as consent", () => {
+  assert.equal(claim("Privacy"), "consent_to_terms");
+  assert.equal(claim("Privacy Policy"), "consent_to_terms");
+  assert.equal(claim("Terms and Conditions"), "consent_to_terms");
+  assert.equal(
+    claim("By selecting \"I agree,\" I understand that the information I have provided will be processed"),
+    "consent_to_terms"
+  );
+  assert.equal(claim("I acknowledge that the information above is accurate"), "consent_to_terms");
+
+  const field = FIELDS.find((f) => f.key === "consent_to_terms");
+  assert.equal(field.from({}), "");                              // unset stays blank
+  assert.equal(field.from({ consent_to_terms: true }), "yes");
+  assert.equal(field.from({ consent_to_terms: false }), "no");
+});
+
+test("a question of fact worded as an agreement is not consent", () => {
+  // The hazard in the pattern list: "agree" appears in questions that are
+  // about someone's history, not about permission they are granting. Agreeing
+  // to a privacy notice on their behalf is what they asked for; answering
+  // whether they have a conviction is not.
+  for (const label of [
+    "Have you ever been convicted of a felony?",
+    "Are you subject to a non-competition agreement?",
+    "Have you ever been terminated for cause?",
+    "Do you have any agreements that would restrict your employment?",
+  ]) {
+    assert.notEqual(claim(label), "consent_to_terms", label);
+  }
 });

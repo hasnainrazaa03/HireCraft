@@ -270,6 +270,24 @@ export default function ProfilePage() {
             </select>
           </Field>
         </div>
+        {/* Kept in this section because it has the same shape: a question every
+            form asks, whose answer never changes, and which the app must not
+            answer for you unless you have said so. */}
+        <div className="mt-4">
+          <Field label="Privacy notices and terms acknowledgements">
+            <select className="input" value={yesNo(form.consent_to_terms)} onChange={(e) => set("consent_to_terms", fromYesNo(e.target.value))}>
+              <option value="">Leave for me to answer</option>
+              <option value="yes" className="bg-surface">Agree automatically</option>
+              <option value="no" className="bg-surface">Decline automatically</option>
+            </select>
+          </Field>
+          <p className="mt-2 text-xs text-subtle">
+            Covers consent only — a privacy notice, a data-processing agreement, an
+            "I certify the above is accurate" box. Questions of fact worded as
+            agreements (a conviction, a termination, a non-compete) are never
+            answered from this.
+          </p>
+        </div>
       </Section>
 
       <Section title="Preferences">

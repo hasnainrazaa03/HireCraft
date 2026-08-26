@@ -695,6 +695,8 @@ the panel.**
   - Notes:
 - ⬜ **T-EXT-17** Set one answer to **Decline to answer** — it must actively select the decline option, not leave the question blank.
   - Notes:
+- ⬜ **T-EXT-28** **Consent, not facts.** With *Privacy notices* set to agree, a "Privacy" or "I agree" question fills — including forms whose only option reads "I agree" rather than "Yes". But a question of **fact** worded as an agreement must stay empty: a conviction, a termination, a non-compete. Filling one of those is a **P0** — it is a statement about your history, not a permission you are granting.
+  - Notes:
 - ⬜ **T-EXT-27** **Military service is not the veteran question.** A form asking "Have you served in the military?" must be answered from the service answer, and one asking "Veteran status" from the EEOC one. They sit on the same page on Greenhouse forms. "Protected veteran" carries conditions a person who served may not meet, so an answer to either must never be derived from the other — doing so puts a claim about someone's military service on an application. **P0** if crossed.
   - Notes:
 

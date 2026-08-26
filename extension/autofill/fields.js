@@ -290,6 +290,27 @@ const FIELDS = [
     ],
   },
   {
+    key: "consent_to_terms",
+    label: "Privacy / terms",
+    kind: "consent",
+    // Consent only. The patterns are anchored on agreement and privacy language
+    // rather than on the word "agree" alone, because a question of *fact* can
+    // be worded as one — a conviction, a termination, a non-compete — and those
+    // are answers about someone's history, not permissions they are granting.
+    from: (p) => (p.consent_to_terms == null ? "" : p.consent_to_terms ? "yes" : "no"),
+    whenEmpty: "set it once in Career Profile → Privacy notices",
+    match: [
+      /^privacy\b/,
+      /\bprivacy\s*(policy|notice|statement)\b/,
+      /\bterms\s*(and|&)?\s*conditions\b/,
+      /\bdata\s*(processing|protection|privacy)\b/,
+      /\bi\s*(agree|consent|acknowledge|certify|confirm)\b/,
+      /\bconsent\s*to\s*(the|our|this)\b/,
+      /\backnowledge\s*(and\s*agree|that)\b/,
+      /\bgdpr\b/,
+    ],
+  },
+  {
     key: "years_experience",
     label: "Years of experience",
     from: (p) => (p.years_experience == null ? "" : String(p.years_experience)),

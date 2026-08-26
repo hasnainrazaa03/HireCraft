@@ -153,6 +153,7 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
             "disability_status": (profile.disability_status if profile else None),
             "military_service": (profile.military_service if profile else None),
         },
+        "consent_to_terms": (profile.consent_to_terms if profile else None),
         # The most recent degree, which is what "School", "Degree", "Graduation
         # year" and "GPA" on an application form are asking about. Taken from the
         # résumé because that is where it already lives — re-entering a degree

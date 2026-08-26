@@ -381,3 +381,16 @@ test("a bare city with no region still matches", () => {
     "Seattle, Washington, United States"
   );
 });
+
+test("an agreement is matched however the form words it", () => {
+  // Reddit's form offers exactly one option, reading "I agree". A stored "yes"
+  // matches neither that wording nor any part of it.
+  assert.equal(chose("yes", ["I agree"], "consent"), "I agree");
+  assert.equal(chose("yes", ["Yes", "No"], "consent"), "Yes");
+  assert.equal(chose("yes", ["I accept the terms", "I do not accept"], "consent"), "I accept the terms");
+  assert.equal(chose("no", ["Yes", "No"], "consent"), "No");
+  assert.equal(chose("no", ["I agree", "I do not agree"], "consent"), "I do not agree");
+
+  // An option list that expresses no agreement is reported, not guessed at.
+  assert.equal(chooseOption("yes", ["Maybe", "Later"], { kind: "consent" }).index, -1);
+});

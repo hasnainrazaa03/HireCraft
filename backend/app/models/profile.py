@@ -94,6 +94,11 @@ class CareerProfile(Base, TimestampMixin):
     # answer no to it truthfully. Forms ask both, often on the same page.
     military_service: Mapped[str | None] = mapped_column(String(40))
 
+    # The privacy notice / terms acknowledgement every application ends with.
+    # Stored rather than assumed: agreeing to something on someone's behalf is
+    # not a default the app gets to pick. Null leaves the question alone.
+    consent_to_terms: Mapped[bool | None] = mapped_column(Boolean)
+
     # Free-form preference lists, stored as JSON arrays of strings.
     preferred_roles: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
     preferred_industries: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
