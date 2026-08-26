@@ -172,3 +172,32 @@ test("plain lists still match without being told what they are", () => {
   assert.equal(chose("United States", countries, null), "United States");
   assert.equal(chose("Yes", ["Yes", "No"], null), "Yes");
 });
+
+test("a duration is not matched against options measured in something else", () => {
+  // Found by dry-running a real Twitch form: 2.5 years of experience matched
+  // "Less than 6 months", because 2.5 < 6 and nothing knew what 6 counted.
+  const TENURE = ["Less than 6 months", "6 months - 1 year", "1-2 years", "3-5 years", "5+ years"];
+
+  assert.equal(chooseOption("2.5", TENURE, { unit: "years" }).index, -1,
+    "2.5 years sits between the 1-2 and 3-5 bands, so there is no honest answer");
+  assert.equal(TENURE[chooseOption("4", TENURE, { unit: "years" }).index], "3-5 years");
+  assert.equal(TENURE[chooseOption("0.25", TENURE, { unit: "years" }).index], "Less than 6 months");
+
+  // Without a declared unit the comparison is meaningless and is refused.
+  assert.equal(chooseOption("2.5", TENURE, {}).index, -1);
+});
+
+test("a range naming two units is not guessed at", () => {
+  // "6 months - 1 year" cannot be read as one span; picking either unit is
+  // wrong by a factor of twelve.
+  assert.equal(parseRange("6 months - 1 year"), null);
+  assert.equal(parseRange("Less than 6 months").unit, "month");
+  assert.equal(parseRange("3-5 years").unit, "year");
+});
+
+test("unitless ranges are unaffected", () => {
+  // GPA bands and year bands name no unit, so none of the above applies.
+  assert.equal(parseRange("3.6 - 4.0").unit, null);
+  assert.equal(parseRange("2023-2026").unit, null);
+  assert.equal(chooseOption("3.67", ["3.6 - 4.0", "3.1 - 3.5"], {}).index, 0);
+});

@@ -242,7 +242,7 @@ function probesFor(value, kind) {
  * probing. A combobox showing "2027" that has committed nothing is exactly the
  * false impression this whole change exists to remove.
  */
-async function chooseFromCombobox(el, value, kind) {
+async function chooseFromCombobox(el, value, kind, unit) {
   let box = await openListbox(el);
   let nodes = optionNodes(box);
 
@@ -266,7 +266,7 @@ async function chooseFromCombobox(el, value, kind) {
   }
 
   const texts = nodes.map(optionText);
-  const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind });
+  const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind, unit });
   if (index < 0) {
     setValue(el, "");
     pressKey(el, "Escape");
@@ -379,7 +379,10 @@ async function fillForm(
     let result;
     if (el instanceof HTMLSelectElement) {
       const texts = Array.from(el.options || []).map((o) => o.text);
-      const choice = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind: field.kind });
+      const choice = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, {
+          kind: field.kind,
+          unit: field.unit,
+        });
       if (choice.index >= 0) {
         setValue(el, el.options[choice.index].value);
         result = { ok: true, actual: texts[choice.index] };
@@ -387,7 +390,7 @@ async function fillForm(
         result = { ok: false, why: choice.why, offered: texts.slice(0, 12) };
       }
     } else if (isCombobox(el)) {
-      result = await chooseFromCombobox(el, value, field.kind);
+      result = await chooseFromCombobox(el, value, field.kind, field.unit);
       if (result.ok) result.actual = result.chosen;
     } else {
       result = await setAndVerify(el, value);

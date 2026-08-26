@@ -163,6 +163,12 @@ const EEO = {
  */
 function parseRange(text) {
   const t = normText(text);
+  // "6 months - 1 year" names two units in one range and cannot be read as a
+  // single span. Refusing it is better than picking one unit and being wrong by
+  // a factor of twelve.
+  const units = unitsIn(t);
+  if (units.length > 1) return null;
+  const unit = units[0] || null;
   // No leading sign: form ranges are never negative, and allowing one made
   // "2023-2026" read its second number as -2026.
   const num = /\d+(?:\.\d+)?/g;
@@ -170,25 +176,40 @@ function parseRange(text) {
 
   // "3.6 - 4.0", "2023-2026", "3.6 to 4.0"
   if (found.length >= 2 && /\d\s*(?:-|to|–|—)\s*\d/.test(t)) {
-    return { lo: found[0], hi: found[1], loOpen: false, hiOpen: false };
+    return { lo: found[0], hi: found[1], loOpen: false, hiOpen: false, unit };
   }
   if (found.length !== 1) return null;
   const n = found[0];
 
   if (/\bbefore\b|\bprior to\b|\bearlier than\b|\bless than\b|\bunder\b(?!\s*$)/.test(t) &&
       !/\bor\b/.test(t)) {
-    return { lo: -Infinity, hi: n, loOpen: false, hiOpen: true };
+    return { lo: -Infinity, hi: n, loOpen: false, hiOpen: true, unit };
   }
   if (/\bor\s*(under|below|less|fewer|earlier)\b|\bor\s*younger\b/.test(t)) {
-    return { lo: -Infinity, hi: n, loOpen: false, hiOpen: false };
+    return { lo: -Infinity, hi: n, loOpen: false, hiOpen: false, unit };
   }
   if (/\bafter\b|\bmore than\b|\bgreater than\b|\bover\b/.test(t)) {
-    return { lo: n, hi: Infinity, loOpen: true, hiOpen: false };
+    return { lo: n, hi: Infinity, loOpen: true, hiOpen: false, unit };
   }
   if (/\bor\s*(above|over|more|later|greater|higher)\b|\+\s*$/.test(t)) {
-    return { lo: n, hi: Infinity, loOpen: false, hiOpen: false };
+    return { lo: n, hi: Infinity, loOpen: false, hiOpen: false, unit };
   }
   return null;
+}
+
+/** How long a unit is, in years — the base every duration is compared in. */
+const UNIT_YEARS = { year: 1, month: 1 / 12, week: 1 / 52, day: 1 / 365 };
+
+/** Every distinct time unit named in a piece of text. */
+function unitsIn(text) {
+  const found = new Set();
+  for (const m of normText(text).matchAll(/\b(years?|yrs?|months?|mos?|weeks?|days?)\b/g)) {
+    const w = m[1];
+    found.add(
+      w[0] === "y" ? "year" : w[0] === "m" ? "month" : w[0] === "w" ? "week" : "day"
+    );
+  }
+  return [...found];
 }
 
 function rangeHas(range, n) {
@@ -219,7 +240,7 @@ const tokens = (text) => new Set(normText(text).split(" ").filter(Boolean));
  * Returns `{index, why}`. A negative index always carries a reason, because the
  * caller has to be able to tell the user what happened.
  */
-function chooseOption(want, optionTexts, { kind = null } = {}) {
+function chooseOption(want, optionTexts, { kind = null, unit = null } = {}) {
   const options = optionTexts.map((t) => String(t ?? ""));
   if (!options.length) return { index: -1, why: "the list was empty" };
 
@@ -254,10 +275,20 @@ function chooseOption(want, optionTexts, { kind = null } = {}) {
     let best = -1;
     let bestWidth = Infinity;
     options.forEach((o, i) => {
-      const range = parseRange(o);
+      let range = parseRange(o);
+      if (!range) return;
+      if (range.unit) {
+        // The options are measured in something. Without knowing what the
+        // stored value is measured in, there is no honest comparison to make —
+        // "2.5" against "Less than 6 months" silently read as a match, and 2.5
+        // years is not less than six months.
+        if (!unit) return;
+        const scale = UNIT_YEARS[range.unit] / (UNIT_YEARS[unit] ?? 1);
+        range = { ...range, lo: range.lo * scale, hi: range.hi * scale };
+      }
       // `best < 0` first: an open-ended range has infinite width, and
       // comparing that against the initial Infinity excluded it forever.
-      if (range && rangeHas(range, n) && (best < 0 || rangeWidth(range) < bestWidth)) {
+      if (rangeHas(range, n) && (best < 0 || rangeWidth(range) < bestWidth)) {
         best = i;
         bestWidth = rangeWidth(range);
       }

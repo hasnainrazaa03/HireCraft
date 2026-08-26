@@ -66,7 +66,8 @@ const FIELDS = [
     // real form this was tried on.
     match: [
       /^location\b/, /\bcurrent\s*location\b/, /^city\b/, /\bcity\b/,
-      /\bwhere\s+are\s+you\s+located\b/, /^town\b/,
+      /\bwhere\s+are\s+you\s+(currently\s+|presently\s+)?(located|based)\b/,
+      /\bcurrently\s+(located|based)\b/, /^town\b/,
     ],
   },
   {
@@ -105,7 +106,13 @@ const FIELDS = [
     key: "school",
     label: "School",
     from: (p) => p.education?.school,
-    match: [/^school$/, /\bschool\s*name\b/, /\buniversity\b/, /\bcollege\b/, /\binstitution\b/],
+    // "institution" is not anchored on its own: an H-1B question ending "…other
+    // than a cap exempt institution?" matched it, and the filler tried to
+    // answer a yes/no with a university name.
+    match: [
+      /^school$/, /\bschool\s*name\b/, /\buniversity\b/, /\bcollege\b/,
+      /^institution$/, /\beducational\s*institution\b/, /\binstitution\s*name\b/,
+    ],
   },
   {
     key: "degree",
@@ -228,7 +235,15 @@ const FIELDS = [
     key: "years_experience",
     label: "Years of experience",
     from: (p) => (p.years_experience == null ? "" : String(p.years_experience)),
-    match: [/\byears\s*(of)?\s*(relevant\s*)?experience\b/, /\bhow\s*many\s*years\b/],
+    // The question has to be about experience. A bare "how many years" also
+    // matched "How many years have you been active on the platform?", which is
+    // about using a product, not about a career.
+    unit: "years",
+    match: [
+      /\byears\s*(of\s*)?(relevant\s*|professional\s*|work\s*|industry\s*)?experience\b/,
+      /\bhow\s*many\s*years\s*(of\s*)?(relevant\s*|professional\s*|work\s*|industry\s*)?experience\b/,
+      /\byears\s*in\s*(the\s*)?(industry|field)\b/,
+    ],
   },
 ];
 
@@ -255,6 +270,41 @@ const SKIP = [
       /\bsexual\s*orientation\b/,
       /\bdate\s*of\s*birth\b/,
     ],
+  },
+  {
+    // Deliberately narrow. Plenty of legitimate sponsorship questions name H-1B
+    // ("will you require sponsorship, e.g. H-1B?") and those must still be
+    // answered; only a question about status previously *held* is skipped. We
+    // store a current visa status, not an immigration history.
+    why: "your visa history isn't stored — answer this yourself",
+    match: [
+      /\bhave\s+you\s+(ever\s+)?(held|had)\b[^?]{0,90}\bh\s*-?\s*1\s*b\b/,
+      /\bpreviously\s+held\b[^?]{0,60}\b(visa|status)\b/,
+    ],
+  },
+  {
+    // Checked before the `country` field can claim these. HireCraft stores the
+    // country someone *lives in*; a form asking which country they hold
+    // citizenship in is asking something else entirely, and answering it from a
+    // location would put "United States" against the citizenship of someone on
+    // a student visa. These are export-control and right-to-work questions
+    // where a wrong answer is a false statement, not a typo.
+    why: "citizenship isn't stored — answer this yourself",
+    match: [
+      /\bcitizenships?\b/,
+      /\bcitizen\b/,
+      /\bnationality\b/,
+      /\bexport\s*(control|licensing|regulation)/,
+      /\bcountry\s*of\s*(origin|birth)\b/,
+      /\bpassport\b/,
+      /\bdual\s*national/,
+    ],
+  },
+  {
+    // Same reasoning: a clearance is a fact about someone's record, we hold
+    // none of it, and "eligible" is a judgement they have to make themselves.
+    why: "clearance status is yours to state",
+    match: [/\bsecurity\s*clearance\b/, /\bclearances?\b/, /\bpolygraph\b/],
   },
   {
     why: "depends on the offer",

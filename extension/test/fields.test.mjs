@@ -309,3 +309,80 @@ test("an unanswered work-authorization question is left blank, not guessed", () 
     assert.equal(by[key].from({ [key]: false }), "No");
   }
 });
+
+test("a citizenship question is never answered from the stored country", () => {
+  // Found by reading a real Amazon/Twitch form: it asks "In which
+  // country/region do you have citizenship?", which contains the word
+  // "country". HireCraft stores where you live, not what you hold — answering
+  // one from the other writes "United States" against the citizenship of
+  // someone on a student visa, on an export-control question.
+  for (const label of [
+    "In which country/region do you have citizenship?",
+    "For the sole purpose of determining export licensing requirements, in which country do you hold citizenship?",
+    "Country of citizenship",
+    "What is your nationality?",
+    "Are you a U.S. citizen?",
+    "Country of birth",
+  ]) {
+    assert.equal(claim(label), "SKIP", `${label} must not be auto-answered`);
+  }
+
+  // The ordinary country question still fills, or the fix would have cost more
+  // than it saved.
+  assert.equal(claim("Country"), "country");
+  assert.equal(claim("Country of residence"), "country");
+});
+
+test("clearance questions are left to the candidate", () => {
+  for (const label of [
+    "Clearance Eligibility",
+    "Active Security Clearance(s)",
+    "Do you hold a current security clearance?",
+  ]) {
+    assert.equal(claim(label), "SKIP", `${label} must not be auto-answered`);
+  }
+});
+
+test("visa history is skipped without disarming the sponsorship question", () => {
+  // These sit close together and mean different things. "Have you held H-1B
+  // status?" is about a record we do not hold; "will you require sponsorship?"
+  // is answered from a stored decision and must keep working, including when it
+  // names H-1B itself — which is how most forms word it.
+  assert.equal(
+    claim("Have you held H-1B status, or had an H-1B petition approved on your behalf, within the preceding 6 years for an employer other than a cap exempt institution?"),
+    "SKIP"
+  );
+  assert.equal(
+    claim("Will you now or in the future require sponsorship for employment visa status (e.g. H-1B)?"),
+    "requires_sponsorship"
+  );
+  assert.equal(
+    claim("Do you need, or will you need in the future, any immigration related support or sponsorship?"),
+    "requires_sponsorship"
+  );
+});
+
+test("a question about a product is not answered from work experience", () => {
+  // "How many years have you been active on the platform?" was answered from
+  // years_experience, and then bucketed into "Less than 6 months".
+  const got = claim("How many years have you been active on the platform?");
+  assert.notEqual(got, "years_experience", "a platform-usage question is not a career question");
+});
+
+test("an H-1B question is not answered with a university name", () => {
+  // "…an employer other than a cap exempt institution?" matched the school
+  // field on the word "institution".
+  assert.notEqual(
+    claim("Have you held H-1B status for an employer other than a cap exempt institution?"),
+    "school"
+  );
+  // The real school questions still match.
+  assert.equal(claim("School"), "school");
+  assert.equal(claim("University"), "school");
+  assert.equal(claim("Institution name"), "school");
+});
+
+test("a location question survives an adverb", () => {
+  assert.equal(claim("Where are you currently located?"), "location");
+  assert.equal(claim("Where are you based?"), "location");
+});
