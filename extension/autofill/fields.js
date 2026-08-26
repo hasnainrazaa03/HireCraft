@@ -60,6 +60,10 @@ const FIELDS = [
   {
     key: "location",
     label: "Location",
+    // A place is matched by its parts, not as a string: "Los Angeles, CA"
+    // against a worldwide city list is otherwise a coin toss between the right
+    // answer, East Los Angeles, and Los Ángeles in Campeche.
+    kind: "location",
     from: (p) => p.location,
     // "Location (City)" normalises to "location city", which none of the
     // original anchored patterns matched — the field sat empty on the first

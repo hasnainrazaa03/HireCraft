@@ -325,3 +325,59 @@ test("a city match takes the closest option, not the longest", () => {
     "United States"
   );
 });
+
+// --- places, from the list a live Point72 form actually returned ------------
+
+const CITIES = [
+  "Los Angeles, California, United States",
+  "Los Angeles, California, United States",
+  "East Los Angeles, California, United States",
+  "Lake Los Angeles, California, United States",
+  "Los Ángeles, Campeche, Mexico",
+  "Los Ángeles, Biobío, Chile",
+];
+
+test("a city is matched by its parts, not by string similarity", () => {
+  // Two different wrong answers came out of this list before the parts were
+  // compared separately. Ranking by longest gave East Los Angeles; ranking by
+  // least-extra gave Los Ángeles in Campeche, because "los angeles ca" is
+  // genuinely a prefix of "los angeles campeche mexico" and that option is the
+  // shorter of the two.
+  assert.equal(
+    chose("Los Angeles, CA", CITIES, "location"),
+    "Los Angeles, California, United States"
+  );
+  assert.equal(
+    chose("Los Angeles, California", CITIES, "location"),
+    "Los Angeles, California, United States"
+  );
+});
+
+test("a same-named city in the wrong place is refused, not offered", () => {
+  // The whole point. A city of this name exists, but not in Texas, and putting
+  // the wrong city on an application is not a near miss.
+  const result = chooseOption("Los Angeles, TX", CITIES, { kind: "location" });
+  assert.equal(result.index, -1);
+  assert.match(result.why, /not in texas/i);
+
+  const missing = chooseOption("Reykjavik, Iceland", CITIES, { kind: "location" });
+  assert.equal(missing.index, -1);
+  assert.match(missing.why, /no option is/);
+});
+
+test("state abbreviations and full names are the same answer", () => {
+  const { placeParts } = window.HIRECRAFT_OPTIONS;
+  assert.equal(placeParts("Los Angeles, CA").region, "california");
+  assert.equal(placeParts("Los Angeles, California, United States").region, "california");
+  assert.equal(placeParts("Austin, TX").region, "texas");
+  // Accents are folded, so "Los Ángeles" and "Los Angeles" compare as cities.
+  assert.equal(placeParts("Los Ángeles, Campeche, Mexico").city, "los angeles");
+  assert.equal(placeParts("Los Ángeles, Campeche, Mexico").region, "campeche");
+});
+
+test("a bare city with no region still matches", () => {
+  assert.equal(
+    chose("Seattle", ["Seattle, Washington, United States", "Tacoma, Washington, United States"], "location"),
+    "Seattle, Washington, United States"
+  );
+});

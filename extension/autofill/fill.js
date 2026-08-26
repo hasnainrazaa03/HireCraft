@@ -782,13 +782,23 @@ async function pickPlace(el, value) {
 
   for (let tries = 0; tries < 14; tries += 1) {
     await pause(120);
-    const nodes = optionNodes(listboxFor(el));
+    const nodes = optionNodes(namedListbox(el) || listboxFor(el));
     if (!nodes.length) continue;
-    const chosen = optionText(nodes[0]);
-    nodes[0].scrollIntoView?.({ block: "nearest" });
-    clickLike(nodes[0]);
+
+    // Matched by parts rather than taken from the top of the list. A place
+    // autocomplete ranks well but not infallibly, and a wrong city on an
+    // application is not a near miss — the same list that offered "Los Angeles,
+    // California" also offered "Los Ángeles, Campeche, Mexico".
+    const texts = nodes.map(optionText);
+    const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, {
+      kind: "location",
+    });
+    if (index < 0) return { ok: false, why, offered: texts.slice(0, 8) };
+
+    nodes[index].scrollIntoView?.({ block: "nearest" });
+    clickLike(nodes[index]);
     await pause(140);
-    if (String(el.value ?? "").trim()) return { ok: true, actual: chosen };
+    if (displayedValue(el)) return { ok: true, actual: texts[index] };
   }
 
   // Leave the typed text: it is the right city, and a human can pick the

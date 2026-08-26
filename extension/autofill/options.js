@@ -194,6 +194,83 @@ function workAuthOption(text) {
   return null;
 }
 
+/** US state abbreviations, so "CA" and "California" are the same answer. */
+const US_STATES = {
+  al: "alabama", ak: "alaska", az: "arizona", ar: "arkansas", ca: "california",
+  co: "colorado", ct: "connecticut", de: "delaware", dc: "district of columbia",
+  fl: "florida", ga: "georgia", hi: "hawaii", id: "idaho", il: "illinois",
+  in: "indiana", ia: "iowa", ks: "kansas", ky: "kentucky", la: "louisiana",
+  me: "maine", md: "maryland", ma: "massachusetts", mi: "michigan",
+  mn: "minnesota", ms: "mississippi", mo: "missouri", mt: "montana",
+  ne: "nebraska", nv: "nevada", nh: "new hampshire", nj: "new jersey",
+  nm: "new mexico", ny: "new york", nc: "north carolina", nd: "north dakota",
+  oh: "ohio", ok: "oklahoma", or: "oregon", pa: "pennsylvania",
+  ri: "rhode island", sc: "south carolina", sd: "south dakota", tn: "tennessee",
+  tx: "texas", ut: "utah", vt: "vermont", va: "virginia", wa: "washington",
+  wv: "west virginia", wi: "wisconsin", wy: "wyoming", pr: "puerto rico",
+};
+
+/**
+ * A place, split into city and region.
+ *
+ * Split on commas *before* normalising, because normalising drops the commas —
+ * and the commas are the only thing separating a city from its state.
+ */
+function placeParts(text) {
+  const parts = String(text ?? "")
+    .split(",")
+    .map((piece) => normText(piece))
+    .filter(Boolean);
+  if (!parts.length) return null;
+  const after = parts.slice(1);
+  return {
+    city: parts[0],
+    region: after[0] ? US_STATES[after[0]] || after[0] : "",
+    all: parts,
+  };
+}
+
+/**
+ * Match a place by its parts rather than as a string.
+ *
+ * Generic string matching cannot do this, and produced a different wrong city
+ * each time it was tuned. Ranking by longest gave "East Los Angeles,
+ * California" for "Los Angeles, CA"; ranking by least-extra then gave "Los
+ * Ángeles, Campeche, Mexico", because "los angeles ca" really is a prefix of
+ * "los angeles campeche mexico" and that option is the shorter of the two. The
+ * abbreviation is the whole problem: nothing about the characters says "CA" is
+ * a state in one reading and the first half of "Campeche" in the other.
+ *
+ * So the city must match outright, and where a region is known it must match
+ * too. A city of the same name in another state or country is a different
+ * place, and returning nothing is the correct answer — putting the wrong city
+ * on an application is not a near miss.
+ */
+function matchPlace(want, options) {
+  const wanted = placeParts(want);
+  if (!wanted?.city) return { index: -1, why: `could not read "${want}" as a place` };
+
+  const sameCity = options
+    .map((text, index) => ({ index, place: placeParts(text) }))
+    .filter(({ place }) => place && place.city === wanted.city);
+
+  if (!sameCity.length) return { index: -1, why: `no option is "${wanted.city}"` };
+  if (!wanted.region) {
+    return { index: sameCity[0].index, why: `matched "${options[sameCity[0].index]}"` };
+  }
+
+  const sameRegion = sameCity.filter(
+    ({ place }) => place.region === wanted.region || place.all.includes(wanted.region)
+  );
+  if (sameRegion.length) {
+    return { index: sameRegion[0].index, why: `matched "${options[sameRegion[0].index]}"` };
+  }
+  return {
+    index: -1,
+    why: `found ${wanted.city} but not in ${wanted.region} — pick this one yourself`,
+  };
+}
+
 /**
  * A numeric range written as option text, or null if it isn't one.
  *
@@ -290,6 +367,10 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
   // 1. The value is already one of the options.
   const exact = options.findIndex((o) => normText(o) === target);
   if (exact >= 0) return { index: exact, why: "exact match" };
+
+  // 2b. A place. Handled apart from everything below because a city and its
+  //     state cannot be compared as one string — see matchPlace.
+  if (kind === "location") return matchPlace(want, options);
 
   // 2a. A work-authorisation list written as sentences rather than yes/no.
   if (kind === "work_authorization" && context) {
@@ -401,6 +482,8 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
 window.HIRECRAFT_OPTIONS = {
   normText,
   workAuthOption,
+  placeParts,
+  matchPlace,
   degreeLevel,
   isDecline,
   EEO,
