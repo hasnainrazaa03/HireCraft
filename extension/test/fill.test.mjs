@@ -678,3 +678,85 @@ test("a group already answered is left alone", async () => {
   assert.equal(report.filled.length, 0);
   assert.ok(report.trace.some((e) => e.outcome === "left alone"));
 });
+
+test("a radio with no label is still selectable through its row", async () => {
+  // Ashby's markup: the input sits inside a span inside the option row, with no
+  // <label> anywhere. Clicking the input hit nothing, so Gender and Race came
+  // back "the option would not take" while Veteran Status — nested differently
+  // — worked. Only the click failed; the match had been right all along.
+  const group = makeRadioGroup({
+    question: "Gender",
+    name: "gender",
+    options: ["Male", "Female", "Decline to self-identify"],
+  });
+  for (const el of group.els) {
+    const row = { click: () => { for (const other of group.els) other.checked = other === el; } };
+    el.closest = (sel) => (sel.includes("option") ? row : null);   // no label at all
+    el.click = () => {};                                            // the input is inert
+  }
+  const window = installRadios(group);
+
+  await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, self_identification: { gender: "male" } },
+    { stepDelay: 0 }
+  );
+  assert.equal(group.els[0].checked, true, "the option row must be clicked");
+});
+
+test("an option's parts are not glued together", async () => {
+  // Ashby renders a school as name, country and domain in separate elements.
+  // textContent produced "University of Southern CaliforniaUnited Statesusc.edu",
+  // which is what the report showed back.
+  const window = install([]);
+  const { optionNodes } = window.HIRECRAFT_FILL;
+  const box = {
+    getBoundingClientRect: rect(200, 200),
+    querySelectorAll: (sel) =>
+      sel.includes("option")
+        ? [{
+            innerText: "University of Southern California\nUnited States\nusc.edu",
+            textContent: "University of Southern CaliforniaUnited Statesusc.edu",
+            getBoundingClientRect: rect(200, 40),
+            getAttribute: () => "option",
+          }]
+        : [],
+  };
+  const rows = optionNodes(box);
+  assert.equal(rows.length, 1);
+});
+
+test("a value the page puts back is reported as failed, not as filled", async () => {
+  // The failure this whole pass is about. A controlled component accepts a
+  // write, re-renders from its own unchanged state, and restores the field —
+  // and a check made immediately after writing reads the gap in between. An
+  // Ashby form reported Veteran Status answered while nothing was selected on
+  // the page.
+  const reverting = makeControl({ label: "First Name" });
+  let written = "";
+  Object.defineProperty(reverting, "value", {
+    get: () => written,
+    set: (v) => {
+      written = v;
+      // The page restores it a moment later, as React does on re-render.
+      setTimeout(() => { written = ""; }, 60);
+    },
+  });
+
+  const window = install([reverting]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(report.filled.length, 0, "nothing survived, so nothing is filled");
+  assert.match(report.missing[0].why, /put it back/);
+  assert.ok(report.trace.some((e) => e.outcome === "reverted"));
+});
+
+test("a value that sticks is still reported as filled", async () => {
+  // The re-check must not throw away correct work.
+  const steady = makeControl({ label: "First Name" });
+  const window = install([steady]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.deepEqual(report.filled.map((f) => f.value), ["Mohammad Hasnain"]);
+  assert.equal(report.missing.length, 0);
+  assert.ok(!("holds" in report.filled[0]), "the internal re-check must not leak into the report");
+});

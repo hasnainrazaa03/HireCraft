@@ -355,7 +355,25 @@ function optionNodes(box) {
   });
 }
 
-const optionText = (node) => (node.textContent || "").replace(/\s+/g, " ").trim();
+/**
+ * The readable text of one option.
+ *
+ * innerText rather than textContent: Ashby renders a school as three separate
+ * elements — name, country, domain — and textContent glues them into
+ * "University of Southern CaliforniaUnited Statesusc.edu", which is what the
+ * report then showed the user.
+ */
+/** Run a DOM read that may throw on a detached node, treating a throw as "gone". */
+function safely(read) {
+  try {
+    return read();
+  } catch {
+    return false;
+  }
+}
+
+const optionText = (node) =>
+  ((node.innerText ?? node.textContent) || "").replace(/\s+/g, " ").trim();
 
 /** Click the way a component library expects: many commit on mousedown. */
 function clickLike(node) {
@@ -531,7 +549,9 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   nodes[index].scrollIntoView?.({ block: "nearest" });
   clickLike(nodes[index]);
   await pause(120);
-  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why, listbox };
+  if (committed(el, nodes[index], chosen)) {
+    return { ok: true, chosen, why, listbox, node: nodes[index] };
+  }
 
   // The click was ignored. Some libraries only commit from the keyboard, so
   // try that once before giving up — arrow into the list and press Enter.
@@ -540,7 +560,9 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   await pause(60);
   pressKey(el, "Enter");
   await pause(120);
-  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why, listbox };
+  if (committed(el, nodes[index], chosen)) {
+    return { ok: true, chosen, why, listbox, node: nodes[index] };
+  }
 
   // Report the failure rather than the attempt. Returning success here was the
   // same mistake as the old `(setValue(...), true)`: the panel said a required
@@ -557,7 +579,7 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
  * proof; neither being true means the click went nowhere.
  */
 function committed(el, node, chosen) {
-  if (node.getAttribute?.("aria-selected") === "true") return true;
+  if (node?.getAttribute?.("aria-selected") === "true") return true;
 
   const { normText } = window.HIRECRAFT_OPTIONS;
   const want = normText(chosen);
@@ -731,7 +753,18 @@ async function fillForm(
     });
 
     if (result.ok) {
-      filled.push({ label: field.label, value: result.actual ?? value, note: result.note });
+      filled.push({
+        label: field.label,
+        value: result.actual ?? value,
+        note: result.note,
+        // Re-checked the same way it was checked the first time. Asking a
+        // weaker question here would drop a correct fill on a widget that
+        // marks its chosen row rather than filling its input.
+        holds: () =>
+          result.node
+            ? committed(el, result.node, result.chosen ?? value)
+            : Boolean(displayedValue(el)),
+      });
       // Let the caller follow along. Watching each field fill is how you check
       // the work — a form that is simply full when you look up tells you
       // nothing about whether the right answer went in the right box.
@@ -786,7 +819,8 @@ async function fillForm(
       continue;
     }
 
-    const took = await pickRadio(group.options[index]);
+    const how = await pickRadio(group.options[index]);
+    const took = Boolean(how);
     trace.push({
       label: shown,
       at: pathTo(group.options[index].el),
@@ -796,11 +830,22 @@ async function fillForm(
       outcome: took ? "filled" : "failed",
       got: took ? texts[index] : null,
       why: took ? why : "the option would not take",
-      listbox: { from: "radio-group", count: texts.length, sample: texts.slice(0, 4) },
+      listbox: { from: "radio-group", count: texts.length, sample: texts.slice(0, 4), picked: how || null },
     });
 
     if (took) {
-      filled.push({ label: field.label, value: texts[index] });
+      const chosen = group.options[index].el;
+      filled.push({
+        label: field.label,
+        value: texts[index],
+        holds: () => {
+          const node = (chosen.id ? document.getElementById(chosen.id) : null) || chosen;
+          if (node?.getAttribute?.("aria-checked") === "true") return true;
+          if (!node?.checked) return false;
+          const row = node.closest?.("[class*='option'],[class*='Option'],[class*='choice']");
+          return !(row && /(^|\s)false(\s|$)/.test(String(row.className || "")));
+        },
+      });
       if (onProgress) {
         onProgress({ el: group.options[index].el, label: field.label, value: texts[index] });
         if (stepDelay) await pause(stepDelay);
@@ -831,6 +876,33 @@ async function fillForm(
       });
     }
   }
+
+  // One last look at everything claimed, after the page has had time to settle.
+  //
+  // A controlled component can accept a value, re-render from its own state,
+  // and put the field back as it was — and a check made immediately after
+  // writing reads the gap in between. That is how a Veteran Status question
+  // came to be reported as answered on a form where nothing was selected. A
+  // report that overstates is worse than one that admits a failure, because
+  // only one of the two gets checked by hand before submitting.
+  await pause(250);
+  const survived = [];
+  for (const entry of filled) {
+    const held = entry.holds ? safely(entry.holds) : true;
+    delete entry.holds;
+    if (held) {
+      survived.push(entry);
+    } else {
+      missing.push({ label: entry.label, why: "it was set, then the page put it back" });
+      const row = trace.find((e) => e.field && e.got === entry.value);
+      if (row) {
+        row.outcome = "reverted";
+        row.why = "the page put it back after it was set";
+      }
+    }
+  }
+  filled.length = 0;
+  filled.push(...survived);
 
   // Checked last, so anything the fill just satisfied no longer counts.
   return { filled, skipped, missing, required: requiredGaps(), trace };
@@ -1047,24 +1119,73 @@ function radioQuestion(el, optionTexts) {
   return "";
 }
 
-/** Choose one radio in a group, the way a person would. */
+/**
+ * Choose one radio in a group, the way a person would.
+ *
+ * Two hard parts, both learned the wrong way round.
+ *
+ * React keeps a cache of each input's last value and swallows a change event
+ * that matches it, so setting `checked` and dispatching produces nothing: the
+ * component's own state never moves and the next render puts the radio back.
+ * The cache has to be told the value differed, which is the checkbox
+ * equivalent of the native-setter trick used for text.
+ *
+ * And verifying `el.checked` is not verifying anything. It is true for the
+ * moment between the write and the re-render that undoes it — which is exactly
+ * long enough to be read, reported as success, and be wrong. Ashby writes the
+ * selected flag into the option row's class, so the rendered row is checked
+ * instead: that is the state that gets submitted.
+ */
 async function pickRadio(option) {
-  const { el } = option;
-  // Click the label where there is one: a styled radio is usually invisible
-  // with its label doing the work, so clicking the input itself hits nothing.
-  clickLike(el.closest?.("label") || el);
-  await pause(60);
-  if (el.checked) return true;
+  const fresh = () =>
+    (option.el.id ? document.getElementById(option.el.id) : null) || option.el;
 
-  // Then set it directly, through the native setter so a controlled component
-  // keeps the change.
+  const took = () => {
+    const node = fresh();
+    if (!node) return false;
+    if (node.getAttribute?.("aria-checked") === "true") return true;
+    if (!node.checked) return false;
+    // A row still marked unselected means the component rejected the write,
+    // whatever the DOM property currently says.
+    const row = node.closest?.("[class*='option'],[class*='Option'],[class*='choice']");
+    if (row && /(^|\s)false(\s|$)/.test(String(row.className || ""))) return false;
+    return true;
+  };
+
+  const settle = async (ms) => {
+    await pause(ms);
+    return took();
+  };
+
+  if (took()) return "already";
+
+  const el = fresh();
+  const targets = [
+    ["label", el.closest?.("label")],
+    ["option row", el.closest?.("[class*='option'],[class*='Option'],[class*='choice']")],
+    ["input", el],
+  ];
+  for (const [how, target] of targets) {
+    if (!target) continue;
+    clickLike(target);
+    // Long enough for a re-render to undo it if it is going to.
+    if (await settle(180)) return how;
+  }
+
+  const node = fresh();
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
-  if (setter) setter.call(el, true);
-  else el.checked = true;
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
-  await pause(60);
-  return Boolean(el.checked);
+  if (setter) setter.call(node, true);
+  else node.checked = true;
+  // Tell React the value moved, or it discards the event as a no-op.
+  try {
+    node._valueTracker?.setValue?.("false");
+  } catch {
+    /* not a React-managed input */
+  }
+  node.dispatchEvent(new Event("click", { bubbles: true }));
+  node.dispatchEvent(new Event("input", { bubbles: true }));
+  node.dispatchEvent(new Event("change", { bubbles: true }));
+  return (await settle(200)) ? "setter" : "";
 }
 
 /**
@@ -1084,7 +1205,11 @@ function choiceCandidates() {
     const options = Array.from(
       group.querySelectorAll('[role="radio"],[role="option"],button,input[type="radio"]')
     )
-      .map((node) => (node.innerText || node.value || "").replace(/\s+/g, " ").trim())
+      .map((node) =>
+        (node.getAttribute?.("type") === "radio" ? radioOptionText(node) : node.innerText || "")
+          .replace(/\s+/g, " ")
+          .trim()
+      )
       .filter(Boolean)
       .slice(0, 10);
     if (options.length < 2) continue;
