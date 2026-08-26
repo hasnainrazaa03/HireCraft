@@ -31,6 +31,7 @@
         "autofill/visa.js",
         "autofill/submission.js",
         "autofill/options.js",
+        "autofill/posting.js",
         "autofill/fields.js",
         "autofill/fill.js",
         "autofill/adapters.js",

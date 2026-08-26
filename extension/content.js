@@ -461,8 +461,7 @@ async function runCoverLetter() {
   const reply = await ask({
     type: "coverLetter",
     jobText: window.HIRECRAFT_VISA.pageText(),
-    company: guessCompany(),
-    role: document.title.split(/[|\-–]/)[0].trim().slice(0, 120),
+    ...postingIdentity(),
     resumeId: state.resumeId,
   });
   state.busy = false;
@@ -475,27 +474,66 @@ async function runCoverLetter() {
   render();
 }
 
-/** The employer's name, as well as the page will tell us. */
-function guessCompany() {
-  const meta = document.querySelector('meta[property="og:site_name"]')?.content;
-  if (meta) return meta.slice(0, 120);
-  const host = location.hostname.replace(/^www\./, "").split(".")[0];
-  // ATS hosts name the ATS, not the employer; the path's first segment does.
-  if (/greenhouse|lever|ashbyhq|myworkdayjobs|smartrecruiters/.test(location.hostname)) {
-    const segment = location.pathname.split("/").filter(Boolean)[0] || "";
-    return segment.replace(/[-_]/g, " ").slice(0, 120);
+/**
+ * The JobPosting structured data a board publishes for search engines.
+ *
+ * The most reliable source of the employer's name by a distance: it is the page
+ * stating who is hiring, rather than us inferring it from a URL.
+ */
+function jsonLdCompany() {
+  for (const node of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const parsed = JSON.parse(node.textContent || "{}");
+      for (const entry of Array.isArray(parsed) ? parsed : [parsed]) {
+        const name = entry?.hiringOrganization?.name || entry?.["@graph"]
+          ?.find?.((g) => g?.hiringOrganization)?.hiringOrganization?.name;
+        if (name) return String(name);
+      }
+    } catch {
+      // A board with malformed JSON-LD is not a reason to stop reading a page.
+    }
   }
-  return host;
+  return "";
+}
+
+/** What the page says about who is hiring and for what. */
+function postingIdentity() {
+  const segment = /greenhouse|lever|ashbyhq|myworkdayjobs|smartrecruiters|workable/.test(
+    location.hostname
+  )
+    ? location.pathname.split("/").filter(Boolean)[0] || ""
+    : "";
+  return {
+    company: window.HIRECRAFT_POSTING.companyFrom({
+      jsonLd: jsonLdCompany(),
+      siteName: document.querySelector('meta[property="og:site_name"]')?.content || "",
+      title: document.title,
+      pathSegment: segment,
+      host: location.hostname,
+    }),
+    role: window.HIRECRAFT_POSTING.roleFromTitle(document.title),
+  };
+}
+
+function guessCompany() {
+  return postingIdentity().company;
 }
 
 async function runTrack(stage = "draft") {
   state.busy = true;
   setStatus(stage === "applied" ? "Recording that you applied…" : "Adding to your tracker…");
+  // The company and role go with it. Left to work them out from the URL alone,
+  // the server had only the path's first segment to go on, and a tracker row
+  // read "Applied" for Applied Intuition — a row you cannot find by searching
+  // for the company you applied to.
+  const { company, role } = postingIdentity();
   const reply = await ask({
     type: "track",
     url: location.href,
     resumeId: state.resumeId,
     status: stage,
+    company,
+    role,
   });
   Object.assign(state, {
     busy: false,

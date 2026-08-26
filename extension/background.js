@@ -88,8 +88,12 @@ const HANDLERS = {
   async resume({ resumeId }) {
     return { dataUrl: await resumeDataUrl(resumeId) };
   },
-  async track({ url, resumeId, status }) {
+  async track({ url, resumeId, status, company, role }) {
     const body = { job: { url }, status: status || "draft" };
+    // What the page said about itself, which beats anything derivable from the
+    // URL — see postingIdentity in the content script.
+    if (company) body.job.company = company;
+    if (role) body.job.title = role;
     if (resumeId) body.resume_profile_id = resumeId;
     return (await callApi("/extension/track", { method: "POST", body })).json();
   },
