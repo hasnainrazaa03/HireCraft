@@ -274,3 +274,23 @@
   overflow-wrap: anywhere;
 }
 .hc-required-item::before { content: "· "; color: #7c7c92; }
+
+/* Saying what is wrong with a draft, so it can be rewritten rather than
+   accepted or abandoned. */
+.hc-feedback {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #2c2c3a;
+  background: #1c1c26;
+  color: #e9e9f0;
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.hc-feedback::placeholder { color: #6f6f82; }
+.hc-feedback:focus { outline: none; border-color: #7c4dff; }

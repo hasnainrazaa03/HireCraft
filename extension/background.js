@@ -105,7 +105,7 @@ const HANDLERS = {
     else if (resumeId) body.resume_profile_id = resumeId;
     return (await callApi("/extension/track", { method: "POST", body })).json();
   },
-  async coverLetter({ jobText, company, role, resumeId, tone }) {
+  async coverLetter({ jobText, company, role, resumeId, tone, feedback, previous }) {
     return (
       await callApi("/extension/cover-letter", {
         method: "POST",
@@ -115,6 +115,8 @@ const HANDLERS = {
           role: role || null,
           resume_profile_id: resumeId || null,
           tone: tone || "modern",
+          feedback: feedback || null,
+          previous: previous || null,
         },
       })
     ).json();

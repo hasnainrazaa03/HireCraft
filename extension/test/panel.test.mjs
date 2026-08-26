@@ -71,3 +71,18 @@ test("the résumé picker offers both sources", () => {
   assert.match(source, /local_resumes/, "the folder on disk");
   assert.match(source, /In HireCraft/, "and the ones uploaded here");
 });
+
+test("a draft can be argued with before it is attached", () => {
+  // A letter you can only accept or abandon is not a draft. Say what is wrong,
+  // have it rewritten, and attach only when it is right.
+  assert.match(source, /hc-feedback/, "somewhere to write the note");
+  assert.match(source, /state\.letterFeedback\s*=\s*e\.target\.value/, "that records it");
+  assert.match(source, /Rewrite with this/, "and a way to act on it");
+  assert.match(source, /Attach to form/, "with attaching still a separate, later click");
+});
+
+test("a rewrite sends the draft along with the note", () => {
+  // The note alone would start over and lose the paragraphs already right.
+  assert.match(source, /previous: revising \? state\.letter\.paragraphs : null/);
+  assert.match(source, /feedback: revising \? feedback\.trim\(\) : null/);
+});

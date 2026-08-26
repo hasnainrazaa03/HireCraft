@@ -43,6 +43,8 @@ const state = {
   resumeName: null,
   wantCoverLetter: false,
   letter: null,
+  /** What to change about the draft, before asking for it again. */
+  letterFeedback: "",
 };
 
 function ask(message) {
@@ -328,6 +330,24 @@ function renderPanel() {
       box.append(save);
     }
 
+    // A draft is a starting point, not a verdict. Say what is wrong with it and
+    // have it rewritten, as many times as it takes, before anything is attached.
+    const notes = el("textarea", "hc-feedback");
+    notes.placeholder =
+      "What should change? e.g. lead with the equivariance work, cut the last paragraph, less formal";
+    notes.value = state.letterFeedback || "";
+    notes.rows = 2;
+    notes.disabled = state.busy;
+    notes.oninput = (e) => {
+      state.letterFeedback = e.target.value;
+    };
+    box.append(notes);
+
+    const rewrite = el("button", "hc-btn hc-small", state.busy ? "Rewriting…" : "Rewrite with this");
+    rewrite.disabled = state.busy || !(state.letterFeedback || "").trim();
+    rewrite.onclick = () => runCoverLetter({ feedback: state.letterFeedback });
+    box.append(rewrite);
+
     const copy = el("button", "hc-btn hc-small", "Copy letter");
     copy.onclick = async () => {
       const full = [state.letter.greeting, ...state.letter.paragraphs, state.letter.signature]
@@ -519,22 +539,38 @@ async function runFill() {
   if (state.wantCoverLetter && !state.letter) await runCoverLetter();
 }
 
-async function runCoverLetter() {
+async function runCoverLetter({ feedback = "" } = {}) {
   state.busy = true;
-  setStatus("Writing a cover letter from this posting…");
+  // Both go together: the note says what to change, the draft says what to
+  // change it from. Sending the note alone would start over and lose the
+  // paragraphs that were already right.
+  const revising = Boolean(feedback.trim() && state.letter?.paragraphs?.length);
+  setStatus(revising ? "Rewriting with your note…" : "Writing a cover letter from this posting…");
+  render();
+
+  const { company, role } = postingIdentity();
   const reply = await ask({
     type: "coverLetter",
     jobText: window.HIRECRAFT_VISA.pageText(),
-    ...postingIdentity(),
+    company,
+    role,
     resumeId: state.resumeId,
+    feedback: revising ? feedback.trim() : null,
+    previous: revising ? state.letter.paragraphs : null,
   });
   state.busy = false;
   if (!reply.ok) {
     setStatus(reply.error);
+    render();
     return;
   }
-  state.letter = { ...reply.data, company: guessCompany() };
-  setStatus(`Drafted · $${(reply.data.cost_usd || 0).toFixed(3)}`);
+  state.letter = { ...reply.data, company };
+  // Cleared so the box is empty for the next note rather than repeating the
+  // last one, which would be applied twice.
+  state.letterFeedback = "";
+  setStatus(
+    `${revising ? "Rewritten" : "Drafted"} · $${(reply.data.cost_usd || 0).toFixed(3)}`
+  );
   render();
 }
 

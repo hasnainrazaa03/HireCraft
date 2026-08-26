@@ -60,6 +60,11 @@ class ExtensionCoverLetterRequest(BaseModel):
     role: str | None = Field(default=None, max_length=200)
     resume_profile_id: uuid.UUID | None = None
     tone: str = "modern"
+    #: A revision rather than a fresh draft. Both are needed together: the note
+    #: says what to change and the draft says what to change it from, so the
+    #: paragraphs the note does not mention come back untouched.
+    feedback: str | None = Field(default=None, max_length=600)
+    previous: list[str] | None = Field(default=None, max_length=12)
 
 
 def _split_name(full_name: str | None) -> tuple[str, str]:
@@ -512,6 +517,8 @@ def extension_cover_letter(
             # the whole point of the Writing Voice page.
             voice=_voice_for(db, user.id),
             evidence=evidence_lines(db, user.id),
+            feedback=payload.feedback,
+            previous=payload.previous,
             client=_client_for(user),
             ledger=ledger,
         )

@@ -414,10 +414,16 @@ def compose_cover_letter(
     tone: str = "modern",
     voice: VoiceProfile | None = None,
     evidence: list[str] | None = None,
+    feedback: str | None = None,
+    previous: list[str] | None = None,
     client: LlmClient | None = None,
     ledger: UsageLedger | None = None,
 ) -> tuple[list[str], GuardrailReport]:
     """Standalone cover-letter generation for the writing studio.
+
+    With `feedback` and `previous`, this is a revision rather than a fresh
+    draft: the model is shown the letter it wrote and what to change about it,
+    so the paragraphs the note does not touch survive verbatim.
 
     No job extraction is run — a lightweight requirements object (just role +
     company) is enough for the prompt, so this is a single LLM call. Paragraphs
@@ -428,7 +434,14 @@ def compose_cover_letter(
     requirements = JobRequirements(title=role, company=company)
     result: LlmResult[CoverLetterDraft] = client.generate_structured(
         prompt=build_cover_letter_prompt(
-            resume, requirements, job_text, tone=tone, voice=voice, evidence=evidence
+            resume,
+            requirements,
+            job_text,
+            tone=tone,
+            voice=voice,
+            evidence=evidence,
+            feedback=feedback,
+            previous=previous,
         ),
         schema=CoverLetterDraft,
         system_instruction=COVER_LETTER_SYSTEM,
