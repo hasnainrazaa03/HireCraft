@@ -750,7 +750,7 @@ node extension/tools/simulate-greenhouse.mjs form.json profile.json
 |---|---|
 | **Greenhouse** | **Verified end to end on a live form.** Point72, 13 of 13 fields correct — including the react-select education block (School, Degree, End month) and the city autocomplete. Only the three questions no stored answer covers were left. |
 | **Lever** | Apply form is server-rendered and was read directly. Field names, EEO option wording and the `selectedLocation` hidden field are all handled. Not yet clicked through in a browser. |
-| **Ashby** | **Unverified, and not verifiable from outside a browser** — the page ships zero form inputs and the public API returns posting metadata only. Run **Inspect this form** on a real Ashby application and paste the output; that is the only way to check it. |
+| **Ashby** | **Verified end to end on a live form.** Applied Intuition, 24 fields correct — including a second education block added by clicking "+ Add Education", EEOC radios (which need React's value cache bypassed), yes/no questions asked with buttons, and date pickers that are plain `<select>`s with no label of their own. Only the three questions no stored answer covers were left. |
 | **Workday** | ~20% of the feed. No support at all — multi-step wizard with iframes. |
 | Workable / Oracle Cloud | ~100 postings. Descriptions unreadable, so no autofill either. |
 | Transcripts | Required on some forms. Upload by hand — HireCraft holds no transcript. |
