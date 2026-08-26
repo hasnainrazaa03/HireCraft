@@ -513,3 +513,21 @@ test("a field left alone says so, rather than vanishing", async () => {
   assert.ok(row, "every control considered must appear in the trace");
   assert.match(row.why, /already holds/);
 });
+
+test("HireCraft's own panel is not part of the employer's form", async () => {
+  // The panel carries a résumé picker, and it was turning up in the form scan.
+  // Harmless only because no field pattern happened to match its label — a
+  // filler that can reach its own interface is one edit from answering an
+  // employer's question with its own dropdown.
+  const ours = makeControl({ label: "Résumé MHR_AIML (default) MHR_SWE" });
+  ours.closest = (sel) => (sel.includes("hirecraft-root") ? {} : null);
+  const theirs = makeControl({ label: "First Name" });
+
+  const window = install([ours, theirs]);
+  const rows = window.HIRECRAFT_FILL.inspectForm();
+
+  assert.deepEqual(rows.map((r) => r.label), ["First Name"]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(ours.value, "", "our own control must never be written to");
+  assert.deepEqual(report.filled.map((f) => f.label), ["First name"]);
+});

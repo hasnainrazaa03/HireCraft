@@ -744,7 +744,7 @@ node extension/tools/simulate-greenhouse.mjs form.json profile.json
 
 | ATS | State |
 |---|---|
-| **Greenhouse** | Form schema and live markup both read. Dropdowns are react-select; verified against a real posting. Location needs a suggestion picked — hidden lat/long. |
+| **Greenhouse** | **Verified end to end on a live form.** Point72, 13 of 13 fields correct — including the react-select education block (School, Degree, End month) and the city autocomplete. Only the three questions no stored answer covers were left. |
 | **Lever** | Apply form is server-rendered and was read directly. Field names, EEO option wording and the `selectedLocation` hidden field are all handled. Not yet clicked through in a browser. |
 | **Ashby** | **Unverified, and not verifiable from outside a browser** — the page ships zero form inputs and the public API returns posting metadata only. Run **Inspect this form** on a real Ashby application and paste the output; that is the only way to check it. |
 | **Workday** | ~20% of the feed. No support at all — multi-step wizard with iframes. |

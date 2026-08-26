@@ -82,6 +82,18 @@ const IGNORED_TYPES = new Set([
 ]);
 
 /**
+ * Is this control part of HireCraft's own panel rather than the employer's form?
+ *
+ * The panel carries a résumé picker, and it was turning up in the form scan —
+ * harmless so far only because no field pattern happened to match its label.
+ * A filler that can reach into its own interface is one edit away from
+ * answering an employer's question with its own dropdown.
+ */
+function isOurs(el) {
+  return Boolean(el.closest?.("#hirecraft-root"));
+}
+
+/**
  * Every control we could conceivably fill, each with its label already resolved.
  *
  * Labels are resolved here rather than in the fill loop because `labelFor` walks
@@ -95,6 +107,7 @@ function controls() {
     const type = (el.getAttribute("type") || "text").toLowerCase();
     if (IGNORED_TYPES.has(type)) continue;
     if (el.disabled || el.readOnly) continue;
+    if (isOurs(el)) continue;
     // Off-screen controls are usually a hidden duplicate form or a widget's
     // internals; filling those does nothing visible and can confuse the page.
     const box = el.getBoundingClientRect();
@@ -203,7 +216,7 @@ function visibleListboxes() {
   const seen = new Set();
   const out = [];
   const consider = (node) => {
-    if (!node || seen.has(node)) return;
+    if (!node || seen.has(node) || isOurs(node)) return;
     seen.add(node);
     if (optionNodes(node).length) out.push(node);
   };
@@ -258,18 +271,34 @@ function listboxFor(el) {
 }
 
 /** Shut the popup, so the next field cannot inherit it. */
-function closeListbox(el) {
+async function closeListbox(el) {
+  const stillOpen = () =>
+    el.getAttribute("aria-expanded") === "true" ||
+    /menu-is-open|--is-open|\bis-open\b/.test(String(el.closest?.("[class]")?.className || ""));
+
+  // Escape while focused is what most widgets listen for.
   pressKey(el, "Escape");
-  el.blur?.();
-  // Escape is not honoured by every widget, and a menu left open becomes the
-  // next field's problem. A mousedown elsewhere is what a person would do, and
-  // outside-click handlers are near-universal.
+  await pause(40);
+  if (!stillOpen()) return true;
+
+  // Then a mousedown elsewhere — what a person does, and outside-click handlers
+  // are near-universal.
   try {
     document.body?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     document.body?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   } catch {
     /* no MouseEvent in a bare test DOM */
   }
+  await pause(40);
+  if (!stillOpen()) return true;
+
+  // Then give up the focus, which closes the ones that ignore both.
+  el.blur?.();
+  await pause(40);
+  // Reported rather than assumed. A dropdown left hanging open sits over the
+  // next field on the page, and every previous version of this said it had
+  // closed without ever looking.
+  return !stillOpen();
 }
 
 /** The choosable rows in a popup list. */
@@ -401,10 +430,17 @@ function probesFor(value, kind) {
  * the ones that throw.
  */
 async function chooseFromCombobox(el, value, kind, unit, context) {
+  let result = null;
   try {
-    return await chooseFromComboboxInner(el, value, kind, unit, context);
+    result = await chooseFromComboboxInner(el, value, kind, unit, context);
+    return result;
   } finally {
-    closeListbox(el);
+    // Recorded, not assumed. A menu that refuses to close hangs over the next
+    // field on the page, and the Point72 country picker did exactly that for
+    // several runs while every version of this function reported success by
+    // saying nothing.
+    const closed = await closeListbox(el);
+    if (result && !closed) result.leftOpen = true;
   }
 }
 
@@ -654,6 +690,7 @@ async function fillForm(
       got: result.actual ?? result.chosen ?? null,
       why: result.why ?? null,
       listbox: result.listbox ?? null,
+      leftOpen: result.leftOpen ?? false,
     });
 
     if (result.ok) {
@@ -851,7 +888,7 @@ function requiredGaps() {
   for (const el of document.querySelectorAll("input, select, textarea")) {
     const type = (el.getAttribute("type") || "text").toLowerCase();
     if (["hidden", "submit", "button", "reset", "image"].includes(type)) continue;
-    if (el.disabled) continue;
+    if (el.disabled || isOurs(el)) continue;
 
     // Only what a person could actually fill. A widget's hidden mirror input
     // is not a question anyone can answer, and listing it sends the user
