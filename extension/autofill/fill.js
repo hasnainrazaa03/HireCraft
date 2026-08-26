@@ -137,6 +137,16 @@ function labelFor(el) {
 /** What counts as clickable when looking for a row of choices. */
 const CLICKABLE = 'button,[role="button"],[role="radio"],[role="option"]';
 
+/**
+ * What kind of element is this?
+ *
+ * By tag rather than by instanceof. An element from another document — an
+ * iframe, which is how several ATSs build their forms — is not an instance of
+ * *this* window's HTMLSelectElement, so instanceof quietly answers "no" and the
+ * control gets driven as though it were a text box.
+ */
+const isTag = (el, tag) => String(el?.tagName || "").toUpperCase() === tag;
+
 const NEVER_TOUCH =
   /^(submit|apply|send|continue|next|back|previous|save|delete|remove|sign\s*in|log\s*in|register)\b/i;
 
@@ -221,12 +231,11 @@ function controls() {
  * follows for plain listeners and validation.
  */
 function setValue(el, value) {
-  const proto =
-    el instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : el instanceof HTMLSelectElement
-        ? HTMLSelectElement.prototype
-        : HTMLInputElement.prototype;
+  const proto = isTag(el, "TEXTAREA")
+    ? HTMLTextAreaElement.prototype
+    : isTag(el, "SELECT")
+      ? HTMLSelectElement.prototype
+      : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   if (setter) setter.call(el, value);
   else el.value = value;
@@ -292,7 +301,7 @@ function displayedValue(el) {
  * makes it the durable thing to key on.
  */
 function isCombobox(el) {
-  if (el instanceof HTMLSelectElement) return false;
+  if (isTag(el, "SELECT")) return false;
   const role = (el.getAttribute("role") || "").toLowerCase();
   const haspopup = (el.getAttribute("aria-haspopup") || "").toLowerCase();
   return (
@@ -770,6 +779,17 @@ async function fillForm(
   // difference between diagnosing a fill and guessing at it.
   const trace = [];
 
+  // What the form held before anything was touched.
+  //
+  // "Leave it alone if it already has something" exists to protect what the
+  // *user* typed, and it was reading the live value instead — so when picking a
+  // start month made Ashby default the year beside it to 2026, that default was
+  // taken for an existing answer and 2025 was never written. A side effect of
+  // our own filling is not somebody's answer, and the difference is only
+  // visible from a snapshot taken first.
+  const beforeFill = new Map();
+  for (const { el } of controls()) beforeFill.set(el, displayedValue(el));
+
   // Single yes/no boxes, answered first. "Still Student?" decides whether the
   // end date is a question at all — the form disables it once the box is
   // ticked, and a disabled control is skipped by the scan below, which is the
@@ -825,7 +845,7 @@ async function fillForm(
     // vanishes from the report entirely is the hardest kind to notice: Phone
     // and End-year were dropped here for two runs without appearing in filled,
     // missing, skipped or the trace.
-    const already = displayedValue(el);
+    const already = beforeFill.has(el) ? beforeFill.get(el) : displayedValue(el);
     if (already) {
       trace.push({
         label: raw.trim().slice(0, 70),
@@ -855,35 +875,15 @@ async function fillForm(
 
     claimed.add(field.key);
 
-    // Three kinds of control, three ways to commit a value — and each reports
-    // what it actually managed, rather than that it tried.
-    let result;
-    if (el instanceof HTMLSelectElement) {
-      const texts = Array.from(el.options || []).map((o) => o.text);
-      const choice = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, {
-          kind: field.kind,
-          unit: field.unit,
-        });
-      if (choice.index >= 0) {
-        setValue(el, el.options[choice.index].value);
-        result = { ok: true, actual: texts[choice.index] };
-      } else {
-        result = { ok: false, why: choice.why, offered: texts.slice(0, 12) };
-      }
-    } else if (field.key === "location" && needsPlacePick(el)) {
-      result = await pickPlace(el, value);
-    } else if (widget || isCombobox(el)) {
-      result = await chooseFromCombobox(el, value, field.kind, field.unit, field.context?.(profile));
-      if (result.ok) result.actual = result.chosen;
-    } else {
-      result = await setAndVerify(el, value);
-    }
+    // Every kind of control, through one place that knows how to reach each —
+    // and each reporting what it actually managed rather than that it tried.
+    const result = await applyTo(el, field, value, profile, widget);
 
     trace.push({
       label: raw.trim().slice(0, 70),
       at: pathTo(el),
       field: field.key,
-      control: el instanceof HTMLSelectElement ? "select" : isCombobox(el) ? "combobox" : "text",
+      control: isTag(el, "SELECT") ? "select" : widget || isCombobox(el) ? "combobox" : "text",
       wanted: value,
       outcome: result.ok ? "filled" : "failed",
       got: result.actual ?? result.chosen ?? null,
@@ -1566,6 +1566,40 @@ function requiredGaps() {
   return [...new Set(gaps)];
 }
 
+/**
+ * Put a value into whatever kind of control this is.
+ *
+ * Shared, because it was not: the second-education pass had its own two-way
+ * branch and no case for a <select>, so it called setValue with "July" on a
+ * control whose option value is "7". The month was discarded and reported as
+ * discarded, while the year beside it — where the option value happens to equal
+ * its text — worked, which made the failure look like a mystery rather than a
+ * missing branch.
+ */
+async function applyTo(el, field, value, profile, widget) {
+  if (isTag(el, "SELECT")) {
+    const texts = Array.from(el.options || []).map((o) => o.text);
+    const choice = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, {
+      kind: field.kind,
+      unit: field.unit,
+      context: field.context?.(profile),
+    });
+    if (choice.index < 0) {
+      return { ok: false, why: choice.why, offered: texts.slice(0, 12) };
+    }
+    setValue(el, el.options[choice.index].value);
+    return { ok: true, actual: texts[choice.index] };
+  }
+  if (widget || isCombobox(el)) {
+    const result = await chooseFromCombobox(
+      el, value, field.kind, field.unit, field.context?.(profile)
+    );
+    if (result.ok) result.actual = result.chosen;
+    return result;
+  }
+  return setAndVerify(el, value);
+}
+
 /** The button that adds another education block, if the form offers one. */
 function addEducationButton() {
   for (const el of document.querySelectorAll("button,[role='button'],a") || []) {
@@ -1629,10 +1663,7 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
     const value = String(field.from(stand_in) ?? "").trim();
     if (!value) continue;
 
-    const result =
-      widget || isCombobox(el)
-        ? await chooseFromCombobox(el, value, field.kind, field.unit, null)
-        : await setAndVerify(el, value);
+    const result = await applyTo(el, field, value, stand_in, widget);
 
     trace.push({
       label: `${raw.trim().slice(0, 50)} (2nd education)`,

@@ -1009,3 +1009,68 @@ test("a select is named by its wrapper and its first option", async () => {
     "and together they read as the question the catalogue is waiting for"
   );
 });
+
+test("a value the form defaults while we fill is not mistaken for an answer", async () => {
+  // Picking a start month made Ashby default the year beside it to the current
+  // year, and "leave it alone if it already has something" read that back as
+  // the user's own entry — so 2025 was never written and the form said 2026.
+  const month = makeControl({ label: "Start date month" });
+  const year = makeControl({ label: "Start date year" });
+  // Filling the month sets the year, exactly as the form does.
+  const base = Object.getOwnPropertyDescriptor(month, "value");
+  Object.defineProperty(month, "value", {
+    get: () => base?.get?.() ?? month._v ?? "",
+    set: (v) => { month._v = v; if (v) year._v = "2026"; },
+  });
+  Object.defineProperty(year, "value", {
+    get: () => year._v ?? "",
+    set: (v) => { year._v = v; },
+  });
+
+  const window = install([month, year]);
+  await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { start_month: "August", start_year: "2025" } },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(month.value, "August");
+  assert.equal(year.value, "2025", "the stored year must win over the form's default");
+});
+
+test("what the user typed before the fill is still left alone", async () => {
+  // The rule the snapshot exists to keep.
+  const typed = makeControl({ label: "Email", type: "email" });
+  typed.value = "someone.else@example.com";
+  const window = install([typed]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(typed.value, "someone.else@example.com");
+  assert.ok(report.trace.some((e) => e.outcome === "left alone"));
+});
+
+test("a select is filled by matching its option text, not by writing it", async () => {
+  // The second-education pass had its own branch with no case for a <select>,
+  // so it wrote "July" into a control whose option value is "7". The month was
+  // discarded; the year beside it worked only because its option value happens
+  // to equal its text, which made the failure look arbitrary.
+  const month = {
+    tagName: "SELECT", id: "", value: "", disabled: false, readOnly: false,
+    options: [
+      { text: "Month...", value: "" },
+      { text: "July", value: "7" },
+      { text: "August", value: "8" },
+    ],
+    getAttribute: (n) => (n === "aria-label" ? "End date month" : null),
+    hasAttribute: () => false,
+    getBoundingClientRect: rect(140, 40),
+    closest: () => null,
+    dispatchEvent: () => {},
+  };
+  const window = install([month]);
+  // The engine writes through the native setter, which the stub records as
+  // a plain assignment.
+  await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { end_month: "July" } },
+    { stepDelay: 0 }
+  );
+  assert.equal(month.value, "7", "the option's value, not its text");
+});
