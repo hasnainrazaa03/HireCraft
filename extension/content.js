@@ -176,6 +176,10 @@ function renderPanel() {
         // Included so a form that asks yes/no with buttons rather than a
         // dropdown shows its real structure instead of vanishing.
         choices: window.HIRECRAFT_FILL.choiceCandidates(),
+        // Anything interactive the scan could not classify, so a control that
+        // fits none of the shapes above still shows itself rather than
+        // vanishing — which is how the date pickers hid for three runs.
+        widgets: window.HIRECRAFT_FILL.unclassified(),
       };
       try {
         await navigator.clipboard.writeText(JSON.stringify(dump, null, 2));

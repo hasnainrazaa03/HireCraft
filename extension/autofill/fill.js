@@ -46,6 +46,9 @@ function normalise(text) {
  * association at all, and those are exactly the ones a selector map misses.
  */
 function labelFor(el) {
+  // Called over arbitrary elements since the widget scan widened, and not every
+  // node in a page answers the whole Element interface.
+  if (!el?.getAttribute) return "";
   const byAria = el.getAttribute("aria-label");
   if (byAria) return byAria;
 
@@ -61,11 +64,11 @@ function labelFor(el) {
 
   if (el.id) {
     const explicit = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-    if (explicit?.innerText.trim()) return explicit.innerText;
+    if (explicit?.innerText?.trim()) return explicit.innerText;
   }
 
-  const wrapping = el.closest("label");
-  if (wrapping?.innerText.trim()) return wrapping.innerText;
+  const wrapping = el.closest?.("label");
+  if (wrapping?.innerText?.trim()) return wrapping.innerText;
 
   // Nearest label-ish text, walking outward. One level is not enough: Ashby
   // nests a combobox input a few divs inside its field wrapper, so the single
@@ -94,6 +97,20 @@ function labelFor(el) {
   return el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
 }
 
+/**
+ * Things the filler must never click, whatever a label match might suggest.
+ *
+ * The whole design rests on never submitting an application, and a widened scan
+ * is one bad label match away from breaking that. Refused by name as well as by
+ * the field gate, because two independent reasons to not press Submit is the
+ * right number.
+ */
+/** What counts as clickable when looking for a row of choices. */
+const CLICKABLE = 'button,[role="button"],[role="radio"],[role="option"]';
+
+const NEVER_TOUCH =
+  /^(submit|apply|send|continue|next|back|previous|save|delete|remove|sign\s*in|log\s*in|register)\b/i;
+
 const IGNORED_TYPES = new Set([
   "hidden", "submit", "button", "reset", "image", "checkbox", "radio",
 ]);
@@ -121,13 +138,33 @@ function isOurs(el) {
 function controls() {
   const out = [];
   // Widgets that behave like a control without being one. Ashby's month and
-  // year pickers are buttons with a popup list, so they appeared in no scan at
-  // all — not filled, not reported, not even listed by Inspect. Only widgets
-  // that declare themselves through ARIA are taken, since that is the one thing
-  // such a control must expose to be usable at all.
+  // year pickers appeared in no scan at all — not filled, not reported, not
+  // even listed by Inspect — because they declare no ARIA whatsoever. So the
+  // net is wider than "says it is a combobox": anything focusable and short
+  // enough to be a value rather than a paragraph.
+  //
+  // Widening it is only safe because of the gate below — a control is clicked
+  // only once its label has matched a field we hold an answer for. Nothing
+  // named Submit or Apply can match one, and NEVER_TOUCH refuses them outright
+  // regardless, because not submitting is the promise this whole thing rests on.
   const widgets = Array.from(
-    document.querySelectorAll('[role="combobox"],[aria-haspopup="listbox"]') || []
-  ).filter((el) => !["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
+    document.querySelectorAll(
+      '[role="combobox"],[aria-haspopup],[aria-expanded],button,[role="button"],[tabindex]'
+    ) || []
+  ).filter((el) => {
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) return false;
+    if (isOurs(el) || el.closest?.("nav,[role='tablist'],header,footer")) return false;
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (text.length > 40) return false;
+    if (NEVER_TOUCH.test(text)) return false;
+    // One of a row of choices belongs to its group, not to this scan. Taking it
+    // here as well would have the same question answered twice, by two
+    // different mechanisms, with no way to tell which one landed.
+    const siblings = Array.from(el.parentElement?.children || []).filter((child) =>
+      child.matches?.(CLICKABLE)
+    );
+    return siblings.length < 2;
+  });
 
   for (const el of [...document.querySelectorAll("input, select, textarea"), ...widgets]) {
     const widget = !["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName);
@@ -725,6 +762,8 @@ async function fillForm(
       overrides[label] ||
       window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
     if (!field || claimed.has(field.key)) continue;
+    // Second guard, independent of the label match above.
+    if (NEVER_TOUCH.test((el.innerText || "").trim()) || NEVER_TOUCH.test(raw.trim())) continue;
     // Left unclaimed on purpose, so a genuine country question later on the
     // form can still be answered.
     if (field.key === "country" && isPhoneCountryPicker(el)) continue;
@@ -921,6 +960,12 @@ async function fillForm(
     } else {
       missing.push({ label: field.label, why: "the box would not change" });
     }
+  }
+
+  // A second degree, where the form offers to take one and the résumé has one.
+  const moreEducation = (profile.education_all || []).slice(1);
+  if (moreEducation.length) {
+    await addEducation(moreEducation[0], { trace, filled, onProgress, stepDelay });
   }
 
   // Résumé upload, handled separately: file inputs are excluded from `controls`
@@ -1306,7 +1351,6 @@ async function setCheckbox(el, wanted) {
  * a group is only ever acted on when its question matches a field we hold an
  * answer for, so a tab bar or a pagination row is found, ignored, and forgotten.
  */
-const CLICKABLE = 'button,[role="button"],[role="radio"],[role="option"]';
 
 function buttonGroups() {
   const groups = [];
@@ -1474,6 +1518,119 @@ function requiredGaps() {
   return [...new Set(gaps)];
 }
 
+/** The button that adds another education block, if the form offers one. */
+function addEducationButton() {
+  for (const el of document.querySelectorAll("button,[role='button'],a") || []) {
+    if (isOurs(el)) continue;
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (/^\+?\s*add\s+(another\s+)?(education|school|degree)\b/i.test(text)) return el;
+  }
+  return null;
+}
+
+/**
+ * Fill a second education block from the next entry on the résumé.
+ *
+ * A form that offers to add one is asking for the rest of them, and the résumé
+ * has them — a master's above a bachelor's. Which controls are new is worked
+ * out by comparing the form before and after the click rather than by guessing
+ * at how the block is numbered, which is the same approach that finally sorted
+ * out which dropdown belonged to which field.
+ */
+async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
+  const button = addEducationButton();
+  if (!button) return false;
+
+  const before = new Set(controls().map((c) => c.el));
+  clickLike(button);
+
+  let fresh = [];
+  for (let tries = 0; tries < 12; tries += 1) {
+    await pause(120);
+    fresh = controls().filter((c) => !before.has(c.el));
+    if (fresh.length >= 2) break;
+  }
+  if (!fresh.length) {
+    trace.push({ label: "Add education", outcome: "failed", why: "no new fields appeared" });
+    return false;
+  }
+
+  // Only the education questions, answered from this entry rather than from the
+  // profile's most recent degree.
+  const EDUCATION = new Set([
+    "school", "degree", "field_of_study", "start_month", "start_year",
+    "end_month", "end_year", "gpa", "still_student",
+  ]);
+  const stand_in = { education: entry };
+
+  for (const { el, raw, label, widget } of fresh) {
+    const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
+    if (!field || !EDUCATION.has(field.key)) continue;
+    if (displayedValue(el)) continue;
+
+    const value = String(field.from(stand_in) ?? "").trim();
+    if (!value) continue;
+
+    const result =
+      widget || isCombobox(el)
+        ? await chooseFromCombobox(el, value, field.kind, field.unit, null)
+        : await setAndVerify(el, value);
+
+    trace.push({
+      label: `${raw.trim().slice(0, 50)} (2nd education)`,
+      at: pathTo(el),
+      field: field.key,
+      control: widget || isCombobox(el) ? "combobox" : "text",
+      wanted: value,
+      outcome: result.ok ? "filled" : "failed",
+      got: result.actual ?? result.chosen ?? null,
+      why: result.why ?? null,
+    });
+
+    if (result.ok) {
+      filled.push({
+        label: `${field.label} (2nd)`,
+        value: result.actual ?? result.chosen ?? value,
+        holds: () => Boolean(displayedValue(el)),
+      });
+      if (onProgress) {
+        onProgress({ el, label: `${field.label} (2nd)`, value: result.actual ?? value });
+        if (stepDelay) await pause(stepDelay);
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Interactive things the scan could not classify.
+ *
+ * Purely diagnostic. Three runs went by with Ashby's month and year pickers
+ * absent from every list — inspect, choices, trace — and absent is the one
+ * state that gives nothing to work from.
+ */
+function unclassified() {
+  const known = new Set(controls().map((c) => c.el));
+  const out = [];
+  for (const el of document.querySelectorAll("button,[role],[tabindex],[class*='select'],[class*='picker']") || []) {
+    if (known.has(el) || isOurs(el)) continue;
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) continue;
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (!text || text.length > 40) continue;
+    if (el.querySelector?.("input,select,textarea,button")) continue;  // a container, not a control
+    out.push({
+      tag: el.tagName.toLowerCase(),
+      role: el.getAttribute("role") || "",
+      cls: String(el.className || "").slice(0, 70),
+      text: text.slice(0, 40),
+      label: (labelFor(el) || "").replace(/\s+/g, " ").trim().slice(0, 60),
+      at: pathTo(el),
+    });
+    if (out.length >= 25) break;
+  }
+  return out;
+}
+
 /** Every control with its resolved label — how adapters get built and debugged. */
 function inspectForm() {
   const seen = controls();
@@ -1518,5 +1675,7 @@ window.HIRECRAFT_FILL = {
   radioGroups,
   buttonGroups,
   checkboxQuestions,
+  unclassified,
+  addEducationButton,
   choiceCandidates,
 };

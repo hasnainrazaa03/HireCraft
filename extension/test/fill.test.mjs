@@ -821,3 +821,82 @@ test("a yes/no asked with buttons is answered", async () => {
   assert.ok(!/selected/.test(no.className));
   assert.deepEqual(report.filled.map((f) => f.label), ["Requires sponsorship"]);
 });
+
+test("the filler never presses submit, whatever a label matches", async () => {
+  // The widget scan is deliberately wide, and the promise it must not break is
+  // that nothing is ever submitted. Two guards: a submit-shaped control cannot
+  // match a field, and it is refused by name regardless.
+  const submit = makeControl({ label: "Email" });     // a label that WOULD match
+  submit.innerText = "Submit";
+  submit.tagName = "BUTTON";
+  let pressed = false;
+  submit.click = () => { pressed = true; };
+  submit.closest = () => null;
+
+  const window = install([submit]);
+  await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(pressed, false, "a control reading Submit is never clicked");
+  assert.equal(submit.value, "", "and never written to");
+});
+
+test("a second education block is filled from the next degree", async () => {
+  // A form offering "+ Add Education" is asking for the rest of them, and the
+  // résumé has a bachelor's under the master's.
+  const first = makeControl({ label: "School" });
+  first.value = "University of Southern California";   // block one, already done
+  const second = makeControl({ label: "School" });
+
+  let added = false;
+  const addButton = {
+    innerText: "+ Add Education",
+    tagName: "BUTTON",
+    getAttribute: () => null,
+    getBoundingClientRect: rect(160, 40),
+    dispatchEvent: () => {},
+    closest: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    click: () => { added = true; },
+  };
+
+  let controls = [first];
+  const window = {};
+  const document = {
+    querySelectorAll: (sel) => {
+      if (sel.includes("file") || sel.includes("radio") || sel.includes("checkbox")) return [];
+      if (sel.includes("button")) return [addButton];
+      return added ? [first, second] : controls;
+    },
+    querySelector: () => null,
+    getElementById: () => null,
+  };
+  const globals = {
+    window, document, CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+
+  await window.HIRECRAFT_FILL.fillForm(
+    {
+      ...PROFILE,
+      education: { school: "University of Southern California" },
+      education_all: [
+        { school: "University of Southern California" },
+        { school: "RV College of Engineering" },
+      ],
+    },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(added, true, "the add button must be pressed");
+  assert.equal(second.value, "RV College of Engineering", "block two takes the next degree");
+  assert.equal(first.value, "University of Southern California", "block one is untouched");
+});
