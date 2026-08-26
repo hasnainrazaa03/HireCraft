@@ -39,6 +39,20 @@ function normalise(text) {
 }
 
 /**
+ * What a control says about itself when nothing else names it.
+ *
+ * A <select>'s prompt is its first option — "Month…" — not a placeholder
+ * attribute, which it does not have. Reading only the attribute is why Ashby's
+ * four date pickers resolved to no label at all and were dropped by the scan.
+ */
+function ownHint(el) {
+  const attr = (el.getAttribute?.("placeholder") || el.getAttribute?.("aria-label") || "").trim();
+  if (attr) return attr;
+  const first = el.options?.[0];
+  return (first?.text || "").trim();
+}
+
+/**
  * The label a human would read for this control.
  *
  * Tries the accessible sources in the order a screen reader would, then falls
@@ -89,10 +103,14 @@ function labelFor(el) {
       // neither half carries a label of its own — so the walk hit the pair,
       // stopped, and fell through to the placeholder, leaving the catalogue
       // matching "Month…". The group's heading plus the box's own hint names it.
-      const heading = node.querySelector?.(
-        "label,legend,[class*='label'],[class*='Label']"
-      )?.innerText?.trim();
-      const own = (el.getAttribute?.("placeholder") || el.getAttribute?.("aria-label") || "").trim();
+      const heading =
+        node.querySelector?.("label,legend,[class*='label'],[class*='Label']")?.innerText?.trim() ||
+        // Ashby names the pair's wrapper with an id and gives it no label at
+        // all: `_systemfield_education_history-startDate` holds a Month select
+        // and a Year select, and the words are in the id or nowhere.
+        node.id ||
+        "";
+      const own = ownHint(el);
       if (heading && own) return `${heading} ${own}`;
       break;
     }
@@ -752,6 +770,43 @@ async function fillForm(
   // difference between diagnosing a fill and guessing at it.
   const trace = [];
 
+  // Single yes/no boxes, answered first. "Still Student?" decides whether the
+  // end date is a question at all — the form disables it once the box is
+  // ticked, and a disabled control is skipped by the scan below, which is the
+  // right answer rather than a missed one.
+  for (const { el, question } of checkboxQuestions()) {
+    const label = normalise(question);
+    if (!label) continue;
+    const shown = question.replace(/\s+/g, " ").trim().slice(0, 70);
+
+    const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
+    if (!field || claimed.has(field.key)) continue;
+    const value = String(field.from(profile) ?? "").trim().toLowerCase();
+    if (value !== "yes" && value !== "no") continue;
+    claimed.add(field.key);
+
+    const how = await setCheckbox(el, value === "yes");
+    trace.push({
+      label: shown,
+      at: pathTo(el),
+      field: field.key,
+      control: "checkbox",
+      wanted: value,
+      outcome: how ? "filled" : "failed",
+      got: how ? (value === "yes" ? "checked" : "unchecked") : null,
+      why: how ? `set by ${how}` : "the box would not change",
+    });
+    if (how) {
+      filled.push({
+        label: field.label,
+        value: value === "yes" ? "Yes" : "No",
+        holds: () => Boolean(el.checked) === (value === "yes"),
+      });
+    } else {
+      missing.push({ label: field.label, why: "the box would not change" });
+    }
+  }
+
   for (const { el, raw, label, widget } of controls()) {
     const skip = window.HIRECRAFT_SKIP.find((group) =>
       group.match.some((re) => re.test(label))
@@ -948,40 +1003,6 @@ async function fillForm(
       }
     } else {
       missing.push({ label: field.label, why: "the option would not take" });
-    }
-  }
-
-  // Single yes/no boxes.
-  for (const { el, question } of checkboxQuestions()) {
-    const label = normalise(question);
-    if (!label) continue;
-    const shown = question.replace(/\s+/g, " ").trim().slice(0, 70);
-
-    const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
-    if (!field || claimed.has(field.key)) continue;
-    const value = String(field.from(profile) ?? "").trim().toLowerCase();
-    if (value !== "yes" && value !== "no") continue;
-    claimed.add(field.key);
-
-    const how = await setCheckbox(el, value === "yes");
-    trace.push({
-      label: shown,
-      at: pathTo(el),
-      field: field.key,
-      control: "checkbox",
-      wanted: value,
-      outcome: how ? "filled" : "failed",
-      got: how ? (value === "yes" ? "checked" : "unchecked") : null,
-      why: how ? `set by ${how}` : "the box would not change",
-    });
-    if (how) {
-      filled.push({
-        label: field.label,
-        value: value === "yes" ? "Yes" : "No",
-        holds: () => Boolean(el.checked) === (value === "yes"),
-      });
-    } else {
-      missing.push({ label: field.label, why: "the box would not change" });
     }
   }
 
@@ -1334,6 +1355,10 @@ async function pickRadio(option) {
 function checkboxQuestions() {
   const out = [];
   for (const el of document.querySelectorAll('input[type="checkbox"]') || []) {
+    // Checked rather than assumed from the selector: this function only knows
+    // how to drive a checkbox, and being handed anything else would have it
+    // setting `checked` on a control that has no such thing.
+    if ((el.getAttribute?.("type") || "").toLowerCase() !== "checkbox") continue;
     if (isOurs(el) || el.disabled) continue;
     const question = radioOptionText(el) || labelFor(el);
     if (question) out.push({ el, question });

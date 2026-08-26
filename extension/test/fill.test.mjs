@@ -89,8 +89,11 @@ function install(controls) {
     controls.filter((c) => c.listbox).map((c) => [`${c.getAttribute("aria-label") ?? ""}-list`, c])
   );
   const document = {
+    // Selector-aware, or a pass looking for checkboxes is handed the text
+    // boxes and drives them as though they were. The real DOM would never do
+    // that, and a stub that does hides bugs and invents others.
     querySelectorAll: (sel) =>
-      sel.includes("file") ? [] : sel.includes("listbox") ? [] : controls,
+      /file|listbox|radio|checkbox|button|\[role/.test(sel) ? [] : controls,
     querySelector: () => null,
     getElementById: (id) => {
       const owner = controls.find((c) => c.listbox && `${c.labelText}-list` === id);
@@ -970,4 +973,39 @@ test("a second education block is not added when the form already has one", asyn
   );
   assert.equal(pressed, false, "the add button must not be pressed again");
   assert.ok(report.trace.some((e) => e.label === "Add education" && e.outcome === "left alone"));
+});
+
+test("a select is named by its wrapper and its first option", async () => {
+  // Ashby's four date pickers are plain <select>s with no id, no name and no
+  // label. A select has no placeholder attribute either — its prompt is the
+  // first option — so every attempt to name one came back empty and the scan
+  // dropped it. The words are in the wrapper's id or nowhere.
+  const month = {
+    tagName: "SELECT",
+    id: "", value: "", disabled: false, readOnly: false, events: [],
+    options: [{ text: "Month...", value: "" }, { text: "August", value: "8" }],
+    getAttribute: () => null,
+    hasAttribute: () => false,
+    getBoundingClientRect: rect(140, 40),
+    closest: () => null,
+    dispatchEvent: () => {},
+  };
+  const wrapper = {
+    id: "_systemfield_education_history-startDate",
+    querySelector: () => null,
+    querySelectorAll: (sel) => (sel.includes("input") ? [month, {}] : []),
+    getAttribute: () => null,
+    parentElement: null,
+  };
+  month.parentElement = wrapper;
+
+  const window = install([month]);
+  const label = window.HIRECRAFT_FILL.labelFor(month);
+  assert.match(label, /startDate/, "the wrapper's id names the pair");
+  assert.match(label, /Month/, "the first option names this half of it");
+  assert.match(
+    window.HIRECRAFT_FILL.normalise(label),
+    /start date month/,
+    "and together they read as the question the catalogue is waiting for"
+  );
 });
