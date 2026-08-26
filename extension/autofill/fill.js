@@ -154,60 +154,80 @@ function isCombobox(el) {
   );
 }
 
+/**
+ * Every option list currently visible anywhere on the page.
+ *
+ * Used to tell "the list this control just opened" from "a list that was
+ * already lying open". Three wrong answers have come from confusing the two,
+ * most recently a phone-country picker that stayed open and was then read as
+ * the option list for Location, for School, and for anything else that asked.
+ */
+function visibleListboxes() {
+  const seen = new Set();
+  const out = [];
+  const consider = (node) => {
+    if (!node || seen.has(node)) return;
+    seen.add(node);
+    if (optionNodes(node).length) out.push(node);
+  };
+  for (const node of document.querySelectorAll('[role="listbox"]')) consider(node);
+  // Not every library marks the container; some only mark the rows.
+  for (const option of document.querySelectorAll('[role="option"]')) {
+    const box = option.parentElement;
+    if (box && !seen.has(box)) consider(box);
+  }
+  return out;
+}
+
+/** A short, readable path to an element — for the diagnostics dump. */
+function pathTo(node) {
+  const parts = [];
+  let at = node;
+  for (let depth = 0; at && depth < 4; depth += 1, at = at.parentElement) {
+    const cls = String(at.className || "").split(/\s+/).filter(Boolean).slice(0, 2).join(".");
+    parts.unshift(
+      (at.tagName || "?").toLowerCase() + (at.id ? `#${at.id}` : "") + (cls ? `.${cls}` : "")
+    );
+  }
+  return parts.join(" > ");
+}
+
 /** The popup list this control drives, if it is open. */
-function listboxFor(el) {
-  const usable = (node) => (node && optionNodes(node).length ? node : null);
-
-  // If the control states it is closed, it has no list to read. Taking its word
-  // is what stops a search from wandering off to whichever list happens to be
-  // lying around.
+/**
+ * The list this control names through ARIA, if any.
+ *
+ * Only the explicit link is trusted here. Every positional rule tried before
+ * this — the single open listbox in the document, then a walk up the ancestors
+ * — eventually reached the field next door, because on a real form every
+ * control shares an ancestor with every other one. Anything not named is found
+ * instead by watching which list appears when we act, in openListbox.
+ */
+function namedListbox(el) {
   if (el.getAttribute("aria-expanded") === "false") return null;
-
-  // The widget said which list it drives. Authoritative, and the only signal
-  // that cannot belong to a different field.
   const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
-  if (id) {
-    const byId = usable(document.getElementById(id));
-    if (byId) return byId;
-  }
+  if (!id) return null;
+  const box = document.getElementById(id);
+  return box && optionNodes(box).length ? box : null;
+}
 
-  // Otherwise, this widget's own container — and only as far up as that.
-  //
-  // querySelector on an ancestor searches its entire subtree, so climbing one
-  // level too far reaches the field next door. That is how a location box came
-  // to be offered a list of international dialling codes. The walk now stops at
-  // the first ancestor holding a second visible control, which is the point at
-  // which we have left this field.
-  let node = el.parentElement;
-  for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
-    const visibleControls = Array.from(node.querySelectorAll?.("input,select,textarea") || [])
-      .filter((c) => (c.getBoundingClientRect?.()?.width ?? 1) > 0);
-    if (visibleControls.length > 1) break;
-    const inside = usable(
-      node.querySelector?.('[role="listbox"],[class*="menu"],[class*="Menu"],[class*="dropdown"]')
-    );
-    if (inside) return inside;
-  }
-
-  // A portalled list is considered last, and only for a control that says it is
-  // expanded. Reaching for "the one open listbox in the document" without that
-  // check is what let a Degree menu — still open from the previous field —
-  // answer a work-authorisation question: the panel offered "Associate's
-  // Degree, Bachelor's Degree, ..." as the choices for "are you authorized to
-  // work in the US". Had one of them matched, it would have been clicked.
-  if (el.getAttribute("aria-expanded") === "true") {
-    const open = Array.from(document.querySelectorAll('[role="listbox"]')).filter(
-      (n) => n.getBoundingClientRect().height > 0 && optionNodes(n).length
-    );
-    if (open.length === 1) return open[0];
-  }
-  return null;
+/** Kept for callers that only need whatever list is currently associated. */
+function listboxFor(el) {
+  return namedListbox(el);
 }
 
 /** Shut the popup, so the next field cannot inherit it. */
 function closeListbox(el) {
   pressKey(el, "Escape");
   el.blur?.();
+  // Escape is not honoured by every widget, and a menu left open becomes the
+  // next field's problem. A mousedown elsewhere is what a person would do, and
+  // outside-click handlers are near-universal.
+  try {
+    document.body?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.body?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  } catch {
+    /* no MouseEvent in a bare test DOM */
+  }
 }
 
 /** The choosable rows in a popup list. */
@@ -254,12 +274,24 @@ function pressKey(el, key) {
 
 /** Open the popup and wait for it to render. */
 async function openListbox(el) {
+  // Whatever is already open is, by definition, not ours. Recording it first
+  // means a dropdown someone forgot to close can never be mistaken for the one
+  // this control opens — which is the failure that keeps recurring, because
+  // every rule based on DOM position eventually finds a way to reach a sibling.
+  const before = new Set(visibleListboxes());
+
+  const mine = () => {
+    const named = namedListbox(el);
+    if (named) return named;
+    const fresh = visibleListboxes().filter((box) => !before.has(box));
+    return fresh.length === 1 ? fresh[0] : null;
+  };
+
   el.focus?.();
   // A gap between focusing and acting. react-select decides what a mousedown
   // means from its own isFocused state, and React has not applied the focus yet
   // if both happen in the same task — so it reads the click as "focus me",
   // sets a flag to open on the focus that already happened, and never opens.
-  // That is why School, Degree and Location all reported no options at all.
   await pause(60);
 
   // The keyboard first, because it is unconditional: react-select maps ArrowDown
@@ -267,8 +299,8 @@ async function openListbox(el) {
   // on state we cannot see.
   pressKey(el, "ArrowDown");
   for (let tries = 0; tries < 10; tries += 1) {
-    const box = listboxFor(el);
-    if (optionNodes(box).length) return box;
+    const box = mine();
+    if (box) return box;
     await pause(70);
   }
 
@@ -276,11 +308,11 @@ async function openListbox(el) {
   // widgets only listen on the wrapper.
   clickLike(el.closest?.("[class*='control'],[class*='select-shell'],[role='combobox']") || el);
   for (let tries = 0; tries < 12; tries += 1) {
-    const box = listboxFor(el);
-    if (optionNodes(box).length) return box;
+    const box = mine();
+    if (box) return box;
     await pause(70);
   }
-  return listboxFor(el);
+  return mine();
 }
 
 /**
@@ -349,22 +381,30 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
 
   if (!nodes.length) {
     setValue(el, "");
-    return { ok: false, why: "the dropdown never opened" };
+    return { ok: false, why: "the dropdown never opened", listbox: null };
   }
 
   const texts = nodes.map(optionText);
+  // Where the list came from, in the report. When a field is offered the wrong
+  // options, this is the line that says which control's list it actually read.
+  const listbox = {
+    from: namedListbox(el) === box ? "aria-controls" : "appeared-on-open",
+    at: pathTo(box),
+    count: texts.length,
+    sample: texts.slice(0, 4),
+  };
   const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind, unit, context });
   if (index < 0) {
     // Only the probe text is cleared here; the wrapper does the closing.
     setValue(el, "");
-    return { ok: false, why, offered: texts.slice(0, 12) };
+    return { ok: false, why, offered: texts.slice(0, 12), listbox };
   }
 
   const chosen = texts[index];
   nodes[index].scrollIntoView?.({ block: "nearest" });
   clickLike(nodes[index]);
   await pause(120);
-  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why };
+  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why, listbox };
 
   // The click was ignored. Some libraries only commit from the keyboard, so
   // try that once before giving up — arrow into the list and press Enter.
@@ -373,13 +413,13 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   await pause(60);
   pressKey(el, "Enter");
   await pause(120);
-  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why };
+  if (committed(el, nodes[index], chosen)) return { ok: true, chosen, why, listbox };
 
   // Report the failure rather than the attempt. Returning success here was the
   // same mistake as the old `(setValue(...), true)`: the panel said a required
   // sponsorship question was answered while the form still had it empty.
   setValue(el, "");
-  return { ok: false, why: `"${chosen}" was clicked but the dropdown didn't take it` };
+  return { ok: false, why: `"${chosen}" was clicked but the dropdown didn't take it`, listbox };
 }
 
 /**
@@ -484,12 +524,17 @@ async function fillForm(
   const skipped = [];
   const missing = [];
   const claimed = new Set();
+  // A record of every decision, for when the panel's summary is not enough to
+  // explain what went wrong. Costs nothing to build and has repeatedly been the
+  // difference between diagnosing a fill and guessing at it.
+  const trace = [];
 
   for (const { el, raw, label } of controls()) {
     const skip = window.HIRECRAFT_SKIP.find((group) =>
       group.match.some((re) => re.test(label))
     );
     if (skip) {
+      trace.push({ label: raw.trim().slice(0, 70), at: pathTo(el), outcome: "skipped", why: skip.why });
       // Say *why* it was left. "Left for you" on a demographic question and on
       // a salary question mean different things, and the reader needs to know
       // which they are looking at.
@@ -542,6 +587,18 @@ async function fillForm(
       result = await setAndVerify(el, value);
     }
 
+    trace.push({
+      label: raw.trim().slice(0, 70),
+      at: pathTo(el),
+      field: field.key,
+      control: el instanceof HTMLSelectElement ? "select" : isCombobox(el) ? "combobox" : "text",
+      wanted: value,
+      outcome: result.ok ? "filled" : "failed",
+      got: result.actual ?? result.chosen ?? null,
+      why: result.why ?? null,
+      listbox: result.listbox ?? null,
+    });
+
     if (result.ok) {
       filled.push({ label: field.label, value: result.actual ?? value, note: result.note });
       // Let the caller follow along. Watching each field fill is how you check
@@ -579,7 +636,7 @@ async function fillForm(
   }
 
   // Checked last, so anything the fill just satisfied no longer counts.
-  return { filled, skipped, missing, required: requiredGaps() };
+  return { filled, skipped, missing, required: requiredGaps(), trace };
 }
 
 /**

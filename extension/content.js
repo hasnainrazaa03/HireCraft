@@ -158,6 +158,32 @@ function renderPanel() {
       panel.append(warn);
     }
 
+    // Everything the fill actually did, as text you can paste. The panel's
+    // summary says a field failed; this says which option list it read, where
+    // that list came from, and what was on it — which is the difference between
+    // reporting a bug and diagnosing one.
+    const diag = el("button", "hc-btn hc-small", "Copy diagnostics");
+    diag.onclick = async () => {
+      const dump = {
+        url: location.href,
+        filled: state.report.filled,
+        missing: state.report.missing,
+        skipped: state.report.skipped,
+        required: state.report.required,
+        trace: state.report.trace,
+        inspect: window.HIRECRAFT_FILL.inspectForm(),
+      };
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(dump, null, 2));
+        diag.textContent = "Copied — paste it to HireCraft";
+      } catch {
+        // Clipboard is blocked on some pages; the console always works.
+        console.log("[HireCraft] diagnostics", dump);
+        diag.textContent = "Logged to console (⌥⌘J)";
+      }
+    };
+    panel.append(diag);
+
     panel.append(
       el("div", "hc-note", "Nothing has been submitted. Check the form, then submit it yourself.")
     );
