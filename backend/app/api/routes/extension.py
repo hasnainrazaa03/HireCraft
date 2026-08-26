@@ -169,6 +169,9 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         # résumé because that is where it already lives — re-entering a degree
         # into a second form would be the app failing to use what it holds.
         "education": _latest_education(basics_source),
+        # Newest first. A form that lets you add a second education block is
+        # asking for the rest of them, and the résumé already has them.
+        "education_all": _all_education(basics_source),
         "resumes": [
             {"id": str(r.id), "name": r.name, "is_default": r.is_default}
             for r in resumes
@@ -183,26 +186,40 @@ def _latest_education(content: dict) -> dict:
     education newest-first by convention, but the dates are the fact and the
     ordering is only a habit.
     """
-    entries = [e for e in (content.get("education") or []) if isinstance(e, dict)]
-    if not entries:
-        return {}
+    entries = _sorted_education(content)
+    return _flatten_education(entries[0]) if entries else {}
 
-    def sort_key(entry: dict) -> str:
+
+def _sorted_education(content: dict) -> list[dict]:
+    """Every education entry, newest first."""
+    entries = [e for e in (content.get("education") or []) if isinstance(e, dict)]
+
+    def newest_first(entry: dict) -> str:
         end = str(entry.get("end_date") or "")
         return "9999" if end.lower() == "present" else end
 
-    latest = max(entries, key=sort_key)
-    start = str(latest.get("start_date") or "")
-    end = str(latest.get("end_date") or "")
+    return sorted(entries, key=newest_first, reverse=True)
+
+
+def _flatten_education(entry: dict) -> dict:
+    """One education entry, in the shape a form asks its questions."""
+    start = str(entry.get("start_date") or "")
+    end = str(entry.get("end_date") or "")
     return {
-        "school": latest.get("institution") or "",
-        "degree": latest.get("degree") or "",
+        "school": entry.get("institution") or "",
+        # The credential alone. A form with a separate Field of Study box was
+        # getting "M.S. in Computer Science" in Degree and "Computer Science"
+        # beside it, which says the subject twice and puts it in a box asking
+        # for something else. Where a form has only one box, the credential is
+        # still the answer to "Degree".
+        "degree": _degree_only(entry.get("degree") or ""),
+        "degree_full": entry.get("degree") or "",
         # Derived from the degree where the résumé does not carry it separately:
         # "M.S. in Computer Science" answers a "Field of Study" box with
         # "Computer Science", and leaving that empty was the app failing to read
         # what it already had.
-        "field_of_study": latest.get("field_of_study") or _field_from_degree(latest.get("degree") or ""),
-        "gpa": latest.get("gpa") or "",
+        "field_of_study": entry.get("field_of_study") or _field_from_degree(entry.get("degree") or ""),
+        "gpa": entry.get("gpa") or "",
         # Forms ask for the year alone far more often than a full date.
         "start_year": start[:4],
         "end_year": "" if end.lower() == "present" else end[:4],
@@ -211,7 +228,35 @@ def _latest_education(content: dict) -> dict:
         # user to fill was the app declining to use what it holds.
         "end_month": _month_name(end),
         "start_month": _month_name(start),
+        # Still studying, for the "Still Student?" box forms put beside the end
+        # date. True when the end date is absent, says "present", or has not
+        # arrived yet — a December 2027 graduation is not in the past.
+        "is_current": _still_studying(end),
     }
+
+
+def _all_education(content: dict) -> list[dict]:
+    """Every degree, newest first, each flattened the same way as the latest."""
+    return [_flatten_education(entry) for entry in _sorted_education(content)]
+
+
+def _degree_only(degree: str) -> str:
+    """A degree without the subject: "M.S. in Computer Science" gives "M.S."."""
+    return re.sub(r"\s*\bin\s+.{2,60}$", "", (degree or "").strip()).strip(" ,")
+
+
+def _still_studying(end: str) -> bool:
+    """Has this course not finished yet?"""
+    end = (end or "").strip()
+    if not end or end.lower() in {"present", "current", "ongoing"}:
+        return True
+    parts = end.split("-")
+    if not parts[0].isdigit():
+        return False
+    today = datetime.now(UTC)
+    year = int(parts[0])
+    month = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 12
+    return (year, month) > (today.year, today.month)
 
 
 def _field_from_degree(degree: str) -> str:

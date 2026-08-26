@@ -120,9 +120,19 @@ function isOurs(el) {
  */
 function controls() {
   const out = [];
-  for (const el of document.querySelectorAll("input, select, textarea")) {
+  // Widgets that behave like a control without being one. Ashby's month and
+  // year pickers are buttons with a popup list, so they appeared in no scan at
+  // all — not filled, not reported, not even listed by Inspect. Only widgets
+  // that declare themselves through ARIA are taken, since that is the one thing
+  // such a control must expose to be usable at all.
+  const widgets = Array.from(
+    document.querySelectorAll('[role="combobox"],[aria-haspopup="listbox"]') || []
+  ).filter((el) => !["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
+
+  for (const el of [...document.querySelectorAll("input, select, textarea"), ...widgets]) {
+    const widget = !["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName);
     const type = (el.getAttribute("type") || "text").toLowerCase();
-    if (IGNORED_TYPES.has(type)) continue;
+    if (!widget && IGNORED_TYPES.has(type)) continue;
     if (el.disabled || el.readOnly) continue;
     if (isOurs(el)) continue;
     // Off-screen controls are usually a hidden duplicate form or a widget's
@@ -132,7 +142,7 @@ function controls() {
     const raw = labelFor(el);
     const label = normalise(raw);
     if (!label) continue;
-    out.push({ el, raw, label });
+    out.push({ el, raw, label, widget });
   }
   return out;
 }
@@ -167,6 +177,12 @@ function setValue(el, value) {
  * sponsorship as still empty on a form where all three had just been filled.
  */
 function displayedValue(el) {
+  if (el.value === undefined) {
+    // A widget carries its value as its own text. "Month…" is the prompt, not
+    // an answer, so trailing ellipses read as empty.
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+    return /(…|\.\.\.)$/.test(text) ? "" : text;
+  }
   const own = String(el.value ?? "").trim();
   if (own) return own;
 
@@ -676,7 +692,7 @@ async function fillForm(
   // difference between diagnosing a fill and guessing at it.
   const trace = [];
 
-  for (const { el, raw, label } of controls()) {
+  for (const { el, raw, label, widget } of controls()) {
     const skip = window.HIRECRAFT_SKIP.find((group) =>
       group.match.some((re) => re.test(label))
     );
@@ -739,7 +755,7 @@ async function fillForm(
       }
     } else if (field.key === "location" && needsPlacePick(el)) {
       result = await pickPlace(el, value);
-    } else if (isCombobox(el)) {
+    } else if (widget || isCombobox(el)) {
       result = await chooseFromCombobox(el, value, field.kind, field.unit, field.context?.(profile));
       if (result.ok) result.actual = result.chosen;
     } else {
@@ -870,6 +886,40 @@ async function fillForm(
       }
     } else {
       missing.push({ label: field.label, why: "the option would not take" });
+    }
+  }
+
+  // Single yes/no boxes.
+  for (const { el, question } of checkboxQuestions()) {
+    const label = normalise(question);
+    if (!label) continue;
+    const shown = question.replace(/\s+/g, " ").trim().slice(0, 70);
+
+    const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
+    if (!field || claimed.has(field.key)) continue;
+    const value = String(field.from(profile) ?? "").trim().toLowerCase();
+    if (value !== "yes" && value !== "no") continue;
+    claimed.add(field.key);
+
+    const how = await setCheckbox(el, value === "yes");
+    trace.push({
+      label: shown,
+      at: pathTo(el),
+      field: field.key,
+      control: "checkbox",
+      wanted: value,
+      outcome: how ? "filled" : "failed",
+      got: how ? (value === "yes" ? "checked" : "unchecked") : null,
+      why: how ? `set by ${how}` : "the box would not change",
+    });
+    if (how) {
+      filled.push({
+        label: field.label,
+        value: value === "yes" ? "Yes" : "No",
+        holds: () => Boolean(el.checked) === (value === "yes"),
+      });
+    } else {
+      missing.push({ label: field.label, why: "the box would not change" });
     }
   }
 
@@ -1207,6 +1257,44 @@ async function pickRadio(option) {
 }
 
 /**
+ * Single yes/no boxes, which are a question rather than one option among many.
+ *
+ * "Still Student?" sits beside an end date and is answered by the dates
+ * themselves — a December 2027 course has not finished. Checkboxes are excluded
+ * from the main scan because everything there assumes a text value.
+ */
+function checkboxQuestions() {
+  const out = [];
+  for (const el of document.querySelectorAll('input[type="checkbox"]') || []) {
+    if (isOurs(el) || el.disabled) continue;
+    const question = radioOptionText(el) || labelFor(el);
+    if (question) out.push({ el, question });
+  }
+  return out;
+}
+
+/** Set a checkbox, past React's cache, and confirm it stayed. */
+async function setCheckbox(el, wanted) {
+  if (Boolean(el.checked) === wanted) return "already";
+  clickLike(el.closest?.("label") || el);
+  await pause(160);
+  if (Boolean(el.checked) === wanted) return "click";
+
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+  if (setter) setter.call(el, wanted);
+  else el.checked = wanted;
+  try {
+    el._valueTracker?.setValue?.(wanted ? "false" : "true");
+  } catch {
+    /* not a React-managed input */
+  }
+  el.dispatchEvent(new Event("click", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  await pause(180);
+  return Boolean(el.checked) === wanted ? "setter" : "";
+}
+
+/**
  * Questions answered by clicking one of a row of buttons.
  *
  * Ashby asks about sponsorship, being in the office, and immigration status
@@ -1218,7 +1306,7 @@ async function pickRadio(option) {
  * a group is only ever acted on when its question matches a field we hold an
  * answer for, so a tab bar or a pagination row is found, ignored, and forgotten.
  */
-const CLICKABLE = 'button,[role="button"],[role="radio"],[role="tab"],[role="option"]';
+const CLICKABLE = 'button,[role="button"],[role="radio"],[role="option"]';
 
 function buttonGroups() {
   const groups = [];
@@ -1226,6 +1314,10 @@ function buttonGroups() {
 
   for (const node of document.querySelectorAll(CLICKABLE) || []) {
     if (isOurs(node)) continue;
+    // A site's own navigation is a row of clickable siblings too. Ashby's
+    // Overview/Application tabs were found and reported as a question called
+    // "Autofill from resume", which is a button somewhere else on the page.
+    if (node.closest?.("nav,[role='tablist'],header,footer")) continue;
     const parent = node.parentElement;
     if (!parent || seen.has(parent)) continue;
     seen.add(parent);
@@ -1425,5 +1517,6 @@ window.HIRECRAFT_FILL = {
   optionNodes,
   radioGroups,
   buttonGroups,
+  checkboxQuestions,
   choiceCandidates,
 };

@@ -161,6 +161,15 @@ const FIELDS = [
     match: [/\bstart\s*date\s*month\b/, /^start\s*month$/],
   },
   {
+    key: "still_student",
+    label: "Still a student",
+    kind: "consent",
+    // A checkbox beside the end date. Answered from the dates rather than
+    // asked: a December 2027 end has not happened yet.
+    from: (p) => (p.education?.is_current == null ? "" : p.education.is_current ? "yes" : "no"),
+    match: [/\bstill\s*(a\s*)?student\b/, /\bcurrently\s*(a\s*)?student\b/, /\bcurrently\s*enrolled\b/],
+  },
+  {
     key: "graduation_year",
     label: "Graduation year",
     from: (p) => p.education?.end_year,
@@ -287,7 +296,10 @@ const FIELDS = [
       /^.{0,40}\brelocat\w*\s*\??$/,
       // "This role requires working onsite 5 days a week — are you willing to
       // work onsite?" is the same question wearing different clothes.
-      /\b(willing|able|open)\s*to\s*(work\s*)?(onsite|on-site|in\s*(the\s*)?office|from\s*(the\s*)?office)\b/,
+      // "…open to being in-office 5 days a week in Sunnyvale?" — the gerund
+      // between "open to" and the place is what the earlier pattern missed.
+      /\b(willing|able|open|happy)\s*to\s*(be\s*|being\s*|work\w*\s*)*(onsite|on-?site|in[- ]?office|in\s*the\s*office|from\s*the\s*office)\b/,
+      /\b(in[- ]?office|onsite|on-site)\s*\d+\s*days?\s*(a|per)\s*week\b/,
       /\bwilling\s*to\s*commute\b/,
     ],
   },

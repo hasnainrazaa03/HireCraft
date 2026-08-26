@@ -272,6 +272,7 @@ test("every field can produce a value from a full profile", () => {
       end_year: "2027",
       start_month: "August",
       end_month: "December",
+      is_current: true,
     },
   };
   for (const field of FIELDS) {
@@ -498,4 +499,29 @@ test("a question of fact worded as an agreement is not consent", () => {
   ]) {
     assert.notEqual(claim(label), "consent_to_terms", label);
   }
+});
+
+test("the in-office question is the relocation question in other words", () => {
+  // "Are you open to being in-office 5 days a week in Sunnyvale?" matched
+  // nothing: the gerund between "open to" and the place broke the pattern, and
+  // the question went unanswered on a form where the answer was stored.
+  assert.equal(
+    claim("Are you open to being in-office 5 days a week in Sunnyvale?"),
+    "open_to_relocation"
+  );
+  assert.equal(claim("Are you willing to work onsite?"), "open_to_relocation");
+  assert.equal(claim("Are you willing to relocate?"), "open_to_relocation");
+
+  // Still not answered from a preference: where someone lives today is a fact.
+  assert.equal(claim("Do you currently live in the Bay Area?"), "SKIP");
+});
+
+test("still-a-student is answered from the dates, not asked", () => {
+  assert.equal(claim("Still Student?"), "still_student");
+  assert.equal(claim("Are you currently enrolled?"), "still_student");
+
+  const field = FIELDS.find((f) => f.key === "still_student");
+  assert.equal(field.from({ education: { is_current: true } }), "yes");
+  assert.equal(field.from({ education: { is_current: false } }), "no");
+  assert.equal(field.from({ education: {} }), "");
 });
