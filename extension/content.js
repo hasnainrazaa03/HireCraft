@@ -247,8 +247,26 @@ function renderPanel() {
       state.resumeId = e.target.value;
       state.resumeName = e.target.selectedOptions[0]?.textContent || "";
     };
+    select.disabled = state.busy;
     row.append(select);
     panel.append(row);
+
+    const check = el("label", "hc-check");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = state.wantCoverLetter;
+    box.disabled = state.busy;
+    box.onchange = (e) => {
+      state.wantCoverLetter = e.target.checked;
+      render();
+    };
+    check.append(box, el("span", null, "Also draft a cover letter"));
+    panel.append(check);
+    if (state.wantCoverLetter) {
+      panel.append(
+        el("div", "hc-hint", "Uses AI credit — a few cents. Written from this posting and the résumé above.")
+      );
+    }
   }
 
 
