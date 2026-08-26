@@ -43,6 +43,10 @@ _TELLS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bmakes? me an ideal (?:candidate|fit)\b", "let the evidence do that"),
         (r"\btapestry\b", "no"),
         (r"\bat the intersection of\b", "say which two things and why"),
+        # Counted per occurrence, so a letter leaning on them shows up loudly.
+        # A dash is never the only punctuation that fits: a colon explains, a
+        # comma interrupts, a full stop separates.
+        (r"\s[—–]\s|\w[—–]\w", "a colon, comma, or full stop instead"),
     )
 )
 

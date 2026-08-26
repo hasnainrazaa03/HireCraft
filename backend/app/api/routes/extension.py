@@ -9,6 +9,7 @@ happened. It cannot read or change anything else about the account.
 
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import UTC, datetime
 
@@ -375,6 +376,32 @@ def extension_cover_letter(
 
     _record(db, user.id, ledger)
     body = "\n\n".join(paragraphs)
+
+    # The PDF is what actually gets uploaded to a form, so it is produced here
+    # rather than left as a second step the user has to remember. Best-effort:
+    # a typesetting failure should not cost them the letter they just paid for.
+    pdf_data_url = ""
+    try:
+        from datetime import datetime as _dt
+
+        from app.services.latex.renderer import render_cover_letter_fitted
+
+        now = _dt.now(UTC)
+        result, _tex = render_cover_letter_fitted(
+            resume,
+            paragraphs,
+            settings.templates_dir,
+            company=payload.company,
+            role=payload.role,
+            date_line=f"{now:%B} {now.day}, {now.year}",
+            job_name="cover_letter",
+        )
+        pdf_data_url = "data:application/pdf;base64," + base64.b64encode(
+            result.pdf_bytes
+        ).decode()
+    except Exception as exc:  # noqa: BLE001 - the text is the valuable part
+        logger.warning("extension.cover_letter_pdf_failed", error=str(exc)[:200])
+
     return {
         "greeting": _greeting(None, payload.company),
         "paragraphs": paragraphs,
@@ -384,5 +411,6 @@ def extension_cover_letter(
         # Style signals, so the reader can judge the draft rather than trust it.
         "tells": find_tells(body)[:8],
         "uniformity": round(uniformity(body), 2),
+        "pdf": pdf_data_url,
         "guardrail_report": report.model_dump(mode="json") if report else None,
     }

@@ -18,9 +18,12 @@ GENERATED = (
     "I believe my unique blend of skills makes me an ideal candidate."
 )
 
+# Deliberately dash-free. The em dash is now itself a tell — a letter is printed
+# and a page of them is among the surest signs a machine wrote it — so prose held
+# up as the good example has to meet the standard it is illustrating.
 WRITTEN = (
     "Your posting mentions the roof-damage detector runs behind a Spring Boot service. "
-    "I built that exact seam at Sunbase — a containerized FastAPI inference service the "
+    "I built that exact seam at Sunbase: a containerized FastAPI inference service the "
     "Java backend called over REST. Most of my four months went into the data, not the "
     "model. Shadows and vents were generating most of the false positives, so I mined "
     "them back as hard negatives and the numbers moved. That is the work I want more of."
@@ -107,3 +110,34 @@ def test_short_text_is_not_accused_of_monotony() -> None:
 def test_tell_count_reads_a_whole_letter() -> None:
     assert tell_count([GENERATED, WRITTEN]) == len(find_tells(GENERATED))
     assert tell_count([]) == 0
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I built the pipeline — the whole thing — and it worked.",
+        "The model plateaued – then it did not.",
+        "a long sentence—with a dash jammed in",
+    ],
+)
+def test_em_dashes_are_flagged(text: str) -> None:
+    """Counted per occurrence, so a letter leaning on them shows up loudly.
+
+    A dash is never the only punctuation that fits: a colon explains, a comma
+    interrupts, a full stop separates. Several on one printed page is among the
+    surest signals that a machine produced the text.
+    """
+    assert find_tells(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I built the pipeline, the whole thing, and it worked.",
+        "The model plateaued: then it did not.",
+        "a hyphenated-compound is not a dash",
+        "the range was 8-40 times per layer",
+    ],
+)
+def test_hyphens_and_ordinary_punctuation_are_not_flagged(text: str) -> None:
+    assert find_tells(text) == []

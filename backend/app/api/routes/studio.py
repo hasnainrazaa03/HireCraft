@@ -48,7 +48,7 @@ from app.services.activity import log_event
 from app.services.evidence import evidence_lines
 from app.services.export.docx import cover_letter_to_docx
 from app.services.latex.compiler import LatexCompilationError, compile_latex
-from app.services.latex.renderer import render_cover_letter
+from app.services.latex.renderer import render_cover_letter, render_cover_letter_fitted
 from app.services.llm.client import (
     LlmConfigurationError,
     LlmError,
@@ -284,7 +284,18 @@ def render_cover_letter_file(
 
     if fmt == "pdf":
         try:
-            result = compile_latex(tex, job_name=safe)
+            # Fitted rather than compiled once: a letter that spills onto a
+            # second page for two closing lines reads as one nobody edited.
+            result, _tex = render_cover_letter_fitted(
+                resume,
+                payload.paragraphs,
+                settings.templates_dir,
+                company=payload.company,
+                role=payload.role,
+                hiring_manager=payload.hiring_manager,
+                date_line=date_line,
+                job_name=safe,
+            )
         except LatexCompilationError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

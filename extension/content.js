@@ -191,6 +191,21 @@ function renderPanel() {
           : "No machine-writing tells found"
       )
     );
+    if (state.letter.pdf) {
+      // A form wants a file, not a paste. The anchor download is the only way
+      // to hand one over from a content script without a host permission.
+      const save = el("button", "hc-btn hc-small", "Download PDF");
+      save.onclick = () => {
+        const link = document.createElement("a");
+        link.href = state.letter.pdf;
+        link.download = `CoverLetter_${(state.letter.company || "letter").replace(/\W+/g, "_")}.pdf`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+      };
+      box.append(save);
+    }
+
     const copy = el("button", "hc-btn hc-small", "Copy letter");
     copy.onclick = async () => {
       const full = [state.letter.greeting, ...state.letter.paragraphs, state.letter.signature]
@@ -368,7 +383,7 @@ async function runCoverLetter() {
     setStatus(reply.error);
     return;
   }
-  state.letter = reply.data;
+  state.letter = { ...reply.data, company: guessCompany() };
   setStatus(`Drafted · $${(reply.data.cost_usd || 0).toFixed(3)}`);
   render();
 }

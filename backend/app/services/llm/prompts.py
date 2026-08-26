@@ -469,7 +469,9 @@ gestured at.
 - Paragraph 4: close on a concrete reason this role fits — a real detail from the \
 posting, never mission-praise — and what the candidate wants to do in it. No \
 salutation or sign-off; the template adds those.
-- Four paragraphs, 300-380 words, unless the tone instruction says otherwise.
+- Four paragraphs, 300-380 words, unless the tone instruction says otherwise. \
+This is a limit, not a target to drift past: the letter is printed on one page, \
+and a fifth hundred words pushes the closing onto a second page nobody reads.
 
 === SOUND LIKE A PERSON, NOT A LANGUAGE MODEL ===
 This is what separates a letter that gets read from one that gets skimmed. \
@@ -487,6 +489,10 @@ NEVER use these — they are the tells:
 paragraph openers
 - Three-item lists used for rhythm rather than because there are three things
 - Ending on a grand abstraction about impact, innovation, or passion
+- Em dashes. Not one. A dash is never the only punctuation that fits: use a \
+colon where the clause explains, a comma where it interrupts, a full stop where \
+it is really two sentences. Several on one page is among the surest signals a \
+machine wrote the text.
 
 DO write the way a capable person actually writes:
 - Vary sentence length hard. A long sentence that develops an idea, then a short \

@@ -209,6 +209,7 @@ def render_cover_letter(
     hiring_manager: str | None = None,
     date_line: str | None = None,
     template_name: str = "cover_letter.tex",
+    density: int = 0,
 ) -> str:
     env = get_environment(templates_dir)
     template = env.get_template(template_name)
@@ -219,4 +220,43 @@ def render_cover_letter(
         role=role,
         hiring_manager=hiring_manager,
         date_line=date_line,
+        density=density,
     )
+
+
+def render_cover_letter_fitted(
+    resume: MasterResume,
+    body_paragraphs: list[str],
+    templates_dir: str,
+    *,
+    company: str | None = None,
+    role: str | None = None,
+    hiring_manager: str | None = None,
+    date_line: str | None = None,
+    template_name: str = "cover_letter.tex",
+    job_name: str = "cover_letter",
+):
+    """Compile the letter, tightening the layout until it fits a single page.
+
+    A cover letter that runs onto a second page for the sake of two closing
+    lines reads as one nobody edited, and the reader has usually stopped before
+    reaching them. Résumés have had this guarantee since one-page fit landed;
+    letters were left compiling once and spilling.
+
+    Returns ``(CompileResult, tex)``. If even the tightest readable setting
+    spills, the last attempt is returned rather than the text being cut: losing
+    a sentence the writer chose is worse than a second page they can see.
+    """
+    from app.services.latex.compiler import compile_latex
+
+    result = tex = None
+    for density in range(_MAX_DENSITY + 1):
+        tex = render_cover_letter(
+            resume, body_paragraphs, templates_dir,
+            company=company, role=role, hiring_manager=hiring_manager,
+            date_line=date_line, template_name=template_name, density=density,
+        )
+        result = compile_latex(tex, job_name=job_name)
+        if result.page_count <= 1:
+            break
+    return result, tex
