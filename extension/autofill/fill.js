@@ -25,6 +25,11 @@ function normalise(text) {
   return (text || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    // Split camelCase before anything else. Greenhouse's compliance questions
+    // arrive labelled "VeteranStatus" and "DisabilityStatus" with no separator,
+    // so \bveterans?\b found no word boundary and both went unanswered — the
+    // two questions this whole self-identification feature exists for.
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[*✱]/g, " ")
     .replace(/\(\s*required\s*\)|\brequired\b|\boptional\b/gi, " ")
     .replace(/[^\w\s@+-]/g, " ")
@@ -162,7 +167,17 @@ function listboxFor(el) {
   const open = Array.from(document.querySelectorAll('[role="listbox"]')).filter(
     (node) => node.getBoundingClientRect().height > 0
   );
-  return open.length === 1 ? open[0] : null;
+  if (open.length === 1) return open[0];
+
+  // Last resort: the menu this control opened, found by walking up to the
+  // widget's own container. Scoped to the container rather than the document so
+  // a second dropdown's menu can never be driven by mistake.
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+    const menu = node.querySelector?.("[class*='menu'],[class*='Menu'],[class*='dropdown']");
+    if (menu?.querySelector?.('[role="option"]')) return menu;
+  }
+  return null;
 }
 
 /** The choosable rows in a popup list. */
@@ -305,11 +320,33 @@ async function chooseFromCombobox(el, value, kind, unit) {
  */
 function committed(el, node, chosen) {
   if (node.getAttribute?.("aria-selected") === "true") return true;
+
   const { normText } = window.HIRECRAFT_OPTIONS;
-  const now = normText(String(el.value ?? "").trim());
-  if (!now) return false;
   const want = normText(chosen);
-  return now === want || now.includes(want) || want.includes(now);
+  const matches = (text) => {
+    const now = normText(String(text ?? "").trim());
+    return Boolean(now) && (now === want || now.includes(want) || want.includes(now));
+  };
+
+  if (matches(el.value)) return true;
+
+  // react-select — which is what Greenhouse builds every dropdown from — leaves
+  // the text input empty after a choice and renders the selection as its own
+  // element beside it. Reading only `el.value` would report every successful
+  // selection on a Greenhouse form as a failure, which is the opposite of the
+  // bug this function was added to catch but just as wrong.
+  let node2 = el.parentElement;
+  for (let depth = 0; node2 && depth < 5; depth += 1, node2 = node2.parentElement) {
+    const shown = node2.querySelector?.(
+      "[class*='single-value'],[class*='singleValue'],[class*='multi-value'],[class*='multiValue']"
+    );
+    if (shown && matches(shown.textContent)) return true;
+    // Some builds mirror the value into a hidden input for form submission.
+    for (const hidden of node2.querySelectorAll?.("input[type='hidden'],input[aria-hidden='true']") || []) {
+      if (matches(hidden.value)) return true;
+    }
+  }
+  return false;
 }
 
 /**

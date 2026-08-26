@@ -232,6 +232,24 @@ const FIELDS = [
     match: [/\bdisabilit(y|ies)\b/],
   },
   {
+    key: "open_to_relocation",
+    label: "Open to relocation",
+    // Only ever from the stored decision. Blank stays blank: an unanswered
+    // relocation question is a question, and a wrong "no" costs a role.
+    from: (p) =>
+      p.open_to_relocation == null ? "" : p.open_to_relocation ? "Yes" : "No",
+    match: [
+      /\b(willing|open|able|happy|prepared)\s*(and\s*able\s*)?to\s*relocat/,
+      /\bconsider\s*relocat/,
+      /\brelocation\s*(required|possible)\b/,
+      /^.{0,40}\brelocat\w*\s*\??$/,
+      // "This role requires working onsite 5 days a week — are you willing to
+      // work onsite?" is the same question wearing different clothes.
+      /\b(willing|able|open)\s*to\s*(work\s*)?(onsite|on-site|in\s*(the\s*)?office|from\s*(the\s*)?office)\b/,
+      /\bwilling\s*to\s*commute\b/,
+    ],
+  },
+  {
     key: "years_experience",
     label: "Years of experience",
     from: (p) => (p.years_experience == null ? "" : String(p.years_experience)),
@@ -314,14 +332,20 @@ const SKIP = [
     ],
   },
   {
-    // Verkada's form asks "requires working onsite 5 days per week in the Bay
-    // Area — are you currently local or willing to relocate?". Answering that
-    // needs the role's city and the answer the candidate actually wants to
-    // give; a stored relocation preference is neither. Filling "currently
-    // local" for someone in Los Angeles would put a false statement on a real
-    // application.
-    why: "depends on this role's location",
-    match: [/\bwilling\s*to\s*relocate\b/, /\brelocat\w*/, /\bonsite\b/, /\bhybrid\b/],
+    // Whether someone is *willing to move* is a preference, and it is stored,
+    // so it is answered above. Whether they *already live somewhere* is a fact
+    // about today, and the two get worded almost identically — "are you
+    // currently local to the Bay Area, or willing to relocate?" contains both.
+    // Answering "currently local" for someone in Los Angeles would put a false
+    // statement on a real application, so a question that asks where they are
+    // now is left alone even when it also mentions relocating.
+    why: "asks where you live right now — check this one",
+    match: [
+      /\b(currently|presently|now)\s*(located|living|live|residing|reside|based)\s*in\b/,
+      /\bdo\s*you\s*(currently\s*)?(live|reside)\s*(in|near)\b/,
+      /\bare\s*you\s*(currently\s*)?local\b/,
+      /\bhow\s*far\s*(are\s*you\s*)?from\b/,
+    ],
   },
   {
     why: "answer this one yourself",

@@ -33,6 +33,11 @@ function normText(text) {
   return (text || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    // Split camelCase before anything else. Greenhouse's compliance questions
+    // arrive labelled "VeteranStatus" and "DisabilityStatus" with no separator,
+    // so \bveterans?\b found no word boundary and both went unanswered — the
+    // two questions this whole self-identification feature exists for.
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/['’]/g, "")
     .replace(/(?<!\d)\.(?!\d)/g, "")
     .replace(/[^\w\s.+-]/g, " ")

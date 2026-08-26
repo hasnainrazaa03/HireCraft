@@ -183,7 +183,7 @@ test("a field already carrying a value is left alone", async () => {
 test("a skipped question reports why it was skipped", async () => {
   const window = install([
     makeControl({ label: "Pronouns" }),
-    makeControl({ label: "Are you willing to relocate?" }),
+    makeControl({ label: "Do you currently live in the Bay Area?" }),
   ]);
   const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
 

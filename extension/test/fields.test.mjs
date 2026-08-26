@@ -161,19 +161,33 @@ test("what nothing is stored for is still left for the candidate", () => {
   }
 });
 
-test("questions that need the role in front of you are left alone", () => {
-  // A stored relocation preference cannot answer "are you local to the Bay
-  // Area, or willing to relocate?" — that needs the role's city and a decision.
-  // Filling "currently local" for someone in Los Angeles would be a false
-  // statement on a real application.
+test("relocation is answered; where you live today still is not", () => {
+  // These read almost identically and are different questions. Willingness to
+  // move is a preference and it is stored, so it gets answered. Where someone
+  // already lives is a fact about today — and a form asking "are you currently
+  // local, or willing to relocate?" asks both at once, so it stays with the
+  // candidate rather than being answered "currently local" for someone in
+  // Los Angeles.
+  assert.equal(claim("Are you willing to relocate?"), "open_to_relocation");
+  assert.equal(claim("Are you open to relocation?"), "open_to_relocation");
+  assert.equal(claim("Are you willing to work onsite 5 days per week?"), "open_to_relocation");
+
   for (const label of [
     "This role requires working onsite 5 days per week in the Bay Area. Are you currently local or willing to relocate?",
-    "Are you willing to relocate?",
-    "Are you comfortable with a hybrid schedule?",
+    "Do you currently live in the Bay Area?",
+    "Are you currently local to New York?",
     "Why do you want to work here?",
   ]) {
     assert.equal(claim(label), "SKIP", `${label} must be left for the candidate`);
   }
+});
+
+test("relocation is only answered from a stored decision", () => {
+  const field = FIELDS.find((f) => f.key === "open_to_relocation");
+  assert.equal(field.from({}), "");
+  assert.equal(field.from({ open_to_relocation: null }), "");
+  assert.equal(field.from({ open_to_relocation: true }), "Yes");
+  assert.equal(field.from({ open_to_relocation: false }), "No");
 });
 
 test("every skip group explains itself", () => {
@@ -401,4 +415,19 @@ test("a cover letter goes in the cover-letter box and nowhere else", () => {
   assert.equal(wants("Resume/CV"), false);
   assert.equal(wants("Undergraduate Transcript"), false);
   assert.equal(wants("Writing sample"), false);
+});
+
+test("camelCase labels still find their field", () => {
+  // Greenhouse's compliance block labels its questions "VeteranStatus" and
+  // "DisabilityStatus" with no separator, so a pattern anchored on \bveteran\b
+  // found no word boundary and both went unanswered — the exact two questions
+  // the self-identification feature was built to answer.
+  assert.equal(claim("VeteranStatus"), "veteran_status");
+  assert.equal(claim("DisabilityStatus"), "disability_status");
+  assert.equal(claim("Veteran Status"), "veteran_status");
+
+  // And the split must not break the labels that were already working.
+  assert.equal(claim("LinkedIn Profile"), "linkedin");
+  assert.equal(claim("GitHub"), "github");
+  assert.equal(claim("FirstName"), "first_name");
 });
