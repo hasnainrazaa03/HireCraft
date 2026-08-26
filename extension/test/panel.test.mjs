@@ -57,7 +57,7 @@ test("every setting the panel reads can also be set", () => {
 test("the cover-letter option is on screen, not only in state", () => {
   // Named specifically, since this is the one that went missing and the one
   // that costs money when it is on.
-  assert.match(source, /Also draft a cover letter/, "the checkbox's label");
+  assert.match(source, /Draft a cover letter/, "the checkbox's label");
   assert.match(
     source,
     /state\.wantCoverLetter\s*=\s*e\.target\.checked/,
@@ -85,4 +85,15 @@ test("a rewrite sends the draft along with the note", () => {
   // The note alone would start over and lose the paragraphs already right.
   assert.match(source, /previous: revising \? state\.letter\.paragraphs : null/);
   assert.match(source, /feedback: revising \? feedback\.trim\(\) : null/);
+});
+
+test("ticking the box is enough to get a draft", () => {
+  // It was not. runCoverLetter was reachable only from inside the fill and from
+  // a Rewrite button that appears once a letter exists — so the box had to be
+  // ticked before pressing Fill, and it sits below Fill. Ticking it afterwards
+  // did nothing at all, silently.
+  const handler = /box\.onchange = \(e\) => \{([\s\S]*?)\};/.exec(source);
+  assert.ok(handler, "the checkbox should have a handler");
+  assert.match(handler[1], /runCoverLetter\(\)/, "that asks for a draft when ticked");
+  assert.match(handler[1], /!state\.letter/, "and not a second one when there already is one");
 });

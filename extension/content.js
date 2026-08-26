@@ -261,8 +261,14 @@ function renderPanel() {
     box.onchange = (e) => {
       state.wantCoverLetter = e.target.checked;
       render();
+      // Ticking it is the ask. Until now the only path to a draft ran inside
+      // the fill, so the box had to be ticked *before* pressing Fill — and it
+      // sits below Fill, so ticking it after reading the report did nothing at
+      // all, silently, which reads as a broken feature rather than a missed
+      // step. It is one, either way.
+      if (state.wantCoverLetter && !state.letter && !state.busy) runCoverLetter();
     };
-    check.append(box, el("span", null, "Also draft a cover letter"));
+    check.append(box, el("span", null, "Draft a cover letter"));
     panel.append(check);
     if (state.wantCoverLetter) {
       panel.append(
