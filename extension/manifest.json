@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "HireCraft",
   "version": "0.2.0",
-  "description": "Clip a job posting into HireCraft, and fill its application form with your details and résumé.",
+  "description": "Clip a job posting into HireCraft, and fill its application form with your details and r\u00e9sum\u00e9.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -30,6 +30,7 @@
       "js": [
         "autofill/visa.js",
         "autofill/submission.js",
+        "autofill/options.js",
         "autofill/fields.js",
         "autofill/fill.js",
         "autofill/adapters.js",

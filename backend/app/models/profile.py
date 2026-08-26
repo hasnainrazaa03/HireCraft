@@ -75,6 +75,21 @@ class CareerProfile(Base, TimestampMixin):
     # asdecimal=False returns a plain float, keeping the API free of Decimal.
     years_experience: Mapped[float | None] = mapped_column(Numeric(4, 1, asdecimal=False))
 
+    # The four EEOC self-identification questions, which every US application
+    # asks and whose answers never differ between them. Held as short canonical
+    # tokens ("male", "not_protected") rather than as any one board's phrasing,
+    # because the wording of the options varies by ATS while the answer does not
+    # — the token is matched against the choices a given page offers.
+    #
+    # Null means unanswered and is left that way. These are voluntary questions,
+    # so a default would be the app deciding something it has no business
+    # deciding; an empty box is the honest state.
+    gender: Mapped[str | None] = mapped_column(String(40))
+    race_ethnicity: Mapped[str | None] = mapped_column(String(40))
+    hispanic_latino: Mapped[str | None] = mapped_column(String(40))
+    veteran_status: Mapped[str | None] = mapped_column(String(40))
+    disability_status: Mapped[str | None] = mapped_column(String(40))
+
     # Free-form preference lists, stored as JSON arrays of strings.
     preferred_roles: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)
     preferred_industries: Mapped[list[Any]] = mapped_column(JsonB, default=list, nullable=False)

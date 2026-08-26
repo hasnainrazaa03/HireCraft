@@ -9,6 +9,28 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, model_vali
 WorkArrangement = Literal["remote", "hybrid", "onsite", "flexible"]
 SalaryPeriod = Literal["hourly", "weekly", "monthly", "yearly"]
 
+# The EEOC self-identification answers, as canonical tokens.
+#
+# Constrained rather than free text because these are matched against an
+# employer's option list at fill time: a typo would silently become an
+# unanswered question on a real application. "decline" is a real answer and is
+# offered on every one of these forms — it is not the same as leaving the
+# question unanswered, which is what null means.
+Gender = Literal["male", "female", "non_binary", "decline"]
+RaceEthnicity = Literal[
+    "american_indian",
+    "asian",
+    "black",
+    "hispanic",
+    "native_hawaiian",
+    "white",
+    "two_or_more",
+    "decline",
+]
+YesNoDecline = Literal["yes", "no", "decline"]
+VeteranStatus = Literal["protected", "not_protected", "decline"]
+DisabilityStatus = Literal["yes", "no", "decline"]
+
 
 class ProfileModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
@@ -43,6 +65,15 @@ class CareerProfileUpdate(ProfileModel):
     authorized_to_work: bool | None = None
     requires_sponsorship: bool | None = None
     years_experience: float | None = Field(default=None, ge=0, le=60)
+
+    # Voluntary self-identification. Null leaves the question unanswered on the
+    # form; "decline" actively selects the decline-to-answer option, which is a
+    # different thing and the one most people mean.
+    gender: Gender | None = None
+    race_ethnicity: RaceEthnicity | None = None
+    hispanic_latino: YesNoDecline | None = None
+    veteran_status: VeteranStatus | None = None
+    disability_status: DisabilityStatus | None = None
 
     preferred_roles: list[str] | None = Field(default=None, max_length=20)
     preferred_industries: list[str] | None = Field(default=None, max_length=20)
@@ -85,6 +116,11 @@ class CareerProfileResponse(ProfileModel):
     authorized_to_work: bool | None
     requires_sponsorship: bool | None
     years_experience: float | None
+    gender: Gender | None
+    race_ethnicity: RaceEthnicity | None
+    hispanic_latino: YesNoDecline | None
+    veteran_status: VeteranStatus | None
+    disability_status: DisabilityStatus | None
     preferred_roles: list[str]
     preferred_industries: list[str]
     preferred_locations: list[str]

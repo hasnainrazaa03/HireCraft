@@ -28,6 +28,7 @@ function makeControl({ label, type = "text", tag = "input", options = null }) {
   const events = [];
   const el = {
     tagName: tag.toUpperCase(),
+    labelText: label,
     id: "",
     value: "",
     disabled: false,
@@ -36,6 +37,7 @@ function makeControl({ label, type = "text", tag = "input", options = null }) {
     events,
     getAttribute: (name) =>
       name === "type" ? type : name === "aria-label" ? label : null,
+    hasAttribute(name) { return this.getAttribute(name) != null; },
     getBoundingClientRect: () => ({ width: 200, height: 32 }),
     closest: () => null,
     dispatchEvent: (e) => events.push(e.type),
@@ -43,13 +45,57 @@ function makeControl({ label, type = "text", tag = "input", options = null }) {
   return el;
 }
 
+/**
+ * A React-style combobox: a text input plus a popup list.
+ *
+ * This is the shape that broke on the real form. `el.value = x` on one of these
+ * succeeds at the DOM level and commits nothing, so the stub deliberately does
+ * NOT let a written value stand — only clicking a row sets it, exactly as the
+ * component does.
+ */
+function makeCombobox({ label, options }) {
+  const el = makeControl({ label });
+  // Chain to the base rather than replacing it: dropping aria-label here left
+  // the control with no resolvable label at all, so it was never a candidate.
+  const base = el.getAttribute;
+  el.getAttribute = (name) =>
+    name === "role" ? "combobox" : name === "aria-controls" ? `${label}-list` : base(name);
+  el.hasAttribute = (name) => el.getAttribute(name) != null;
+  el.committed = null;
+  el.typed = "";
+  Object.defineProperty(el, "value", {
+    get() { return el.committed ?? el.typed; },
+    set(v) { el.typed = v; },        // typing never commits
+  });
+  el.focus = () => {};
+  el.nodes = options.map((text) => ({
+    textContent: text,
+    getBoundingClientRect: () => ({ width: 200, height: 24 }),
+    querySelectorAll: () => [],
+    getAttribute: () => "option",
+    dispatchEvent: () => {},
+    click: () => { el.committed = text; },   // only a click commits
+  }));
+  el.listbox = {
+    getBoundingClientRect: () => ({ width: 200, height: 200 }),
+    querySelectorAll: (sel) => (sel.includes("option") ? el.nodes : []),
+  };
+  return el;
+}
+
 function install(controls) {
   const window = {};
+  const boxes = Object.fromEntries(
+    controls.filter((c) => c.listbox).map((c) => [`${c.getAttribute("aria-label") ?? ""}-list`, c])
+  );
   const document = {
     querySelectorAll: (sel) =>
-      sel.includes("file") ? [] : controls,
+      sel.includes("file") ? [] : sel.includes("listbox") ? [] : controls,
     querySelector: () => null,
-    getElementById: () => null,
+    getElementById: (id) => {
+      const owner = controls.find((c) => c.listbox && `${c.labelText}-list` === id);
+      return owner ? owner.listbox : null;
+    },
   };
 
   // The engine narrows on these to pick a value setter, and reads `.options`
@@ -59,6 +105,8 @@ function install(controls) {
     document,
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
     HTMLInputElement: class {},
     HTMLTextAreaElement: class {},
     HTMLSelectElement: class {},
@@ -68,7 +116,7 @@ function install(controls) {
   const names = Object.keys(globals);
   const values = Object.values(globals);
 
-  for (const file of ["autofill/fields.js", "autofill/fill.js"]) {
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
     new Function(...names, read(file))(...values);
   }
   return window;
@@ -134,7 +182,7 @@ test("a field already carrying a value is left alone", async () => {
 
 test("a skipped question reports why it was skipped", async () => {
   const window = install([
-    makeControl({ label: "Gender" }),
+    makeControl({ label: "Pronouns" }),
     makeControl({ label: "Are you willing to relocate?" }),
   ]);
   const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
@@ -144,6 +192,18 @@ test("a skipped question reports why it was skipped", async () => {
   const reasons = report.skipped.map((s) => s.why);
   assert.ok(reasons.every(Boolean), "every skip must carry a reason");
   assert.notEqual(reasons[0], reasons[1], "different skips mean different things");
+});
+
+test("an EEOC question with no stored answer says where to set it", async () => {
+  // Previously these were skipped as "yours to answer" and that was the end of
+  // it. They are answerable now, so an unanswered one is a gap to point at
+  // rather than a question to walk past.
+  const window = install([makeControl({ label: "Gender" })]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(report.skipped.length, 0);
+  assert.equal(report.missing[0].label, "Gender");
+  assert.match(report.missing[0].why, /Career Profile/);
 });
 
 test("nothing stored is reported rather than left silent", async () => {
@@ -161,4 +221,90 @@ test("inspectForm reports every control with its resolved label", () => {
   ]);
   const rows = window.HIRECRAFT_FILL.inspectForm();
   assert.deepEqual(rows.map((r) => r.normalised), ["first name", "location city"]);
+});
+
+test("a combobox is chosen from its options, not typed into", async () => {
+  // The Verkada failure, reproduced. A React combobox accepts a written value
+  // at the DOM level and commits nothing, so the old code reported "Degree:
+  // M.S. in Computer Science" for a box that was still empty.
+  const degree = makeCombobox({
+    label: "Degree",
+    options: ["High School", "Bachelor's Degree", "Master's Degree", "Doctorate"],
+  });
+  const window = install([degree]);
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { degree: "M.S. in Computer Science" } },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(degree.committed, "Master's Degree", "an option must be clicked");
+  assert.deepEqual(report.filled, [{ label: "Degree", value: "Master's Degree", note: undefined }]);
+});
+
+test("a value no option can express is reported, and nothing is typed", async () => {
+  // 2027 against 2023-2026 / 2020-2023 / Before 2020. There is no right answer
+  // here, and inventing one puts a false statement on a required question.
+  const year = makeCombobox({
+    label: "What year did you graduate?",
+    options: ["2023-2026", "2020-2023", "Before 2020"],
+  });
+  const window = install([year]);
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { end_year: "2027" } },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(report.filled.length, 0);
+  assert.equal(year.committed, null, "nothing may be committed");
+  assert.equal(year.value, "", "and no probe text may be left behind");
+  assert.match(report.missing[0].why, /2027/);
+  assert.ok(report.missing[0].offered?.length, "the user is shown what was on offer");
+});
+
+test("a numeric answer lands in the band the form offers", async () => {
+  const gpa = makeCombobox({
+    label: "What is your major GPA?",
+    options: ["3.6 - 4.0", "3.1 - 3.5", "3.0 or under"],
+  });
+  const window = install([gpa]);
+  await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { gpa: "3.67" } },
+    { stepDelay: 0 }
+  );
+  assert.equal(gpa.committed, "3.6 - 4.0");
+});
+
+test("stored self-identification answers fill their questions", async () => {
+  const gender = makeCombobox({
+    label: "Gender",
+    options: ["Decline To Self Identify", "Female", "Male"],
+  });
+  const veteran = makeCombobox({
+    label: "Veteran Status",
+    options: [
+      "I don't wish to answer",
+      "I identify as one or more of the classifications of a protected veteran",
+      "I am not a protected veteran",
+    ],
+  });
+  const window = install([gender, veteran]);
+  await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, self_identification: { gender: "male", veteran_status: "not_protected" } },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(gender.committed, "Male");
+  assert.equal(veteran.committed, "I am not a protected veteran");
+});
+
+test("a field that discards what it was given is not reported as filled", async () => {
+  // The bug this whole pass is about, at its simplest: the old code returned
+  // success for every non-<select> without ever reading the value back.
+  const stubborn = makeControl({ label: "First Name" });
+  Object.defineProperty(stubborn, "value", { get: () => "", set: () => {} });
+  const window = install([stubborn]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(report.filled.length, 0);
+  assert.match(report.missing[0].why, /discarded/);
 });

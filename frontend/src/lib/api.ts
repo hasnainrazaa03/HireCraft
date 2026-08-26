@@ -456,6 +456,15 @@ export interface CareerProfile {
   authorized_to_work: boolean | null;
   requires_sponsorship: boolean | null;
   years_experience: number | null;
+  /* Voluntary self-identification, as canonical tokens. null is unanswered and
+     leaves the question blank; "decline" actively picks the decline option. */
+  gender: "male" | "female" | "non_binary" | "decline" | null;
+  race_ethnicity:
+    | "american_indian" | "asian" | "black" | "hispanic"
+    | "native_hawaiian" | "white" | "two_or_more" | "decline" | null;
+  hispanic_latino: "yes" | "no" | "decline" | null;
+  veteran_status: "protected" | "not_protected" | "decline" | null;
+  disability_status: "yes" | "no" | "decline" | null;
   preferred_roles: string[];
   preferred_industries: string[];
   preferred_locations: string[];

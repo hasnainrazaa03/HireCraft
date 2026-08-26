@@ -110,7 +110,15 @@
 .hc-summary { margin-bottom: 8px; font-size: 12px; font-weight: 600; color: #e9e9f0; }
 
 .hc-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
-.hc-row { display: flex; align-items: baseline; gap: 7px; font-size: 12px; }
+.hc-row { display: flex; align-items: baseline; gap: 7px; font-size: 12px; flex-wrap: wrap; }
+/* What a dropdown offered, when it had nothing matching the stored answer. */
+.hc-row-extra {
+  flex: 1 0 100%;
+  padding-left: 13px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #7c7c92;
+}
 .hc-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
 .hc-ok .hc-dot { background: #4ade80; }
 .hc-miss .hc-dot { background: #fbbf24; }
@@ -119,9 +127,9 @@
 .hc-val {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wraps rather than clipping: this list exists so the filled value can be
+     checked against what was meant, and a clipped URL cannot be checked. */
+  overflow-wrap: anywhere;
   text-align: right;
   color: #8a8a9e;
 }
@@ -243,3 +251,26 @@
 }
 .hc-letter-meta { margin-top: 6px; font-size: 10.5px; color: #8a8a9e; }
 .hc-small { margin-top: 7px; padding: 5px 9px; font-size: 11px; flex: 0 0 auto; }
+
+/* Required questions still unanswered after a fill. Amber rather than red: the
+   form is not broken, it is unfinished, and the user is the one who finishes it. */
+.hc-required {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.07);
+}
+.hc-required-head {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 4px;
+}
+.hc-required-item {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #cfcfe0;
+  overflow-wrap: anywhere;
+}
+.hc-required-item::before { content: "· "; color: #7c7c92; }

@@ -45,6 +45,27 @@ const SALARY_PERIODS = [
   ["hourly", "Per hour"],
 ] as const;
 
+/* The EEOC categories, stored as tokens rather than as any one board's
+   phrasing — the extension matches the token against whichever wording the
+   employer's form happens to use. */
+const GENDERS = [
+  ["male", "Male"],
+  ["female", "Female"],
+  ["non_binary", "Non-binary"],
+  ["decline", "Decline to answer"],
+] as const;
+
+const RACES = [
+  ["asian", "Asian"],
+  ["black", "Black or African American"],
+  ["hispanic", "Hispanic or Latino"],
+  ["white", "White"],
+  ["american_indian", "American Indian or Alaska Native"],
+  ["native_hawaiian", "Native Hawaiian or Other Pacific Islander"],
+  ["two_or_more", "Two or more races"],
+  ["decline", "Decline to answer"],
+] as const;
+
 /** Three-state select helpers: null is "not answered", not "no". */
 const yesNo = (v: boolean | null) => (v == null ? "" : v ? "yes" : "no");
 const fromYesNo = (v: string) => (v === "" ? null : v === "yes");
@@ -187,6 +208,58 @@ export default function ProfilePage() {
           Left unanswered, the browser extension skips these on application forms
           rather than guessing.
         </p>
+      </Section>
+
+      {/* The four EEOC questions. Every US application asks them and the answers
+          never change, so storing them once is the difference between the
+          extension finishing a form and leaving its last section to you. */}
+      <Section title="Voluntary self-identification">
+        <p className="-mt-1 mb-4 text-xs text-subtle">
+          Answer once and the extension fills these wherever they are asked, matching
+          your answer to whatever wording that employer uses. Every question here is
+          voluntary — leave any of them unanswered and the extension leaves it blank
+          on the form. <span className="text-muted">Decline to answer</span> is a
+          different thing: it actively picks the decline option, which is what most
+          forms expect.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Gender">
+            <select className="input" value={form.gender ?? ""} onChange={(e) => set("gender", (e.target.value || null) as CareerProfile["gender"])}>
+              <option value="">Not answered</option>
+              {GENDERS.map(([v, label]) => <option key={v} value={v} className="bg-surface">{label}</option>)}
+            </select>
+          </Field>
+          <Field label="Race / ethnicity">
+            <select className="input" value={form.race_ethnicity ?? ""} onChange={(e) => set("race_ethnicity", (e.target.value || null) as CareerProfile["race_ethnicity"])}>
+              <option value="">Not answered</option>
+              {RACES.map(([v, label]) => <option key={v} value={v} className="bg-surface">{label}</option>)}
+            </select>
+          </Field>
+          <Field label="Hispanic or Latino?">
+            <select className="input" value={form.hispanic_latino ?? ""} onChange={(e) => set("hispanic_latino", (e.target.value || null) as CareerProfile["hispanic_latino"])}>
+              <option value="">Not answered</option>
+              <option value="yes" className="bg-surface">Yes</option>
+              <option value="no" className="bg-surface">No</option>
+              <option value="decline" className="bg-surface">Decline to answer</option>
+            </select>
+          </Field>
+          <Field label="Veteran status">
+            <select className="input" value={form.veteran_status ?? ""} onChange={(e) => set("veteran_status", (e.target.value || null) as CareerProfile["veteran_status"])}>
+              <option value="">Not answered</option>
+              <option value="not_protected" className="bg-surface">I am not a protected veteran</option>
+              <option value="protected" className="bg-surface">I am a protected veteran</option>
+              <option value="decline" className="bg-surface">Decline to answer</option>
+            </select>
+          </Field>
+          <Field label="Disability status">
+            <select className="input" value={form.disability_status ?? ""} onChange={(e) => set("disability_status", (e.target.value || null) as CareerProfile["disability_status"])}>
+              <option value="">Not answered</option>
+              <option value="no" className="bg-surface">No, I don't have a disability</option>
+              <option value="yes" className="bg-surface">Yes, I have or have had a disability</option>
+              <option value="decline" className="bg-surface">Decline to answer</option>
+            </select>
+          </Field>
+        </div>
       </Section>
 
       <Section title="Preferences">

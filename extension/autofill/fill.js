@@ -123,18 +123,185 @@ function setValue(el, value) {
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-/** Choose the option whose text best matches `value`. */
-function selectOption(el, value) {
-  const want = normalise(value);
-  if (!want) return false;
-  const options = Array.from(el.options || []);
-  const exact = options.find((o) => normalise(o.text) === want);
-  const partial =
-    exact ||
-    options.find((o) => normalise(o.text).includes(want) || want.includes(normalise(o.text)));
-  if (!partial) return false;
-  setValue(el, partial.value);
-  return true;
+/**
+ * Is this a dropdown that isn't a native `<select>`?
+ *
+ * It matters because the two behave nothing alike, and treating one as the
+ * other is what put "M.S. in Computer Science" into a degree box offering ten
+ * fixed choices. Greenhouse, Ashby and Lever all build their dropdowns out of a
+ * text input plus a popup listbox, so `el.value = "..."` succeeds at the DOM
+ * level, looks filled, and submits nothing — the component's own state never
+ * changed.
+ *
+ * Detected by the ARIA a combobox has to expose to be usable with a screen
+ * reader. That is the one part such a widget cannot omit and still work, which
+ * makes it the durable thing to key on.
+ */
+function isCombobox(el) {
+  if (el instanceof HTMLSelectElement) return false;
+  const role = (el.getAttribute("role") || "").toLowerCase();
+  const haspopup = (el.getAttribute("aria-haspopup") || "").toLowerCase();
+  return (
+    role === "combobox" ||
+    el.hasAttribute("aria-autocomplete") ||
+    el.hasAttribute("aria-expanded") ||
+    ["listbox", "menu", "tree", "grid", "true"].includes(haspopup)
+  );
+}
+
+/** The popup list this control drives, if it is open. */
+function listboxFor(el) {
+  const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
+  if (id) {
+    const byId = document.getElementById(id);
+    if (byId) return byId;
+  }
+  // Several libraries portal the listbox to <body> without wiring aria-controls.
+  // Only take that route when exactly one is open, so we never drive a listbox
+  // belonging to a different field.
+  const open = Array.from(document.querySelectorAll('[role="listbox"]')).filter(
+    (node) => node.getBoundingClientRect().height > 0
+  );
+  return open.length === 1 ? open[0] : null;
+}
+
+/** The choosable rows in a popup list. */
+function optionNodes(box) {
+  if (!box) return [];
+  // Prefer the explicit role. Falling back to <li> as well would double-count
+  // when a library marks up both, and the duplicate index picks the wrong row.
+  const byRole = Array.from(box.querySelectorAll('[role="option"]'));
+  const nodes = byRole.length ? byRole : Array.from(box.querySelectorAll("li"));
+  return nodes.filter((node) => (node.textContent || "").trim());
+}
+
+const optionText = (node) => (node.textContent || "").replace(/\s+/g, " ").trim();
+
+/** Click the way a component library expects: many commit on mousedown. */
+function clickLike(node) {
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+    try {
+      node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    } catch {
+      // MouseEvent is unavailable in a bare test DOM; the plain click below is
+      // enough there, and on a real page all four dispatch fine.
+    }
+  }
+  node.click?.();
+}
+
+function pressKey(el, key) {
+  try {
+    el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
+    el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key }));
+  } catch {
+    /* same as above */
+  }
+}
+
+/** Open the popup and wait for it to render. */
+async function openListbox(el) {
+  el.focus?.();
+  clickLike(el);
+  for (let tries = 0; tries < 12; tries += 1) {
+    const box = listboxFor(el);
+    if (optionNodes(box).length) return box;
+    await pause(40);
+  }
+  return listboxFor(el);
+}
+
+/**
+ * Text to type when a list renders nothing until it is filtered.
+ *
+ * A school autocomplete holds thousands of entries and shows none of them cold.
+ * The value itself is the best first guess; a degree falls back to the word for
+ * its level, because "M.S. in Computer Science" filters a degree list to
+ * nothing while "Master" finds the row we want.
+ */
+function probesFor(value, kind) {
+  const out = [String(value)];
+  if (kind === "degree") {
+    const level = window.HIRECRAFT_OPTIONS.degreeLevel(value);
+    const word = {
+      master: "Master", bachelor: "Bachelor", doctorate: "Doctor",
+      mba: "Master of Business", jd: "Juris", md: "Doctor of Medicine",
+      associate: "Associate", high_school: "High School",
+    }[level];
+    if (word) out.push(word);
+  }
+  const first = String(value).split(/\s+/)[0];
+  if (first.length >= 3 && first !== value) out.push(first);
+  return out;
+}
+
+/**
+ * Pick `value` out of a combobox, or explain why it isn't there.
+ *
+ * On failure the box is left empty rather than holding the text we typed while
+ * probing. A combobox showing "2027" that has committed nothing is exactly the
+ * false impression this whole change exists to remove.
+ */
+async function chooseFromCombobox(el, value, kind) {
+  let box = await openListbox(el);
+  let nodes = optionNodes(box);
+
+  // An empty list means it filters as you type; a very long one means the match
+  // we want may not be rendered yet.
+  if (!nodes.length || nodes.length > 60) {
+    for (const probe of probesFor(value, kind)) {
+      setValue(el, probe);
+      pressKey(el, probe.slice(-1) || "a");
+      await pause(180);
+      box = listboxFor(el) || box;
+      nodes = optionNodes(box);
+      if (nodes.length && nodes.length <= 60) break;
+    }
+  }
+
+  if (!nodes.length) {
+    setValue(el, "");
+    pressKey(el, "Escape");
+    return { ok: false, why: "the dropdown never showed any options" };
+  }
+
+  const texts = nodes.map(optionText);
+  const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind });
+  if (index < 0) {
+    setValue(el, "");
+    pressKey(el, "Escape");
+    return { ok: false, why, offered: texts.slice(0, 12) };
+  }
+
+  nodes[index].scrollIntoView?.({ block: "nearest" });
+  clickLike(nodes[index]);
+  await pause(80);
+  return { ok: true, chosen: texts[index], why };
+}
+
+/**
+ * Set a value and check it survived.
+ *
+ * The check is the point. Until now this returned success unconditionally for
+ * anything that wasn't a `<select>`, so the report described what was attempted
+ * and was read as what happened — the difference being every field a
+ * React-controlled component silently rejected.
+ *
+ * A field that reformats what it was given (a phone mask, a trimmed URL) counts
+ * as filled and says what it now holds. Only an empty field is a failure.
+ */
+async function setAndVerify(el, value) {
+  setValue(el, value);
+  await pause(30); // a controlled component re-renders on the next tick
+  const now = String(el.value ?? "").trim();
+  if (!now) return { ok: false, why: "the field discarded the value" };
+
+  const wanted = normalise(value);
+  const got = normalise(now);
+  if (got !== wanted && !got.includes(wanted) && !wanted.includes(got)) {
+    return { ok: true, actual: now, note: `the field changed it to "${now}"` };
+  }
+  return { ok: true, actual: now };
 }
 
 /**
@@ -200,25 +367,43 @@ async function fillForm(
 
     const value = String(field.from(profile) ?? "").trim();
     if (!value) {
-      missing.push({ label: field.label, why: "nothing stored for this" });
+      missing.push({ label: field.label, why: field.whenEmpty || "nothing stored for this" });
       claimed.add(field.key);
       continue;
     }
 
-    const ok =
-      el instanceof HTMLSelectElement ? selectOption(el, value) : (setValue(el, value), true);
-    if (ok) {
-      filled.push({ label: field.label, value });
-      claimed.add(field.key);
+    claimed.add(field.key);
+
+    // Three kinds of control, three ways to commit a value — and each reports
+    // what it actually managed, rather than that it tried.
+    let result;
+    if (el instanceof HTMLSelectElement) {
+      const texts = Array.from(el.options || []).map((o) => o.text);
+      const choice = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind: field.kind });
+      if (choice.index >= 0) {
+        setValue(el, el.options[choice.index].value);
+        result = { ok: true, actual: texts[choice.index] };
+      } else {
+        result = { ok: false, why: choice.why, offered: texts.slice(0, 12) };
+      }
+    } else if (isCombobox(el)) {
+      result = await chooseFromCombobox(el, value, field.kind);
+      if (result.ok) result.actual = result.chosen;
+    } else {
+      result = await setAndVerify(el, value);
+    }
+
+    if (result.ok) {
+      filled.push({ label: field.label, value: result.actual ?? value, note: result.note });
       // Let the caller follow along. Watching each field fill is how you check
       // the work — a form that is simply full when you look up tells you
       // nothing about whether the right answer went in the right box.
       if (onProgress) {
-        onProgress({ el, label: field.label, value });
+        onProgress({ el, label: field.label, value: result.actual ?? value });
         if (stepDelay) await pause(stepDelay);
       }
     } else {
-      missing.push({ label: field.label, why: "no matching option" });
+      missing.push({ label: field.label, why: result.why, offered: result.offered });
     }
   }
 
@@ -244,7 +429,8 @@ async function fillForm(
     }
   }
 
-  return { filled, skipped, missing };
+  // Checked last, so anything the fill just satisfied no longer counts.
+  return { filled, skipped, missing, required: requiredGaps() };
 }
 
 /**
@@ -292,6 +478,58 @@ function findUploadInput(want, reject = []) {
   return null;
 }
 
+/**
+ * Required questions the form still has no answer for.
+ *
+ * Filling is only half of not-submitting-a-broken-application. Verkada's form
+ * requires an undergraduate transcript, a Yes/No on working onsite in the Bay
+ * Area, and all four EEOC questions; a filler that reports fifteen successes
+ * and says nothing about the required boxes it never touched has told the user
+ * the form is ready when it is not.
+ *
+ * Read from the page rather than from our own catalogue, so a question nobody
+ * anticipated still gets counted.
+ */
+function requiredGaps() {
+  const gaps = [];
+  const groupChecked = new Map();
+
+  for (const el of document.querySelectorAll("input, select, textarea")) {
+    const type = (el.getAttribute("type") || "text").toLowerCase();
+    if (["hidden", "submit", "button", "reset", "image"].includes(type)) continue;
+    if (el.disabled) continue;
+
+    const raw = (labelFor(el) || "").replace(/\s+/g, " ").trim();
+    if (!raw) continue;
+    // The asterisk is how most boards mark a required field, and it is often
+    // the only marker — plenty never set the `required` attribute at all.
+    const required =
+      el.hasAttribute("required") ||
+      el.getAttribute("aria-required") === "true" ||
+      /[*✱]|\brequired\b/i.test(raw);
+    if (!required) continue;
+
+    let empty;
+    if (type === "file") {
+      empty = !(el.files && el.files.length);
+    } else if (type === "radio" || type === "checkbox") {
+      // One answer satisfies the whole group, so judge the group, not the box.
+      const name = el.getAttribute("name") || raw;
+      if (!groupChecked.has(name)) {
+        const peers = name
+          ? Array.from(document.querySelectorAll(`[name="${CSS.escape(name)}"]`))
+          : [el];
+        groupChecked.set(name, peers.some((p) => p.checked));
+      }
+      empty = !groupChecked.get(name);
+    } else {
+      empty = !String(el.value ?? "").trim();
+    }
+    if (empty) gaps.push(raw.replace(/[*✱]/g, "").trim().slice(0, 70));
+  }
+  return [...new Set(gaps)];
+}
+
 /** Every control with its resolved label — how adapters get built and debugged. */
 function inspectForm() {
   return controls().map(({ el, raw, label }) => ({
@@ -304,4 +542,13 @@ function inspectForm() {
   }));
 }
 
-window.HIRECRAFT_FILL = { fillForm, inspectForm, fileFromDataUrl, normalise, labelFor };
+window.HIRECRAFT_FILL = {
+  fillForm,
+  inspectForm,
+  fileFromDataUrl,
+  normalise,
+  labelFor,
+  isCombobox,
+  setAndVerify,
+  requiredGaps,
+};

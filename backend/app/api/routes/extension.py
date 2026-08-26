@@ -143,6 +143,15 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         "requires_sponsorship": (profile.requires_sponsorship if profile else None),
         "years_experience": (profile.years_experience if profile else None),
         "open_to_relocation": bool(profile.open_to_relocation) if profile else False,
+        # The EEOC questions, as canonical tokens the filler matches against
+        # whatever wording the employer's form uses. Null stays unanswered.
+        "self_identification": {
+            "gender": (profile.gender if profile else None),
+            "race_ethnicity": (profile.race_ethnicity if profile else None),
+            "hispanic_latino": (profile.hispanic_latino if profile else None),
+            "veteran_status": (profile.veteran_status if profile else None),
+            "disability_status": (profile.disability_status if profile else None),
+        },
         # The most recent degree, which is what "School", "Degree", "Graduation
         # year" and "GPA" on an application form are asking about. Taken from the
         # résumé because that is where it already lives — re-entering a degree

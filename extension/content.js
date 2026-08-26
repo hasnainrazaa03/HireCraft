@@ -122,16 +122,42 @@ function renderPanel() {
     );
 
     const list = el("div", "hc-list");
-    const row = (cls, label, value) => {
+    // Long values wrap rather than being cut. Truncating at 36 characters made
+    // a correctly-filled LinkedIn URL read as though it had lost its last
+    // character, which is a report that creates the bug it is meant to rule out.
+    const row = (cls, label, value, extra) => {
       const r = el("div", `hc-row ${cls}`);
       r.append(el("span", "hc-dot"), el("span", "hc-label", label));
-      r.append(el("span", "hc-val", String(value).slice(0, 36)));
+      r.append(el("span", "hc-val", String(value)));
+      if (extra) r.append(el("div", "hc-row-extra", extra));
       return r;
     };
-    for (const item of filled) list.append(row("hc-ok", item.label, item.value));
-    for (const item of missing) list.append(row("hc-miss", item.label, item.why));
+    for (const item of filled) {
+      list.append(row("hc-ok", item.label, item.value, item.note));
+    }
+    for (const item of missing) {
+      // When a dropdown had no answer for us, show what it did offer — that is
+      // the difference between "this failed" and knowing what to pick by hand.
+      const offered = item.offered?.length ? `offers: ${item.offered.join(" · ")}` : null;
+      list.append(row("hc-miss", item.label, item.why, offered));
+    }
     for (const item of skipped) list.append(row("hc-skip", item.label, item.why));
     panel.append(list);
+
+    // Required questions the form still has no answer for. Worth its own block
+    // rather than another row in the list: a filled-in form that will bounce on
+    // submit is the failure mode this panel exists to prevent, and it is the one
+    // thing here you have to act on before submitting.
+    const gaps = state.report.required ?? [];
+    if (gaps.length) {
+      const warn = el("div", "hc-required");
+      warn.append(
+        el("div", "hc-required-head", `${gaps.length} required question${gaps.length === 1 ? "" : "s"} still empty`)
+      );
+      for (const label of gaps) warn.append(el("div", "hc-required-item", label));
+      panel.append(warn);
+    }
+
     panel.append(
       el("div", "hc-note", "Nothing has been submitted. Check the form, then submit it yourself.")
     );

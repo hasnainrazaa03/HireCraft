@@ -110,6 +110,10 @@ const FIELDS = [
   {
     key: "degree",
     label: "Degree",
+    // Named so the matcher reduces both sides to a level: a résumé says "M.S.
+    // in Computer Science" where the form offers "Master's Degree", and neither
+    // string contains the other.
+    kind: "degree",
     from: (p) => p.education?.degree,
     match: [/^degree$/, /\bdegree\s*(type|level|earned)\b/, /\bhighest\s*degree\b/],
   },
@@ -178,6 +182,49 @@ const FIELDS = [
     ],
   },
   {
+    key: "hispanic_latino",
+    label: "Hispanic/Latino",
+    kind: "hispanic_latino",
+    // Before the race question: a form that asks both wants this one answered
+    // from the yes/no, while a combined "Race/Ethnicity" dropdown carries
+    // "Hispanic or Latino" as one of its options and belongs to the next entry.
+    from: (p) => p.self_identification?.hispanic_latino || "",
+    whenEmpty: "set it once in Career Profile → Self-identification",
+    match: [/\bhispanic\b/, /\blatino\b/, /\blatinx\b/],
+  },
+  {
+    key: "race_ethnicity",
+    label: "Race/ethnicity",
+    kind: "race_ethnicity",
+    from: (p) => p.self_identification?.race_ethnicity || "",
+    whenEmpty: "set it once in Career Profile → Self-identification",
+    match: [/\braces?\b/, /\bethnicit(y|ies)\b/, /\bracial\b/],
+  },
+  {
+    key: "gender",
+    label: "Gender",
+    kind: "gender",
+    from: (p) => p.self_identification?.gender || "",
+    whenEmpty: "set it once in Career Profile → Self-identification",
+    match: [/\bgenders?\b/, /^sex$/],
+  },
+  {
+    key: "veteran_status",
+    label: "Veteran status",
+    kind: "veteran_status",
+    from: (p) => p.self_identification?.veteran_status || "",
+    whenEmpty: "set it once in Career Profile → Self-identification",
+    match: [/\bveterans?\b/, /\bmilitary\s*service\b/],
+  },
+  {
+    key: "disability_status",
+    label: "Disability status",
+    kind: "disability_status",
+    from: (p) => p.self_identification?.disability_status || "",
+    whenEmpty: "set it once in Career Profile → Self-identification",
+    match: [/\bdisabilit(y|ies)\b/],
+  },
+  {
     key: "years_experience",
     label: "Years of experience",
     from: (p) => (p.years_experience == null ? "" : String(p.years_experience)),
@@ -196,12 +243,15 @@ const FIELDS = [
  */
 const SKIP = [
   {
+    // The EEOC four moved into FIELDS above once there was somewhere to store
+    // the answers — they are identical on every application, so retyping them
+    // was the filler skipping the easiest part of the form. What stays here is
+    // what HireCraft holds nothing for, and guessing at it would be inventing
+    // an answer about someone's identity.
     why: "yours to answer",
     match: [
-      /\b(races?|ethnicit(y|ies)|genders?|sex|pronouns?)\b/,
-      /\bdisabilit(y|ies)\b/,
-      /\bveterans?\b/,
-      /\bhispanic\b/,
+      /\bpronouns?\b/,
+      /\btransgender\b/,
       /\bsexual\s*orientation\b/,
       /\bdate\s*of\s*birth\b/,
     ],

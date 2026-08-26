@@ -127,16 +127,33 @@ test("near-miss labels are not answered with the candidate's own details", () =>
   }
 });
 
-test("voluntary self-identification is never filled", () => {
+test("the EEOC four are answered from the profile, each by its own question", () => {
+  // These used to be skipped outright. They are identical on every application
+  // and never change, so refusing to fill them meant retyping the same five
+  // answers forever. They are still only ever answered from a stored decision —
+  // an unset one leaves the box blank, exactly as before.
+  assert.equal(claim("Gender"), "gender");
+  assert.equal(claim("Race / Ethnicity"), "race_ethnicity");
+  assert.equal(claim("Are you Hispanic or Latino?"), "hispanic_latino");
+  assert.equal(claim("Veteran status"), "veteran_status");
+  assert.equal(claim("Do you have a disability?"), "disability_status");
+});
+
+test("a Hispanic/Latino question is not answered from the race field", () => {
+  // Forms split these two ways: one combined "Race/Ethnicity" dropdown, or a
+  // yes/no about Hispanic origin followed by a separate race question. Reading
+  // the wrong stored answer into either would put a wrong answer on the form.
+  assert.equal(claim("Are you Hispanic/Latino?"), "hispanic_latino");
+  assert.equal(claim("Race"), "race_ethnicity");
+  assert.equal(claim("Ethnicity"), "race_ethnicity");
+});
+
+test("what nothing is stored for is still left for the candidate", () => {
   for (const label of [
-    "Race / Ethnicity",
-    "Gender",
     "What are your pronouns?",
-    "Do you have a disability?",
-    "Veteran status",
-    "Are you Hispanic or Latino?",
     "Sexual orientation",
     "Date of birth",
+    "Do you identify as transgender?",
   ]) {
     assert.equal(claim(label), "SKIP", `${label} must be left for the candidate`);
   }
@@ -221,6 +238,13 @@ test("every field can produce a value from a full profile", () => {
     open_to_relocation: true,
     authorized_to_work: true,
     requires_sponsorship: true,
+    self_identification: {
+      gender: "male",
+      race_ethnicity: "asian",
+      hispanic_latino: "no",
+      veteran_status: "not_protected",
+      disability_status: "no",
+    },
     education: {
       school: "University of Southern California",
       degree: "M.S. in Computer Science",
