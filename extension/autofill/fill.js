@@ -67,13 +67,30 @@ function labelFor(el) {
   const wrapping = el.closest("label");
   if (wrapping?.innerText.trim()) return wrapping.innerText;
 
-  // Nearest preceding label-ish text within the field's own group.
-  const group = el.closest("div,fieldset,section,li,td");
-  if (group) {
-    const candidate = group.querySelector("label,legend,[class*='label'],[class*='Label']");
-    if (candidate?.innerText.trim()) return candidate.innerText;
+  // Nearest label-ish text, walking outward. One level is not enough: Ashby
+  // nests a combobox input a few divs inside its field wrapper, so the single
+  // `closest("div")` found only the inner shell, fell through to the
+  // placeholder, and asked the catalogue to match "Search schools…" and "Start
+  // typing…" — which describe the widget rather than the question.
+  //
+  // The walk stops at the first ancestor holding another visible control, for
+  // the same reason every other walk here does: past that point the nearest
+  // label belongs to the field next door.
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+    const others = Array.from(node.querySelectorAll?.("input,select,textarea") || []).filter(
+      (c) => c !== el && (c.getBoundingClientRect?.()?.width ?? 1) > 0
+    );
+    if (others.length) break;
+    const candidate = node.querySelector?.(
+      "label,legend,[class*='label'],[class*='Label'],[class*='question'],[class*='Question']"
+    );
+    const text = candidate?.innerText?.trim();
+    if (text) return text;
   }
 
+  // The placeholder last. It is a hint about how to use the box, not a name for
+  // what it holds, and preferring it over a real label was the whole bug above.
   return el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
 }
 
@@ -727,6 +744,72 @@ async function fillForm(
     }
   }
 
+  // Questions asked as a set of choices, which the loop above cannot see.
+  for (const group of radioGroups()) {
+    const label = normalise(group.question);
+    if (!label) continue;
+    const shown = group.question.replace(/\s+/g, " ").trim().slice(0, 70);
+
+    if (group.options.some((option) => option.el.checked)) {
+      trace.push({ label: shown, outcome: "left alone", why: "already answered" });
+      continue;
+    }
+
+    const skip = window.HIRECRAFT_SKIP.find((entry) => entry.match.some((re) => re.test(label)));
+    if (skip) {
+      skipped.push({ label: shown, why: skip.why });
+      trace.push({ label: shown, outcome: "skipped", why: skip.why });
+      continue;
+    }
+
+    const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
+    if (!field || claimed.has(field.key)) continue;
+
+    const value = String(field.from(profile) ?? "").trim();
+    if (!value) {
+      missing.push({ label: field.label, why: field.whenEmpty || "nothing stored for this" });
+      claimed.add(field.key);
+      continue;
+    }
+    claimed.add(field.key);
+
+    const texts = group.options.map((option) => option.text);
+    const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, {
+      kind: field.kind,
+      unit: field.unit,
+      context: field.context?.(profile),
+    });
+
+    if (index < 0) {
+      missing.push({ label: field.label, why, offered: texts.slice(0, 12) });
+      trace.push({ label: shown, field: field.key, control: "radio", wanted: value, outcome: "failed", why });
+      continue;
+    }
+
+    const took = await pickRadio(group.options[index]);
+    trace.push({
+      label: shown,
+      at: pathTo(group.options[index].el),
+      field: field.key,
+      control: "radio",
+      wanted: value,
+      outcome: took ? "filled" : "failed",
+      got: took ? texts[index] : null,
+      why: took ? why : "the option would not take",
+      listbox: { from: "radio-group", count: texts.length, sample: texts.slice(0, 4) },
+    });
+
+    if (took) {
+      filled.push({ label: field.label, value: texts[index] });
+      if (onProgress) {
+        onProgress({ el: group.options[index].el, label: field.label, value: texts[index] });
+        if (stepDelay) await pause(stepDelay);
+      }
+    } else {
+      missing.push({ label: field.label, why: "the option would not take" });
+    }
+  }
+
   // Résumé upload, handled separately: file inputs are excluded from `controls`
   // because everything above them assumes a text value.
   if (resumeFile) {
@@ -890,6 +973,132 @@ function isPhoneCountryPicker(el) {
 }
 
 /**
+ * Questions asked as a set of choices rather than a dropdown.
+ *
+ * Excluded from the main scan because everything there assumes a text value,
+ * which meant a form built this way had its questions passed over in silence —
+ * they were not filled, not reported, and not even listed by Inspect. Ashby
+ * asks about sponsorship this way, and about being in the office five days a
+ * week, and both are required.
+ */
+function radioGroups() {
+  const byName = new Map();
+  for (const el of document.querySelectorAll('input[type="radio"]')) {
+    if (isOurs(el) || el.disabled) continue;
+    const key = el.getAttribute("name") || "";
+    if (!key) continue;
+    if (!byName.has(key)) byName.set(key, []);
+    byName.get(key).push(el);
+  }
+
+  const groups = [];
+  for (const els of byName.values()) {
+    // One radio is not a choice, and a group whose options have no readable
+    // text cannot be matched against anything.
+    if (els.length < 2) continue;
+    const options = els
+      .map((el) => ({ el, text: radioOptionText(el) }))
+      .filter((option) => option.text);
+    if (options.length < 2) continue;
+    const question = radioQuestion(els[0], options.map((o) => o.text));
+    if (question) groups.push({ question, options });
+  }
+  return groups;
+}
+
+/** The text beside one radio — its own label, not the question's. */
+function radioOptionText(el) {
+  const wrapping = el.closest?.("label");
+  if (wrapping?.innerText?.trim()) return wrapping.innerText.trim();
+  if (el.id) {
+    const explicit = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+    if (explicit?.innerText?.trim()) return explicit.innerText.trim();
+  }
+  return (el.getAttribute("aria-label") || el.value || "").trim();
+}
+
+/**
+ * The question a group of radios is answering.
+ *
+ * Found by walking outward and taking the first label-ish text that is not one
+ * of the options themselves — without that exclusion the answer "Yes" gets
+ * mistaken for the question.
+ */
+function radioQuestion(el, optionTexts) {
+  const taken = new Set(optionTexts.map((text) => normalise(text)));
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 7; depth += 1, node = node.parentElement) {
+    const legend = node.querySelector?.("legend");
+    const legendText = legend?.innerText?.trim();
+    if (legendText) return legendText;
+
+    const aria = node.getAttribute?.("aria-label");
+    if (aria?.trim() && !taken.has(normalise(aria))) return aria.trim();
+
+    for (const candidate of node.querySelectorAll?.(
+      "label,[class*='label'],[class*='Label'],[class*='question'],[class*='Question'],h2,h3,h4,h5"
+    ) || []) {
+      const text = candidate.innerText?.trim();
+      if (text && text.length > 3 && text.length < 300 && !taken.has(normalise(text))) {
+        return text;
+      }
+    }
+  }
+  return "";
+}
+
+/** Choose one radio in a group, the way a person would. */
+async function pickRadio(option) {
+  const { el } = option;
+  // Click the label where there is one: a styled radio is usually invisible
+  // with its label doing the work, so clicking the input itself hits nothing.
+  clickLike(el.closest?.("label") || el);
+  await pause(60);
+  if (el.checked) return true;
+
+  // Then set it directly, through the native setter so a controlled component
+  // keeps the change.
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+  if (setter) setter.call(el, true);
+  else el.checked = true;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  await pause(60);
+  return Boolean(el.checked);
+}
+
+/**
+ * Choice-shaped questions we can see but cannot yet drive.
+ *
+ * Reported by Inspect rather than acted on. Ashby renders its yes/no questions
+ * as something other than radios, and rather than guess at markup I have not
+ * seen — which has produced a wrong answer every time this session — this puts
+ * the real structure in the diagnostics so the next dump settles it.
+ */
+function choiceCandidates() {
+  const out = [];
+  const seen = new Set();
+  for (const group of document.querySelectorAll('[role="radiogroup"],[role="group"],fieldset')) {
+    if (isOurs(group) || seen.has(group)) continue;
+    seen.add(group);
+    const options = Array.from(
+      group.querySelectorAll('[role="radio"],[role="option"],button,input[type="radio"]')
+    )
+      .map((node) => (node.innerText || node.value || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .slice(0, 10);
+    if (options.length < 2) continue;
+    out.push({
+      at: pathTo(group),
+      role: group.getAttribute("role") || group.tagName.toLowerCase(),
+      text: (group.innerText || "").replace(/\s+/g, " ").trim().slice(0, 140),
+      options,
+    });
+  }
+  return out;
+}
+
+/**
  * Required questions the form still has no answer for.
  *
  * Filling is only half of not-submitting-a-broken-application. Verkada's form
@@ -945,6 +1154,9 @@ function requiredGaps() {
           : [el];
         groupChecked.set(name, peers.some((p) => p.checked));
       }
+      // A styled radio is often invisible with its label doing the work, so the
+      // visibility test above would drop the whole group; radios reach here
+      // regardless and are judged on whether the group has an answer.
       empty = !groupChecked.get(name);
     } else {
       empty = !displayedValue(el);
@@ -995,4 +1207,6 @@ window.HIRECRAFT_FILL = {
   // control has now been the cause of three separate wrong answers.
   listboxFor,
   optionNodes,
+  radioGroups,
+  choiceCandidates,
 };

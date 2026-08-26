@@ -115,6 +115,8 @@ const FIELDS = [
     // answer a yes/no with a university name.
     match: [
       /^school$/, /\bschool\s*name\b/, /\buniversity\b/, /\bcollege\b/,
+      // Ashby labels its school picker with a placeholder, "Search schools…".
+      /\bsearch\s*schools?\b/, /^schools?$/,
       /^institution$/, /\beducational\s*institution\b/, /\binstitution\s*name\b/,
     ],
   },

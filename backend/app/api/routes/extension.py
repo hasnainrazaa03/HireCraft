@@ -10,6 +10,7 @@ happened. It cannot read or change anything else about the account.
 from __future__ import annotations
 
 import base64
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -116,8 +117,17 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         legal_first, legal_last = _split_name(full_name)
     preferred = (profile.preferred_name if profile else "") or _split_name(full_name)[0]
 
+    # A form with a single "Name" box is an employment record asking for the
+    # name on someone's documents, exactly as a First/Last pair is. Ashby's
+    # form has one box, and answering it with the preferred name while
+    # answering Greenhouse's two with the legal one is inconsistent in the
+    # direction that matters.
+    legal_full = " ".join(part for part in (legal_first, legal_last) if part).strip()
+
     return {
-        "full_name": full_name,
+        "full_name": legal_full or full_name,
+        # The name they go by, for a form that asks for that instead.
+        "display_name": full_name,
         "first_name": legal_first,
         "last_name": legal_last,
         "legal_first_name": legal_first,
@@ -187,7 +197,11 @@ def _latest_education(content: dict) -> dict:
     return {
         "school": latest.get("institution") or "",
         "degree": latest.get("degree") or "",
-        "field_of_study": latest.get("field_of_study") or "",
+        # Derived from the degree where the résumé does not carry it separately:
+        # "M.S. in Computer Science" answers a "Field of Study" box with
+        # "Computer Science", and leaving that empty was the app failing to read
+        # what it already had.
+        "field_of_study": latest.get("field_of_study") or _field_from_degree(latest.get("degree") or ""),
         "gpa": latest.get("gpa") or "",
         # Forms ask for the year alone far more often than a full date.
         "start_year": start[:4],
@@ -198,6 +212,17 @@ def _latest_education(content: dict) -> dict:
         "end_month": _month_name(end),
         "start_month": _month_name(start),
     }
+
+
+def _field_from_degree(degree: str) -> str:
+    """The subject named after "in" in a degree title, if there is one.
+
+    Deliberately narrow. "M.S. in Computer Science" gives "Computer Science";
+    "Master's Degree" gives nothing, because it names no subject and inventing
+    one would be worse than an empty box.
+    """
+    match = re.search(r"\bin\s+(.{2,60})$", (degree or "").strip())
+    return match.group(1).strip(" .,") if match else ""
 
 
 #: Named rather than numeric: every form that asks writes them out, and a name

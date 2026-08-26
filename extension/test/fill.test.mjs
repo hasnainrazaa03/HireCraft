@@ -561,3 +561,120 @@ test("a menu that refuses to close is reported, not assumed shut", async () => {
   );
   assert.equal(r2.trace.find((e) => e.field === "country").leftOpen, false);
 });
+
+// --- questions asked as a set of choices ------------------------------------
+
+function makeRadioGroup({ question, name, options }) {
+  const els = options.map((text) => {
+    const label = { innerText: text, getBoundingClientRect: rect(120, 24) };
+    const el = {
+      tagName: "INPUT",
+      checked: false,
+      disabled: false,
+      value: text,
+      getAttribute: (n) => (n === "type" ? "radio" : n === "name" ? name : null),
+      hasAttribute() { return false; },
+      getBoundingClientRect: rect(0, 0),      // styled radios are usually hidden
+      dispatchEvent: () => {},
+      closest: (sel) => (sel.includes("label") ? label : null),
+      click: () => { for (const other of els) other.checked = other.el === el; },
+    };
+    label.el = el;
+    el.el = el;
+    return el;
+  });
+  // Clicking a label selects that radio and clears the others.
+  for (const el of els) {
+    const label = el.closest("label");
+    label.click = () => { for (const other of els) other.checked = other === el; };
+  }
+  const wrapper = {
+    querySelector: (sel) => (sel.includes("legend") ? { innerText: question } : null),
+    querySelectorAll: () => [],
+    getAttribute: () => null,
+    parentElement: null,
+  };
+  for (const el of els) el.parentElement = wrapper;
+  return { els, question };
+}
+
+function installRadios(group) {
+  const window = {};
+  const document = {
+    querySelectorAll: (sel) => (sel.includes('type="radio"') ? group.els : []),
+    querySelector: () => null,
+    getElementById: () => null,
+  };
+  const globals = {
+    window, document,
+    CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {},
+    HTMLTextAreaElement: class {},
+    HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+  return window;
+}
+
+test("a yes/no question asked as radios is answered", async () => {
+  // Ashby asks about sponsorship this way. The main scan cannot see it — radios
+  // are excluded there because everything else assumes a text value — so the
+  // question was not filled, not reported, and not even listed by Inspect.
+  const group = makeRadioGroup({
+    question: "Will you need sponsorship to work in the U.S. now or anytime in the future?",
+    name: "sponsorship",
+    options: ["Yes", "No"],
+  });
+  const window = installRadios(group);
+
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, requires_sponsorship: true },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(group.els[0].checked, true, "Yes must be selected");
+  assert.equal(group.els[1].checked, false);
+  assert.deepEqual(report.filled.map((f) => f.label), ["Requires sponsorship"]);
+});
+
+test("the question is read from the group, not from one of its answers", async () => {
+  // Walking outward for a label finds the option text first unless the options
+  // are excluded — and then "Yes" becomes the question.
+  const group = makeRadioGroup({
+    question: "Are you open to being in-office 5 days a week in Sunnyvale?",
+    name: "onsite",
+    options: ["Yes", "No"],
+  });
+  const window = installRadios(group);
+  const found = window.HIRECRAFT_FILL.radioGroups();
+
+  assert.equal(found.length, 1);
+  assert.match(found[0].question, /in-office 5 days/);
+  assert.deepEqual(found[0].options.map((o) => o.text), ["Yes", "No"]);
+});
+
+test("a group already answered is left alone", async () => {
+  const group = makeRadioGroup({
+    question: "Will you need sponsorship to work in the U.S.?",
+    name: "sponsorship",
+    options: ["Yes", "No"],
+  });
+  group.els[1].checked = true;                    // the user picked No
+  const window = installRadios(group);
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, requires_sponsorship: true },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(group.els[1].checked, true, "their answer must survive");
+  assert.equal(group.els[0].checked, false);
+  assert.equal(report.filled.length, 0);
+  assert.ok(report.trace.some((e) => e.outcome === "left alone"));
+});

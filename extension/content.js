@@ -172,6 +172,10 @@ function renderPanel() {
         required: state.report.required,
         trace: state.report.trace,
         inspect: window.HIRECRAFT_FILL.inspectForm(),
+        // Choice-shaped questions, which the scan above cannot represent.
+        // Included so a form that asks yes/no with buttons rather than a
+        // dropdown shows its real structure instead of vanishing.
+        choices: window.HIRECRAFT_FILL.choiceCandidates(),
       };
       try {
         await navigator.clipboard.writeText(JSON.stringify(dump, null, 2));
