@@ -69,7 +69,13 @@ for (const q of questions) {
 
     const vals = (f.values || []).map((v) => String(v.label));
     if (vals.length) {
-      const { index, why } = chooseOption(value, vals, { kind: field.kind });
+      // Same options the engine passes, or this tool reports failures the
+      // real filler would not have — which is worse than not running it.
+      const { index, why } = chooseOption(value, vals, {
+        kind: field.kind,
+        unit: field.unit,
+        context: field.context?.(profile),
+      });
       if (index >= 0) { fills++; console.log(`  ✅${req} ${raw.slice(0, 56).padEnd(58)} ${vals[index]}`); }
       else { gaps++; console.log(`  ⚠️${req} ${raw.slice(0, 56).padEnd(58)} ${why}`); }
     } else { fills++; console.log(`  ✅${req} ${raw.slice(0, 56).padEnd(58)} ${value.slice(0, 40)}`); }
