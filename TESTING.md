@@ -630,6 +630,127 @@ Confirms the app is up before deep testing.
 
 ---
 
+## 19. Browser extension — autofill  (`extension/`)
+
+> Load unpacked from `chrome://extensions` (Developer mode → **Load unpacked** →
+> `extension/`). After **any** change to the extension, click the reload arrow (⟳)
+> on its card **and** hard-reload the job page (⌘⇧R) — the old content script
+> stays injected in an open tab until you do.
+>
+> **The extension never submits.** Every case below ends with you checking the
+> form yourself. If any case ever results in a submitted application, that is a
+> **P0**.
+
+**Why this section is long:** the failure mode here is silent. A field that was
+never filled looks the same as one that was filled correctly *if you only read
+the panel*. Several real bugs shipped because the report described what was
+attempted rather than what happened. So every case says **check the form, not
+the panel.**
+
+### 19.1 Connect
+
+- ⬜ **T-EXT-01** Settings → Extension → generate a key; paste it into the extension popup → **Connect**. It reports connected.
+  - Notes:
+- ⬜ **T-EXT-02** Revoke the key in Settings, click Fill again — the panel says the key was rejected and names Settings. It must not fail silently.
+  - Notes:
+
+### 19.2 Fill — the report must match the form
+
+- ⬜ **T-EXT-03** Open a Greenhouse posting, click the floating logo, pick a résumé, **Fill**. Now read the *form*, field by field, against the panel. Every green row must be genuinely present in the page.
+  - Notes:
+- ⬜ **T-EXT-04** **Dropdowns.** On a form with an education section (Point72 has one), confirm **Degree** shows `Master's Degree` — not `M.S. in Computer Science`. Click into the box: the value must be *selected*, not typed. A typed value disappears on blur.
+  - Notes:
+- ⬜ **T-EXT-05** **GPA banding.** Where a form offers ranges (`3.6 - 4.0` / `3.1 - 3.5` / `3.0 or under`), the panel must show the band, never `3.67`.
+  - Notes:
+- ⬜ **T-EXT-06** **No honest answer.** Where graduation-year options stop before your year, the row must be **amber** and list what was offered. Typing a year that is not on the list is a **P0** — it is a wrong answer on a required question.
+  - Notes:
+- ⬜ **T-EXT-07** **Location.** On Greenhouse, the Location field carries hidden latitude/longitude that only fill when a suggestion is picked. After Fill, confirm a suggestion was actually chosen (the box shows a full place name), or that the panel told you to pick one. A typed city with empty coordinates submits as invalid — and only at the end.
+  - Notes:
+- ⬜ **T-EXT-08** **Required gaps.** The amber block must list only questions you can *see* on the page. If it names something you cannot find, that is a bug — it is reading a hidden control.
+  - Notes:
+- ⬜ **T-EXT-09** Re-run Fill on a form you have partly typed into. Nothing you entered may be overwritten.
+  - Notes:
+
+### 19.3 What it must refuse to answer
+
+> These are the cases where being wrong is worse than being blank. Each one was
+> a real mis-fill found by dry-running live forms.
+
+- ⬜ **T-EXT-10** **Citizenship.** "In which country/region do you have citizenship?" must be **skipped**, never answered from the stored country. Answering it `United States` for an F-1 holder is a **P0** — a false statement on an export-control question.
+  - Notes:
+- ⬜ **T-EXT-11** **Visa history.** "Have you held H-1B status…?" must be skipped — while "Will you require sponsorship?" is still answered. Both, on the same form.
+  - Notes:
+- ⬜ **T-EXT-12** **Clearance.** Clearance eligibility and active-clearance questions must be skipped.
+  - Notes:
+- ⬜ **T-EXT-13** **Phone dial code.** The `Country` picker attached to a phone field (showing `United States +1`) must not consume the country answer — a separate country question later on the form must still fill.
+  - Notes:
+- ⬜ **T-EXT-14** **Salary, pronouns, orientation, date of birth** — all skipped, each with its own reason shown.
+  - Notes:
+
+### 19.4 Self-identification
+
+- ⬜ **T-EXT-15** With Career Profile → Voluntary self-identification **unset**, the EEOC questions report amber and point at Career Profile. They must not be guessed.
+  - Notes:
+- ⬜ **T-EXT-16** Set all five, re-run. Each must select the option matching *that board's* wording. Check **Veteran status** by eye: "I am not a protected veteran" and "I identify as one or more of the classifications of a protected veteran" both contain the same phrase, and choosing the wrong one is a **P0**.
+  - Notes:
+- ⬜ **T-EXT-17** Set one answer to **Decline to answer** — it must actively select the decline option, not leave the question blank.
+  - Notes:
+
+### 19.5 Résumé and cover letter
+
+- ⬜ **T-EXT-18** On a form with several upload boxes (résumé, cover letter, transcript), the résumé lands in the **résumé** box and nowhere else. A résumé filed as a transcript is a **P1** — it looks done.
+  - Notes:
+- ⬜ **T-EXT-19** Tick **Also draft a cover letter** → the letter appears with a tell count and uniformity score, and the cost is shown.
+  - Notes:
+- ⬜ **T-EXT-20** Read the letter against your résumé and brag bank. Any number, tool, employer, or credential it states that neither supports is a **P0**.
+  - Notes:
+- ⬜ **T-EXT-21** **Attach to form** puts the PDF in the *cover letter* box, not the résumé box. It must never attach without that click.
+  - Notes:
+- ⬜ **T-EXT-22** The letter should read like your samples, not like a model. Check it opens on the work rather than on the act of writing, and contains no em dashes.
+  - Notes:
+
+### 19.6 Tracking
+
+- ⬜ **T-EXT-23** **Track application** creates one row in Applications with the right company and role.
+  - Notes:
+- ⬜ **T-EXT-24** Track the same posting twice — it must **update**, never duplicate.
+  - Notes:
+- ⬜ **T-EXT-25** Submit a real application; the extension should detect the confirmation page and set the stage to *applied* with the date it happened.
+  - Notes:
+
+### 19.7 Diagnosing
+
+- ⬜ **T-EXT-26** **Inspect this form** lists every control with its label, whether it is a combobox, what it holds, whether it is required, and which field claimed it. This is the output to paste when a fill goes wrong.
+  - Notes:
+
+### 19.8 Automated
+
+Run before any manual pass — no dependencies, no browser:
+
+```bash
+node --test extension/test/*.test.mjs        # 60 tests
+```
+
+And to check the catalogue against a **real** form without opening it — this
+found four wrong answers that the unit tests did not:
+
+```bash
+curl -s "https://boards-api.greenhouse.io/v1/boards/<board>/jobs/<id>?questions=true" > form.json
+curl -s -H "X-HireCraft-Key: $KEY" http://localhost:8000/api/v1/extension/profile > profile.json
+node extension/tools/simulate-greenhouse.mjs form.json profile.json
+```
+
+### 19.9 Known gaps (not bugs — unbuilt)
+
+| Gap | Scale | State |
+|---|---|---|
+| **Workday** | ~20% of the feed | No support. Multi-step wizard with iframes. |
+| **Ashby / Lever** | adapters exist | **Never run against a real form.** Treat any result as unverified. |
+| Workable / Oracle Cloud | ~100 postings | Descriptions unreadable, so no autofill either. |
+| Transcripts | required on some forms | Upload by hand — HireCraft holds no transcript. |
+
+---
+
 ## Issue log (roll findings up here as you go)
 
 | ID | Test | Severity | Summary | Status |
