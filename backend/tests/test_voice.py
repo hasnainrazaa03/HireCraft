@@ -40,15 +40,24 @@ class _FakeResult:
 
 
 class _FakeClient:
-    def __init__(self, voice: VoiceProfile):
-        self._voice = voice
+    """Stands in for the LLM client.
+
+    Implements generate_raw rather than generate_structured because that is what
+    extraction calls: the reply is repaired before it is validated, and
+    validating first would reject exactly the replies the repair exists to save.
+    Returning a dict here also lets a test hand back a malformed payload and
+    check that it still comes out valid.
+    """
+
+    def __init__(self, voice: VoiceProfile | dict):
+        self._payload = voice if isinstance(voice, dict) else voice.model_dump(mode="json")
         self.calls = 0
 
-    def generate_structured(self, **kwargs):
+    def generate_raw(self, **kwargs):
         self.calls += 1
         # The caller must ask for the VoiceProfile schema.
         assert kwargs["schema"] is VoiceProfile
-        return _FakeResult(data=self._voice, usage=_FakeUsage())
+        return dict(self._payload), _FakeUsage(), "{}"
 
 
 def test_extract_voice_returns_parsed_voice_and_usage():
@@ -63,3 +72,28 @@ def test_extract_voice_returns_parsed_voice_and_usage():
     assert result.tone == "warm and direct"
     assert result.formality == "conversational"
     assert usage.cost_usd == 0.0001
+
+
+def test_a_malformed_reply_is_repaired_rather_than_rejected():
+    """The failure that made this path unusable against a real model.
+
+    Lists arriving as strings and a capped field overrunning are both replies
+    that understood the task, and both used to fail the whole analysis.
+    """
+    client = _FakeClient({
+        "tone": "warm and direct",
+        "formality": "semi-professional",          # outside the allowed set
+        "sentence_style": "Medium declarative sentences. " * 20,  # over the cap
+        "vocabulary": "hands-on, bridge, rigor",   # a string, not a list
+        "habits": "quotes the posting; names a hook",
+        "avoid": "passive voice",
+        "summary": "Write like an earnest graduate student.",
+    })
+    voice, _usage = extract_voice([("cover_letter", "Sample.")], client=client)
+
+    assert client.calls == 1, "a repairable reply must not cost a retry"
+    assert voice.vocabulary == ["hands-on", "bridge", "rigor"]
+    assert voice.habits == ["quotes the posting", "names a hook"]
+    assert voice.avoid == ["passive voice"]
+    assert voice.formality == "unknown"
+    assert len(voice.sentence_style) <= 300
