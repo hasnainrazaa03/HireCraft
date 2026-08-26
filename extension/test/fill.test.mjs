@@ -374,3 +374,37 @@ test("an ordinary location box is still just typed into", async () => {
   await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
   assert.equal(plain.value, "Los Angeles, CA");
 });
+
+test("one field never reads the dropdown belonging to another", async () => {
+  // A real failure on a Point72 form: the Degree menu was still open when the
+  // work-authorisation question was reached, and the panel offered "Associate's
+  // Degree · Bachelor's Degree · Doctor of Medicine (M.D.) …" as the answers to
+  // "are you authorized to work in the US". Nothing matched "Yes", so nothing
+  // was clicked — but only by luck. A list of yes/no-ish options would have
+  // been chosen from.
+  const degree = makeCombobox({
+    label: "Degree",
+    options: ["Bachelor's Degree", "Master's Degree", "Doctorate"],
+  });
+  const auth = makeCombobox({
+    label: "Are you legally authorized to work in the United States?",
+    options: ["Yes", "No"],
+  });
+  const window = install([degree, auth]);
+
+  // Degree's menu is left open and reachable document-wide, as it was there.
+  degree.getAttribute = ((base) => (name) =>
+    name === "aria-expanded" ? "true" : base(name))(degree.getAttribute);
+
+  await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, education: { degree: "M.S." }, authorized_to_work: true },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(degree.committed, "Master's Degree");
+  assert.equal(auth.committed, "Yes", "the work question must read its own list");
+  assert.ok(
+    !["Bachelor's Degree", "Master's Degree", "Doctorate"].includes(auth.committed),
+    "a degree must never be committed into a work-authorisation question"
+  );
+});

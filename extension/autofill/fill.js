@@ -156,28 +156,44 @@ function isCombobox(el) {
 
 /** The popup list this control drives, if it is open. */
 function listboxFor(el) {
+  const usable = (node) => (node && optionNodes(node).length ? node : null);
+
+  // The widget said which list it drives. Authoritative, and the only signal
+  // that cannot belong to a different field.
   const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
   if (id) {
-    const byId = document.getElementById(id);
+    const byId = usable(document.getElementById(id));
     if (byId) return byId;
   }
-  // Several libraries portal the listbox to <body> without wiring aria-controls.
-  // Only take that route when exactly one is open, so we never drive a listbox
-  // belonging to a different field.
-  const open = Array.from(document.querySelectorAll('[role="listbox"]')).filter(
-    (node) => node.getBoundingClientRect().height > 0
-  );
-  if (open.length === 1) return open[0];
 
-  // Last resort: the menu this control opened, found by walking up to the
-  // widget's own container. Scoped to the container rather than the document so
-  // a second dropdown's menu can never be driven by mistake.
+  // Otherwise, only this widget's own container is searched.
   let node = el.parentElement;
   for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
-    const menu = node.querySelector?.("[class*='menu'],[class*='Menu'],[class*='dropdown']");
-    if (menu?.querySelector?.('[role="option"]')) return menu;
+    const inside = usable(
+      node.querySelector?.('[role="listbox"],[class*="menu"],[class*="Menu"],[class*="dropdown"]')
+    );
+    if (inside) return inside;
+  }
+
+  // A portalled list is considered last, and only for a control that says it is
+  // expanded. Reaching for "the one open listbox in the document" without that
+  // check is what let a Degree menu — still open from the previous field —
+  // answer a work-authorisation question: the panel offered "Associate's
+  // Degree, Bachelor's Degree, ..." as the choices for "are you authorized to
+  // work in the US". Had one of them matched, it would have been clicked.
+  if (el.getAttribute("aria-expanded") === "true") {
+    const open = Array.from(document.querySelectorAll('[role="listbox"]')).filter(
+      (n) => n.getBoundingClientRect().height > 0 && optionNodes(n).length
+    );
+    if (open.length === 1) return open[0];
   }
   return null;
+}
+
+/** Shut the popup, so the next field cannot inherit it. */
+function closeListbox(el) {
+  pressKey(el, "Escape");
+  el.blur?.();
 }
 
 /** The choosable rows in a popup list. */
@@ -217,11 +233,30 @@ function pressKey(el, key) {
 /** Open the popup and wait for it to render. */
 async function openListbox(el) {
   el.focus?.();
-  clickLike(el);
+  // A gap between focusing and acting. react-select decides what a mousedown
+  // means from its own isFocused state, and React has not applied the focus yet
+  // if both happen in the same task — so it reads the click as "focus me",
+  // sets a flag to open on the focus that already happened, and never opens.
+  // That is why School, Degree and Location all reported no options at all.
+  await pause(60);
+
+  // The keyboard first, because it is unconditional: react-select maps ArrowDown
+  // straight to openMenu, while a synthetic mousedown has to survive branching
+  // on state we cannot see.
+  pressKey(el, "ArrowDown");
+  for (let tries = 0; tries < 10; tries += 1) {
+    const box = listboxFor(el);
+    if (optionNodes(box).length) return box;
+    await pause(70);
+  }
+
+  // Then the mouse, aimed at the control rather than the inner input — several
+  // widgets only listen on the wrapper.
+  clickLike(el.closest?.("[class*='control'],[class*='select-shell'],[role='combobox']") || el);
   for (let tries = 0; tries < 12; tries += 1) {
     const box = listboxFor(el);
     if (optionNodes(box).length) return box;
-    await pause(40);
+    await pause(70);
   }
   return listboxFor(el);
 }
@@ -257,7 +292,23 @@ function probesFor(value, kind) {
  * probing. A combobox showing "2027" that has committed nothing is exactly the
  * false impression this whole change exists to remove.
  */
-async function chooseFromCombobox(el, value, kind, unit) {
+/**
+ * Choose from a dropdown, and always leave it shut.
+ *
+ * The closing is not tidiness. A menu left open was picked up by the *next*
+ * field's search for a list to read, so a work-authorisation question was
+ * offered a set of degrees to choose from. Every exit path closes, including
+ * the ones that throw.
+ */
+async function chooseFromCombobox(el, value, kind, unit, context) {
+  try {
+    return await chooseFromComboboxInner(el, value, kind, unit, context);
+  } finally {
+    closeListbox(el);
+  }
+}
+
+async function chooseFromComboboxInner(el, value, kind, unit, context) {
   let box = await openListbox(el);
   let nodes = optionNodes(box);
 
@@ -276,15 +327,14 @@ async function chooseFromCombobox(el, value, kind, unit) {
 
   if (!nodes.length) {
     setValue(el, "");
-    pressKey(el, "Escape");
-    return { ok: false, why: "the dropdown never showed any options" };
+    return { ok: false, why: "the dropdown never opened" };
   }
 
   const texts = nodes.map(optionText);
-  const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind, unit });
+  const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind, unit, context });
   if (index < 0) {
+    // Only the probe text is cleared here; the wrapper does the closing.
     setValue(el, "");
-    pressKey(el, "Escape");
     return { ok: false, why, offered: texts.slice(0, 12) };
   }
 
@@ -307,7 +357,6 @@ async function chooseFromCombobox(el, value, kind, unit) {
   // same mistake as the old `(setValue(...), true)`: the panel said a required
   // sponsorship question was answered while the form still had it empty.
   setValue(el, "");
-  pressKey(el, "Escape");
   return { ok: false, why: `"${chosen}" was clicked but the dropdown didn't take it` };
 }
 
@@ -465,7 +514,7 @@ async function fillForm(
     } else if (field.key === "location" && needsPlacePick(el)) {
       result = await pickPlace(el, value);
     } else if (isCombobox(el)) {
-      result = await chooseFromCombobox(el, value, field.kind, field.unit);
+      result = await chooseFromCombobox(el, value, field.kind, field.unit, field.context?.(profile));
       if (result.ok) result.actual = result.chosen;
     } else {
       result = await setAndVerify(el, value);

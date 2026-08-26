@@ -257,3 +257,46 @@ test("Lever's gender list works unchanged", () => {
   assert.equal(chose("male", LEVER_GENDER, "gender"), "Male");
   assert.equal(chose("decline", LEVER_GENDER, "gender"), "Decline to self-identify");
 });
+
+// --- work authorisation, as General Matter's real form words it -------------
+
+const WORK_AUTH_SENTENCES = [
+  "I am authorized to work in the United States for any employer",
+  "I am authorized to work in the United States for my present employer only",
+  "I require sponsorship to work in the United States",
+  "I am not authorized to work in the United States",
+  "My status to work in the United States in unknown",
+];
+
+test("a spelled-out work-authorisation list is answered from the two booleans", () => {
+  // A stored "Yes" matches none of these sentences, so the question came back
+  // unanswerable on every form that words it this way. Authorisation and
+  // sponsorship are stored separately because they are independent — on F-1
+  // OPT you are authorized now and will need sponsorship later — and together
+  // they name exactly one of these.
+  const pick = (authorized, sponsorship) =>
+    WORK_AUTH_SENTENCES[
+      chooseOption(authorized ? "Yes" : "No", WORK_AUTH_SENTENCES, {
+        kind: "work_authorization",
+        context: { authorized, sponsorship },
+      }).index
+    ];
+
+  assert.equal(pick(true, true), "I require sponsorship to work in the United States");
+  assert.equal(pick(true, false), "I am authorized to work in the United States for any employer");
+  assert.equal(pick(false, true), "I am not authorized to work in the United States");
+});
+
+test("a plain yes/no work question still answers yes/no", () => {
+  const YN = ["Yes", "No"];
+  assert.equal(
+    YN[chooseOption("Yes", YN, { kind: "work_authorization", context: { authorized: true, sponsorship: true } }).index],
+    "Yes"
+  );
+});
+
+test("with either answer unset, nothing is chosen from the sentences", () => {
+  // No context means no inference: the question is reported rather than guessed.
+  const result = chooseOption("Yes", WORK_AUTH_SENTENCES, { kind: "work_authorization" });
+  assert.equal(result.index, -1);
+});

@@ -169,6 +169,32 @@ const EEO = {
 };
 
 /**
+ * What a spelled-out work-authorisation option means.
+ *
+ * Some forms ask "are you authorized to work in the US?" as yes/no; others
+ * replace it with a list of sentences — "I am authorized to work in the United
+ * States for any employer", "I require sponsorship to work in the United
+ * States", and so on. A stored "Yes" matches none of those, so the question was
+ * reported unanswerable on every form that words it the second way.
+ *
+ * Nothing is inferred here that is not already stored. Authorisation and
+ * sponsorship are held as two separate answers precisely because they are
+ * independent, and together they name exactly one sentence in this list — this
+ * only translates them into the vocabulary a given form uses.
+ */
+function workAuthOption(text) {
+  const t = normText(text);
+  if (/\bnot authorized\b|\bnot legally authorized\b/.test(t)) return "not_authorized";
+  if (/\bunknown\b|\bnot sure\b|\bunsure\b/.test(t)) return "unknown";
+  if (/\brequires?\b[^.]{0,40}\bsponsorship\b|\bneed\b[^.]{0,40}\bsponsorship\b/.test(t)) {
+    return "needs_sponsorship";
+  }
+  if (/\bpresent employer only\b|\bcurrent employer only\b/.test(t)) return "present_employer_only";
+  if (/\bauthorized\b/.test(t)) return "any_employer";
+  return null;
+}
+
+/**
  * A numeric range written as option text, or null if it isn't one.
  *
  * Open ends are tracked rather than nudged by one, because "Before 2020" and
@@ -254,7 +280,7 @@ const tokens = (text) => new Set(normText(text).split(" ").filter(Boolean));
  * Returns `{index, why}`. A negative index always carries a reason, because the
  * caller has to be able to tell the user what happened.
  */
-function chooseOption(want, optionTexts, { kind = null, unit = null } = {}) {
+function chooseOption(want, optionTexts, { kind = null, unit = null, context = null } = {}) {
   const options = optionTexts.map((t) => String(t ?? ""));
   if (!options.length) return { index: -1, why: "the list was empty" };
 
@@ -264,6 +290,19 @@ function chooseOption(want, optionTexts, { kind = null, unit = null } = {}) {
   // 1. The value is already one of the options.
   const exact = options.findIndex((o) => normText(o) === target);
   if (exact >= 0) return { index: exact, why: "exact match" };
+
+  // 2a. A work-authorisation list written as sentences rather than yes/no.
+  if (kind === "work_authorization" && context) {
+    const wanted = !context.authorized
+      ? "not_authorized"
+      : context.sponsorship
+        ? "needs_sponsorship"
+        : "any_employer";
+    const hit = options.findIndex((o) => workAuthOption(o) === wanted);
+    if (hit >= 0) return { index: hit, why: `matched "${options[hit]}"` };
+    // Fall through to the plain yes/no path below, which is the other way this
+    // question gets asked.
+  }
 
   // 2. A question we understand: canonicalise both sides and compare tokens.
   if (kind && EEO[kind]) {
@@ -344,6 +383,7 @@ function chooseOption(want, optionTexts, { kind = null, unit = null } = {}) {
 
 window.HIRECRAFT_OPTIONS = {
   normText,
+  workAuthOption,
   degreeLevel,
   isDecline,
   EEO,

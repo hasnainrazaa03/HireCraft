@@ -165,6 +165,14 @@ const FIELDS = [
     // answer to a question about someone's right to work.
     from: (p) =>
       p.authorized_to_work == null ? "" : p.authorized_to_work ? "Yes" : "No",
+    // Where a form spells the answers out instead of offering yes/no, the two
+    // stored booleans together pick exactly one sentence. Both must be
+    // answered, or this falls back to plain yes/no matching.
+    kind: "work_authorization",
+    context: (p) =>
+      p.authorized_to_work == null || p.requires_sponsorship == null
+        ? null
+        : { authorized: p.authorized_to_work, sponsorship: p.requires_sponsorship },
     match: [
       /\b(legally\s*)?authoriz(ed|ation)\s*to\s*work\b/,
       /\beligible\s*to\s*work\b/,
