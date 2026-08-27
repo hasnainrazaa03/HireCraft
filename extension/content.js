@@ -281,21 +281,20 @@ function renderPanel() {
     box.type = "checkbox";
     box.checked = state.wantCoverLetter;
     box.disabled = state.busy;
+    // A preference, not a trigger. Ticking it says what Fill should do, and Fill
+    // is what does it — one button, one run, the form filled and the letter
+    // drafted from the same posting and the same résumé. Making the tick itself
+    // spend money was an over-correction for the earlier bug, where ticking it
+    // after a fill did nothing at all.
     box.onchange = (e) => {
       state.wantCoverLetter = e.target.checked;
       render();
-      // Ticking it is the ask. Until now the only path to a draft ran inside
-      // the fill, so the box had to be ticked *before* pressing Fill — and it
-      // sits below Fill, so ticking it after reading the report did nothing at
-      // all, silently, which reads as a broken feature rather than a missed
-      // step. It is one, either way.
-      if (state.wantCoverLetter && !state.letter && !state.busy) runCoverLetter();
     };
-    check.append(box, el("span", null, "Draft a cover letter"));
+    check.append(box, el("span", null, "Also draft a cover letter"));
     panel.append(check);
     if (state.wantCoverLetter) {
       panel.append(
-        el("div", "hc-hint", "Uses AI credit — a few cents. Written from this posting and the résumé above.")
+        el("div", "hc-hint", "Drafted when you press Fill. Uses AI credit — a few cents. Written from this posting and the résumé above.")
       );
     }
   }
@@ -394,7 +393,14 @@ function renderPanel() {
   }
 
   const actions = el("div", "hc-actions");
-  const fill = el("button", "hc-btn hc-primary", state.busy ? "Filling…" : "Fill this form");
+  // Named for what it will do, so a ticked box does not look ignored after a
+  // fill that happened before it was ticked.
+  const fillLabel = state.busy
+    ? "Filling…"
+    : state.wantCoverLetter && !state.letter
+      ? "Fill and draft letter"
+      : "Fill this form";
+  const fill = el("button", "hc-btn hc-primary", fillLabel);
   fill.disabled = state.busy;
   fill.onclick = runFill;
   actions.append(fill);

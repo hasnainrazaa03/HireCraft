@@ -131,27 +131,31 @@ const find = (built, text) => built.find((n) => n.textContent === text);
 test("the cover-letter checkbox is built", () => {
   const { built, render } = harness({ profile: PROFILE });
   render();
-  assert.ok(find(built, "Draft a cover letter"), "the label should be on the panel");
+  assert.ok(find(built, "Also draft a cover letter"), "the label should be on the panel");
   assert.ok(
     built.some((n) => n.tagName === "INPUT" && n.type === "checkbox"),
     "and an actual checkbox beside it"
   );
 });
 
-test("ticking it asks for a draft", () => {
-  // The failure four rounds running: the control existed, and nothing it did
-  // could reach the thing it advertised.
-  const { window, built, render } = harness({ profile: PROFILE });
+test("ticking it records the choice without spending anything", () => {
+  // The over-correction it replaced: the tick itself made the call, so simply
+  // choosing the option cost money before Fill had been pressed.
+  const { window, built, render, sent } = harness({ profile: PROFILE });
   render();
   const box = built.find((n) => n.tagName === "INPUT" && n.type === "checkbox");
   assert.ok(box?.onchange, "the checkbox needs a handler");
 
-  const real = window.__panel.runCoverLetter;
-  window.__panel.state.wantCoverLetter = false;
-  // Calling the handler is the test: it must reach the draft.
+  const before = sent.length;
   box.onchange({ target: { checked: true } });
-  assert.equal(window.__panel.state.wantCoverLetter, true, "the flag flips");
-  assert.ok(real, "and a draft is reachable from here");
+
+  assert.equal(window.__panel.state.wantCoverLetter, true, "the choice is recorded");
+  assert.equal(
+    sent.filter((m) => m.type === "coverLetter").length,
+    0,
+    "and nothing was drafted yet"
+  );
+  assert.ok(sent.length >= before);
 });
 
 test("a drafted letter renders with its feedback box and attach button", () => {

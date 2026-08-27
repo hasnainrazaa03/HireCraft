@@ -57,7 +57,7 @@ test("every setting the panel reads can also be set", () => {
 test("the cover-letter option is on screen, not only in state", () => {
   // Named specifically, since this is the one that went missing and the one
   // that costs money when it is on.
-  assert.match(source, /Draft a cover letter/, "the checkbox's label");
+  assert.match(source, /Also draft a cover letter/, "the checkbox's label");
   assert.match(
     source,
     /state\.wantCoverLetter\s*=\s*e\.target\.checked/,
@@ -87,13 +87,21 @@ test("a rewrite sends the draft along with the note", () => {
   assert.match(source, /feedback: revising \? feedback\.trim\(\) : null/);
 });
 
-test("ticking the box is enough to get a draft", () => {
-  // It was not. runCoverLetter was reachable only from inside the fill and from
-  // a Rewrite button that appears once a letter exists — so the box had to be
-  // ticked before pressing Fill, and it sits below Fill. Ticking it afterwards
-  // did nothing at all, silently.
+test("the checkbox says what Fill should do, and Fill does it", () => {
+  // A preference, not a trigger. Ticking it should not spend money on its own;
+  // one press of Fill fills the form and drafts the letter from the same
+  // posting and the same résumé.
   const handler = /box\.onchange = \(e\) => \{([\s\S]*?)\};/.exec(source);
   assert.ok(handler, "the checkbox should have a handler");
-  assert.match(handler[1], /runCoverLetter\(\)/, "that asks for a draft when ticked");
-  assert.match(handler[1], /!state\.letter/, "and not a second one when there already is one");
+  assert.match(handler[1], /state\.wantCoverLetter = e\.target\.checked/, "it records the choice");
+  assert.doesNotMatch(handler[1], /runCoverLetter/, "and does not draft on its own");
+
+  // Fill is where it happens.
+  assert.match(source, /state\.wantCoverLetter && !state\.letter\) await runCoverLetter\(\)/);
+});
+
+test("a ticked box changes what Fill offers to do", () => {
+  // So a box ticked after a fill does not look ignored: the button says it
+  // will draft, and pressing it does.
+  assert.match(source, /Fill and draft letter/);
 });

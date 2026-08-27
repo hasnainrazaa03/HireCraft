@@ -721,8 +721,8 @@ the panel.**
   - Notes:
 - ⬜ **T-EXT-25** Submit a real application; the extension should detect the confirmation page and set the stage to *applied* with the date it happened, **naming the employer rather than the URL slug** — a row reading "Applied" for Applied Intuition is a row you cannot find by searching for the company.
   - Notes:
-- ⬜ **T-EXT-29** **A submission that navigates away is still recorded.** Where the form posts and the browser lands on a separate confirmation page, the tracker must still show it. That page has no form, and for a while the watcher refused to arm without one — so the case it was built for was the case it missed. Filling now leaves a note; a confirmation on the same site within two hours redeems it.
-  - Notes:
+- ✅ **T-EXT-29** **A submission that navigates away is still recorded.** Where the form posts and the browser lands on a separate confirmation page, the tracker must still show it. That page has no form, and for a while the watcher refused to arm without one — so the case it was built for was the case it missed. Filling now leaves a note; a confirmation on the same site within two hours redeems it.
+  - Notes: PASS. Vercel, submitted on Greenhouse: the row appeared on its own, named "Vercel" rather than the URL slug, stamped with the time it happened and the résumé that went with it. Nobody pressed Track.
 
 ### 19.7 Diagnosing
 
