@@ -383,3 +383,50 @@ def test_no_folder_is_not_an_error(tmp_path):
 
     assert list_local(str(tmp_path / "nope")) == []
     assert find_local(str(tmp_path / "nope"), "whatever") is None
+
+
+def test_a_drafted_letter_is_kept_and_charged_to_the_application(
+    client, auth, user, db, resume, monkeypatch
+):
+    """A letter drafted in the extension belongs to the application it was for.
+
+    Without this it lived only in the panel, and the application read as having
+    cost nothing — a tracker that cannot tell you what an application cost is
+    missing the thing it was built to record.
+    """
+    monkeypatch.setattr(
+        "app.api.routes.applications._resolve_job",
+        lambda db, user_id, payload: _fake_job(db, user_id, str(payload.job.url)),
+    )
+    key = issue(client, auth)
+    head = {"X-HireCraft-Key": key}
+    payload = {
+        "job": {"url": "https://job-boards.greenhouse.io/vercel/jobs/1"},
+        "status": "applied",
+        "cover_letter": ["First paragraph.", "Second paragraph."],
+        "cover_letter_usage": {"input_tokens": 4000, "output_tokens": 700, "model": "claude-sonnet-4-5"},
+    }
+
+    first = client.post("/api/v1/extension/track", headers=head, json=payload)
+    assert first.status_code in (200, 201), first.text
+
+    from app.models.application import Application
+
+    app_row = db.query(Application).filter(Application.user_id == user.id).one()
+    assert app_row.cover_letter == ["First paragraph.", "Second paragraph."]
+    assert app_row.total_input_tokens == 4000
+    assert app_row.include_cover_letter is True
+    # Priced from the model on this side, not taken from the request — a client
+    # does not get to say what its own call cost.
+    charged = app_row.total_cost_usd
+    assert charged > 0, "the draft must cost the application something"
+
+    # Tracking the same posting again must not charge it twice for one draft,
+    # nor overwrite a letter edited here since.
+    app_row.cover_letter = ["Edited by hand."]
+    db.commit()
+    second = client.post("/api/v1/extension/track", headers=head, json=payload)
+    assert second.status_code in (200, 201), second.text
+    db.refresh(app_row)
+    assert app_row.cover_letter == ["Edited by hand."]
+    assert app_row.total_cost_usd == charged, "one draft, charged once"

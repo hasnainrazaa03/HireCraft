@@ -50,6 +50,12 @@ class ExtensionTrackRequest(BaseModel):
     #: row to point at, so the fact of which file was sent is recorded in the
     #: application's history instead of being lost.
     resume_note: str | None = Field(default=None, max_length=200)
+    #: A letter drafted for this posting, so the application keeps the text that
+    #: was actually sent and is charged for the call that produced it. Without
+    #: it the draft exists only in the panel and the application reads as having
+    #: cost nothing.
+    cover_letter: list[str] | None = Field(default=None, max_length=12)
+    cover_letter_usage: dict[str, str | int | float] | None = None
 
 
 class ExtensionCoverLetterRequest(BaseModel):
@@ -452,6 +458,31 @@ def extension_track(
     if stage is TrackerStatus.APPLIED and not application.applied_at:
         application.applied_at = datetime.now(UTC)
 
+    # The letter, and what it cost. Attached once: re-tracking the same posting
+    # should not charge the application twice for one draft, and should not
+    # overwrite a letter that was edited here afterwards.
+    if payload.cover_letter and not application.cover_letter:
+        from app.services.llm.client import Usage
+        from app.services.usage import accrue_usage
+
+        application.cover_letter = payload.cover_letter
+        application.include_cover_letter = True
+        spent = payload.cover_letter_usage or {}
+        if spent:
+            accrue_usage(
+                application,
+                [(
+                    "cover_letter",
+                    Usage(
+                        input_tokens=int(spent.get("input_tokens") or 0),
+                        output_tokens=int(spent.get("output_tokens") or 0),
+                        model=str(spent.get("model") or ""),
+                        latency_ms=0,
+                    ),
+                )],
+            )
+        log_event(application, "cover_letter", "Cover letter drafted in the browser extension")
+
     # A résumé kept on disk has no row to point at, so which file was sent is
     # written into the history rather than lost. Recorded once: re-tracking the
     # same posting should not fill its timeline with the same line.
@@ -565,6 +596,17 @@ def extension_cover_letter(
         "paragraphs": paragraphs,
         "signature": resume.basics.name,
         "cost_usd": ledger.cost_usd,
+        # The tokens as well as the money, so tracking can attribute this draft
+        # to the application it belongs to rather than leaving it counted only
+        # against the account.
+        "usage": {
+            "input_tokens": ledger.input_tokens,
+            "output_tokens": ledger.output_tokens,
+            # The model, not the money. Cost is derived from the price table on
+            # the way back in, so an application is charged what the call
+            # actually costs rather than whatever a client reports.
+            "model": next((u.model for _, u in ledger.entries), ""),
+        },
         "resume_name": profile.name,
         # Style signals, so the reader can judge the draft rather than trust it.
         "tells": find_tells(body)[:8],

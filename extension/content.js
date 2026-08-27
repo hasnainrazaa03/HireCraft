@@ -605,6 +605,9 @@ async function runCoverLetter({ feedback = "" } = {}) {
   }
   state.letterError = null;
   state.letter = { ...reply.data, company };
+  // The note was written before the letter existed; refresh it so a submission
+  // that navigates away still carries what was drafted.
+  rememberFilling();
   // Cleared so the box is empty for the next note rather than repeating the
   // last one, which would be applied twice.
   state.letterFeedback = "";
@@ -675,6 +678,8 @@ async function runTrack(stage = "draft") {
     status: stage,
     company,
     role,
+    coverLetter: state.letter?.paragraphs || null,
+    coverLetterUsage: state.letter?.usage || null,
   });
   Object.assign(state, {
     busy: false,
@@ -733,7 +738,20 @@ async function rememberFilling() {
   const { company, role } = postingIdentity();
   try {
     await chrome.storage.local.set({
-      [PENDING_KEY]: { origin: location.origin, url: location.href, company, role, at: Date.now() },
+      [PENDING_KEY]: {
+        origin: location.origin,
+        url: location.href,
+        company,
+        role,
+        // Carried across the navigation, since the page that records the
+        // submission is not the page that drafted the letter — and that is the
+        // path that actually fires on a form which posts and lands elsewhere.
+        coverLetter: state.letter?.paragraphs || null,
+        coverLetterUsage: state.letter?.usage || null,
+        resumeId: state.resumeId,
+        resumeName: state.resumeName,
+        at: Date.now(),
+      },
     });
   } catch {
     // Storage can be unavailable; the in-page watcher still covers the common
@@ -774,6 +792,10 @@ async function checkArrivedAtConfirmation() {
     status: "applied",
     company: pending.company,
     role: pending.role,
+    resumeId: pending.resumeId,
+    resumeName: pending.resumeName,
+    coverLetter: pending.coverLetter,
+    coverLetterUsage: pending.coverLetterUsage,
   });
   console.debug("[HireCraft] recorded a submission on arrival:", reply.ok ? "ok" : reply.error);
 }

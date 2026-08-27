@@ -93,7 +93,7 @@ const HANDLERS = {
   async resume({ resumeId }) {
     return { dataUrl: await resumeDataUrl(resumeId) };
   },
-  async track({ url, resumeId, resumeName, status, company, role }) {
+  async track({ url, resumeId, resumeName, status, company, role, coverLetter, coverLetterUsage }) {
     const body = { job: { url }, status: status || "draft" };
     // What the page said about itself, which beats anything derivable from the
     // URL — see postingIdentity in the content script.
