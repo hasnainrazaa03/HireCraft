@@ -397,6 +397,23 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
   //     state cannot be compared as one string — see matchPlace.
   if (kind === "location") return matchPlace(want, options);
 
+  // 2d. A state, which is stored abbreviated and listed in full.
+  //
+  //     Left to the generic matching below, "CA" is a substring of California,
+  //     North Carolina and South Carolina alike, and which of the three came
+  //     back would be down to the ranking rather than to the answer. The
+  //     abbreviation is not a prefix of anything, it is a name for it.
+  if (kind === "state") {
+    const full = US_STATES[target] || target;
+    const hit = options.findIndex((o) => normText(o) === full);
+    if (hit >= 0) return { index: hit, why: `${want} → "${options[hit]}"` };
+    // The other direction, for a list that offers the abbreviations.
+    const short = Object.keys(US_STATES).find((code) => US_STATES[code] === full);
+    const abbreviated = short && options.findIndex((o) => normText(o) === short);
+    if (abbreviated >= 0) return { index: abbreviated, why: `matched "${options[abbreviated]}"` };
+    return { index: -1, why: `no option means "${want}"` };
+  }
+
   // 2a. A work-authorisation list written as sentences rather than yes/no.
   if (kind === "work_authorization" && context) {
     const wanted = !context.authorized

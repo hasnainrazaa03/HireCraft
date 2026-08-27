@@ -576,3 +576,43 @@ test("Workday's state picker is recognised by its prompt", () => {
   assert.equal(claim("State"), "state");
   assert.equal(claim("State / Province"), "state");
 });
+
+test("whether you have worked here before is left for you", () => {
+  // Required on nearly every Workday form, and a rehire question rather than a
+  // preference: an application is signed, so guessing "No" is a false statement
+  // about somebody's own employment history rather than a field left blank.
+  //
+  // Before this it matched nothing at all, which meant silence — not filled,
+  // not skipped, not flagged, absent from the report entirely.
+  const asked = [
+    "Have you ever worked at Applied Materials as a regular employee, contingent worker, intern, etc.?",
+    "Are you a former employee of this company?",
+    "Have you previously applied here?",
+    "Candidate Is Previous Worker",
+    "Are you eligible for rehire?",
+  ];
+  for (const question of asked) {
+    const label = normalise(question);
+    const group = SKIP.find((entry) => entry.match.some((re) => re.test(label)));
+    assert.ok(group, `"${question}" should be left for the user`);
+    assert.match(group.why, /you/i);
+  }
+});
+
+test("and an ordinary work-authorisation question still is not", () => {
+  // The skip above is worded loosely enough to be worth checking: these are
+  // questions HireCraft does hold the answer to, and leaving them for the user
+  // would be a feature quietly switching itself off.
+  for (const question of [
+    "Are you legally authorized to work in the United States?",
+    "Will you now or in the future require sponsorship for employment visa status?",
+    "How many years of work experience do you have?",
+  ]) {
+    const label = normalise(question);
+    assert.equal(
+      SKIP.find((entry) => entry.match.some((re) => re.test(label))),
+      undefined,
+      `"${question}" should still be answered`
+    );
+  }
+});

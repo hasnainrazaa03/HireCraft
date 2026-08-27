@@ -80,6 +80,9 @@ const FIELDS = [
   {
     key: "state",
     label: "State",
+    // Stored as "CA", offered as "California" — and "CA" is a substring of two
+    // Carolinas as well, so this cannot be left to generic text matching.
+    kind: "state",
     from: (p) => p.state,
     match: [
       /\baddress\s*(section\s*)?(state|region|province)\b/,
@@ -427,6 +430,28 @@ const SKIP = [
     // none of it, and "eligible" is a judgement they have to make themselves.
     why: "clearance status is yours to state",
     match: [/\bsecurity\s*clearance\b/, /\bclearances?\b/, /\bpolygraph\b/],
+  },
+  {
+    // "Have you ever worked at Applied Materials as a regular employee,
+    // contingent worker, intern, etc.?" — required on nearly every Workday
+    // form, and a rehire question rather than a preference. "No" is right for
+    // almost everyone and wrong in a way that matters for the rest: an
+    // application is signed, so a guess here is a false statement about
+    // somebody's own employment history rather than a field left blank.
+    //
+    // It matched nothing before, which meant it was passed over in silence —
+    // not filled, not skipped, not flagged, absent from the report entirely.
+    // Saying "left for you" is the whole difference.
+    why: "only you know whether you've worked or applied here",
+    match: [
+      /\b(ever\s*)?(work|worked|employed|apply|applied)\b[^?]{0,60}\b(here|at\s+this|for\s+this|previously)\b/,
+      /\bprevious(ly)?\s*(employee|worker|employment\s*with)\b/,
+      /\bformer\s*(employee|worker|intern)\b/,
+      /\bare\s*you\s*a\s*(former|current)\s*(employee|worker|intern|contractor)\b/,
+      /\bhave\s*you\s*ever\s*(worked|been\s*employed|interned|applied)\b/,
+      /\brehire\b/,
+      /\bcandidate\s*is\s*previous\s*worker\b/,
+    ],
   },
   {
     why: "depends on the offer",

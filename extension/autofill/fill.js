@@ -289,12 +289,107 @@ function setValue(el, value) {
     ? HTMLTextAreaElement.prototype
     : isTag(el, "SELECT")
       ? HTMLSelectElement.prototype
-      : HTMLInputElement.prototype;
+      : isTag(el, "INPUT")
+        ? HTMLInputElement.prototype
+        : null;
+  // Not a form control at all, and there is no writing to one that isn't.
+  // Falling through to HTMLInputElement's setter and calling it on a <button>
+  // throws "Illegal invocation" — the browser refusing a native method handed
+  // the wrong kind of receiver. That is what took Workday's State field down,
+  // and it would have taken every field after it too.
+  //
+  // Workday builds each of its dropdowns as a <button> with the popup's search
+  // box as a separate element, so this is not an edge case there; it is how the
+  // whole form is made.
+  if (!proto) return false;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   if (setter) setter.call(el, value);
   else el.value = value;
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+/**
+ * Where typing goes for a control that cannot itself be typed into.
+ *
+ * A react-select is a text input, so probing it means writing to the element we
+ * already have. Workday's prompt is a <button>, and the box you type in appears
+ * beside it only once the popup is open — a different element, with no id, no
+ * name and no label, which is why the scan discarded all three of them and the
+ * diagnostics could only list them as "skipped by the scan".
+ *
+ * Found by looking, not by a selector map: the search box is the one visible
+ * text input inside the popup or sharing the button's wrapper. Two candidates
+ * means the wrapper holds a second field, and reaching into that is the mistake
+ * this file has made three times already — so ambiguity gives up instead.
+ */
+function searchBoxFor(el) {
+  if (isTag(el, "INPUT") || isTag(el, "TEXTAREA")) return el;
+
+  const visible = (c) => (c.getBoundingClientRect?.()?.width ?? 0) > 0;
+  const typeable = (root) =>
+    Array.from(root?.querySelectorAll?.("input,textarea") || []).filter(
+      (c) => c !== el && !isOurs(c) && !c.disabled && !c.readOnly && visible(c) &&
+        !["hidden", "checkbox", "radio", "submit", "button", "file"].includes(
+          (c.getAttribute("type") || "text").toLowerCase()
+        )
+    );
+
+  // Inside the popup this control names, if it names one.
+  const inside = typeable(namedListbox(el));
+  if (inside.length === 1) return inside[0];
+
+  // Otherwise a sibling: Workday puts the search box next to the button that
+  // opens it, under the same wrapper.
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 3; depth += 1, node = node.parentElement) {
+    const found = typeable(node);
+    if (found.length === 1) return found[0];
+    if (found.length > 1) return null;
+  }
+  return null;
+}
+
+/**
+ * The text a widget shows, unless what it shows is an invitation to choose.
+ *
+ * "Month…", "Select One", "Choose one" — every dropdown displays something
+ * before it holds anything, and treating that as an answer means never filling
+ * the field. Workday's is "Select One" with no ellipsis to give it away.
+ */
+function unlessPrompt(text) {
+  const shown = String(text || "").replace(/\s+/g, " ").trim();
+  if (/(…|\.\.\.)$/.test(shown)) return "";
+  return /^(-+\s*)?(select|choose|pick)\b.{0,12}$/i.test(shown) ? "" : shown;
+}
+
+/**
+ * A selection this control holds as a chip beside itself.
+ *
+ * A multi-select renders each answer as a removable pill and leaves its input
+ * empty, so the input alone says nothing about whether the question has been
+ * answered.
+ */
+function pillValue(el) {
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+    // The boundary is checked before the pill rather than after, and the order
+    // matters: the Phone Number box shares a section with the Country Phone
+    // Code's pill, so looking for a pill first would have Phone Number read as
+    // already holding "United States of America (+1)" and passed over. That is
+    // this walk's oldest mistake and it has been made twice.
+    const others = Array.from(node.querySelectorAll?.("input,select,textarea") || []).filter(
+      (c) => c !== el && (c.getBoundingClientRect?.()?.width ?? 1) > 0
+    );
+    if (others.length) return "";
+    const chip = node.querySelector?.("[id^='pill-'],[data-automation-id='selectedItem']");
+    const text = chip && String(chip.textContent ?? "").replace(/\s+/g, " ").trim();
+    // The accessible text carries its own instructions: "United States of
+    // America (+1), press delete to clear value."
+    if (text) return text.replace(/,\s*press delete.*$/i, "").trim();
+  }
+  return "";
 }
 
 /**
@@ -306,14 +401,30 @@ function setValue(el, value) {
  * sponsorship as still empty on a form where all three had just been filled.
  */
 function displayedValue(el) {
-  if (el.value === undefined) {
-    // A widget carries its value as its own text. "Month…" is the prompt, not
-    // an answer, so trailing ellipses read as empty.
-    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
-    return /(…|\.\.\.)$/.test(text) ? "" : text;
-  }
+  if (el.value === undefined) return unlessPrompt(el.innerText);
+
+  // A <button> that opens a menu shows its selection as its own text, and its
+  // `value` is a key from someone's database. Workday's Country button reads
+  // "bc33aa3152ec42d4995f4791a106ed09" and its Phone Device Type button
+  // "6d752225dbc64db4922d8b3cea770394" — neither empty nor an answer anybody
+  // could check, and both went into the report exactly like that.
+  //
+  // Right for the wrong reason until now: a key is a non-empty string, so the
+  // field read as already answered, which it was. A button showing "Select One"
+  // over an empty value would have read as answered too.
+  if (isTag(el, "BUTTON")) return unlessPrompt(el.innerText);
+
   const own = String(el.value ?? "").trim();
   if (own) return own;
+
+  // A selection shown as a removable chip rather than as text in the box.
+  // Workday's Country Phone Code is a text input holding nothing, beside a pill
+  // reading "United States of America (+1)" — so it was named in the
+  // required-still-empty list on a form where it is plainly answered, sending
+  // the user hunting the page for a box that is already full. Which is the harm
+  // that list exists to prevent, arriving from the other direction.
+  const pill = pillValue(el);
+  if (pill) return pill;
 
   // Only a combobox keeps its value somewhere other than its input. Walking a
   // plain input's ancestors reached the react-select next door and read *its*
@@ -562,7 +673,17 @@ function pressKey(el, key) {
   }
 }
 
-/** Open the popup and wait for it to render. */
+/**
+ * Open the popup and wait for it to render.
+ *
+ * Returns the list *and* the way it was found, because finding it once is not
+ * enough. A search-backed dropdown opens empty and renders its rows only after
+ * something is typed, so the caller has to look again — and looking again by
+ * ARIA alone fails on a widget that never named its popup in the first place.
+ * Workday is one: its list appeared on open, then the poll after typing looked
+ * only at `aria-controls`, found nothing, and would have gone round twelve
+ * times reporting a dropdown that never opened while it stood open on screen.
+ */
 async function openListbox(el) {
   // Whatever is already open is, by definition, not ours. Recording it first
   // means a dropdown someone forgot to close can never be mistaken for the one
@@ -591,7 +712,7 @@ async function openListbox(el) {
   pressKey(el, "ArrowDown");
   for (let tries = 0; tries < 8; tries += 1) {
     const box = mine();
-    if (box || isOpen()) return box;
+    if (box || isOpen()) return { box, find: mine };
     await pause(70);
   }
 
@@ -602,11 +723,11 @@ async function openListbox(el) {
     clickLike(el.closest?.("[class*='control'],[class*='select-shell'],[role='combobox']") || el);
     for (let tries = 0; tries < 10; tries += 1) {
       const box = mine();
-      if (box || isOpen()) return box;
+      if (box || isOpen()) return { box, find: mine };
       await pause(70);
     }
   }
-  return mine();
+  return { box: mine(), find: mine };
 }
 
 /**
@@ -664,22 +785,31 @@ async function chooseFromCombobox(el, value, kind, unit, context) {
 }
 
 async function chooseFromComboboxInner(el, value, kind, unit, context) {
-  let box = await openListbox(el);
+  const opened = await openListbox(el);
+  let box = opened.box;
   let nodes = optionNodes(box);
+
+  // Where to type, resolved after opening rather than before: Workday's search
+  // box does not exist until the popup that holds it is on screen.
+  const typing = searchBoxFor(el);
 
   // An empty list means it filters as you type; a very long one means the match
   // we want may not be rendered yet.
   const probes = [];
-  if (!nodes.length || nodes.length > 60) {
+  if ((!nodes.length || nodes.length > 60) && typing) {
     for (const probe of probesFor(value, kind)) {
       if (outOfTime()) break;
-      setValue(el, probe);
-      pressKey(el, probe.slice(-1) || "a");
+      setValue(typing, probe);
+      pressKey(typing, probe.slice(-1) || "a");
       // Poll rather than wait once: these lists are fetched, and a single
       // 180ms guess was shorter than the round trip on every one of them.
       for (let tries = 0; tries < 12 && !outOfTime(); tries += 1) {
         await pause(110);
-        box = namedListbox(el) || box;
+        // The same way it was found the first time, not by ARIA alone. A widget
+        // that never named its popup would otherwise have its rows arrive and
+        // go unseen, which is a list standing open on screen being reported as
+        // one that never opened.
+        box = opened.find() || box;
         nodes = optionNodes(box);
         if (nodes.length && nodes.length <= 60) break;
       }
@@ -689,8 +819,17 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   }
 
   if (!nodes.length) {
-    setValue(el, "");
-    return { ok: false, why: "the dropdown never opened", listbox: null, probes };
+    if (typing) setValue(typing, "");
+    return {
+      ok: false,
+      // Distinguished, because they need different fixes and the report is
+      // where that gets decided. A list that never opened is a click that went
+      // nowhere; a list with nowhere to type is a widget shaped unlike any yet
+      // met, and it should say so rather than blame the click.
+      why: typing ? "the dropdown never opened" : "the dropdown opened onto nothing we could type into",
+      listbox: null,
+      probes,
+    };
   }
 
   const texts = nodes.map(optionText);
@@ -698,6 +837,7 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   // options, this is the line that says which control's list it actually read.
   const listbox = {
     from: namedListbox(el) === box ? "aria-controls" : "appeared-on-open",
+    typedInto: typing === el ? "the control itself" : typing ? pathTo(typing) : "nothing",
     at: pathTo(box),
     count: texts.length,
     sample: texts.slice(0, 4),
@@ -706,7 +846,7 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   const { index, why } = window.HIRECRAFT_OPTIONS.chooseOption(value, texts, { kind, unit, context });
   if (index < 0) {
     // Only the probe text is cleared here; the wrapper does the closing.
-    setValue(el, "");
+    if (typing) setValue(typing, "");
     return { ok: false, why, offered: texts.slice(0, 12), listbox };
   }
 
@@ -720,10 +860,13 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
 
   // The click was ignored. Some libraries only commit from the keyboard, so
   // try that once before giving up — arrow into the list and press Enter.
-  el.focus?.();
-  pressKey(el, "ArrowDown");
+  // Aimed at whatever has the focus: on Workday that is the search box, and
+  // keys sent to the button behind an open popup go nowhere.
+  const keys = typing || el;
+  keys.focus?.();
+  pressKey(keys, "ArrowDown");
   await pause(60);
-  pressKey(el, "Enter");
+  pressKey(keys, "Enter");
   await pause(120);
   if (committed(el, nodes[index], chosen)) {
     return { ok: true, chosen, why, listbox, node: nodes[index] };
@@ -732,7 +875,7 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   // Report the failure rather than the attempt. Returning success here was the
   // same mistake as the old `(setValue(...), true)`: the panel said a required
   // sponsorship question was answered while the form still had it empty.
-  setValue(el, "");
+  if (typing) setValue(typing, "");
   return { ok: false, why: `"${chosen}" was clicked but the dropdown didn't take it`, listbox };
 }
 
@@ -1689,6 +1832,21 @@ function requiredGaps() {
     }
     if (empty) gaps.push(raw.replace(/[*✱]/g, "").trim().slice(0, 70));
   }
+
+  // Questions asked as a row of choices, which the loop above cannot see. The
+  // asterisk sits on the group's heading and the boxes themselves carry no
+  // label of their own, so "Have you ever worked at Applied Materials as a
+  // regular employee…" — required, unanswered, and the thing that would have
+  // bounced the form on submit — appeared in no list anywhere: not filled, not
+  // missing, not skipped, not even in the gaps this function exists to find.
+  for (const group of [...radioGroups(), ...buttonGroups()]) {
+    const question = (group.question || "").replace(/\s+/g, " ").trim();
+    if (!question || !/[*✱]|\brequired\b/i.test(question)) continue;
+    const answered = group.buttons
+      ? group.options.some((option) => buttonChosen(option.el))
+      : group.options.some((option) => option.el.checked);
+    if (!answered) gaps.push(question.replace(/[*✱]/g, "").replace(/\s+/g, " ").trim().slice(0, 70));
+  }
   return [...new Set(gaps)];
 }
 
@@ -1925,6 +2083,11 @@ window.HIRECRAFT_FILL = {
   isCombobox,
   setAndVerify,
   requiredGaps,
+  // Exported to be tested directly. Both were caused by the same assumption —
+  // that a dropdown is a text input — which Workday does not share.
+  setValue,
+  displayedValue,
+  searchBoxFor,
   findUploadInput,
   attachFile,
   needsPlacePick,

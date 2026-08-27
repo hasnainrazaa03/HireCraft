@@ -497,7 +497,11 @@ test("an empty text box beside a filled dropdown is still filled", async () => {
   const phone = makeControl({ label: "Phone", type: "tel" });
   const neighboursValue = { className: "select__single-value", textContent: "United States +1" };
   phone.parentElement = {
-    querySelector: () => neighboursValue,
+    // Selector-aware, because a stub that answers every query with the same
+    // node is not a DOM — it is a yes-man. This one said yes to a search for a
+    // Workday pill and reported the phone box as already answered, which is a
+    // failure invented by the harness rather than found in the code.
+    querySelector: (sel) => (String(sel).includes("single-value") ? neighboursValue : null),
     querySelectorAll: () => [],
     parentElement: null,
   };
@@ -1193,4 +1197,206 @@ test("progress is reported before a field, not only after", async () => {
     onProgress: ({ label, attempting }) => seen.push(`${attempting ? "…" : "✓"}${label}`),
   });
   assert.deepEqual(seen, ["…First name", "✓First name"]);
+});
+
+/**
+ * Workday, which builds every dropdown as a <button>.
+ *
+ * Not a variation on the shape the other boards use — a different shape. There
+ * is nothing to type into on the element itself, its `value` is a key out of
+ * someone's database, and its prompt is the words "Select One" with no ellipsis
+ * to mark them as a prompt. Each of those was an assumption made here, and the
+ * first one threw.
+ */
+function installWorkday({ text = "Select One", value = "" } = {}) {
+  const window = {};
+  const search = {
+    tagName: "INPUT", id: "", value: "", disabled: false, readOnly: false,
+    getAttribute: (n) => (n === "type" ? "text" : null),
+    hasAttribute: () => false,
+    getBoundingClientRect: rect(200, 30),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {},
+  };
+  const button = {
+    tagName: "BUTTON", id: "address--countryRegion", innerText: text, value,
+    disabled: false, readOnly: false,
+    getAttribute: (n) => (n === "aria-haspopup" ? "listbox" : n === "name" ? "countryRegion" : null),
+    hasAttribute: (n) => n === "aria-haspopup",
+    getBoundingClientRect: rect(200, 40),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {}, click() {},
+  };
+  // The wrapper Workday puts them both in — which is the only thing relating
+  // the search box to the button that opens it.
+  const wrapper = {
+    tagName: "DIV", id: "", getAttribute: () => null,
+    querySelector: () => null,
+    querySelectorAll: (sel) => (/input|textarea/.test(sel) ? [search] : []),
+    parentElement: null, closest: () => null,
+  };
+  button.parentElement = wrapper;
+  search.parentElement = wrapper;
+
+  const globals = {
+    window,
+    document: { querySelector: () => null, querySelectorAll: () => [], getElementById: () => null },
+    CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+  return { window, button, search };
+}
+
+test("writing to something that is not a form control is refused, not attempted", () => {
+  // The real one, from Applied Materials' My Information page: setValue fell
+  // through to HTMLInputElement's value setter for anything that was not a
+  // textarea or a select, and calling a native setter on a <button> throws
+  // "Illegal invocation". It took the State field down, and before each control
+  // had its own catch it would have taken every field after it too.
+  const { window, button } = installWorkday();
+  const { setValue } = window.HIRECRAFT_FILL;
+
+  assert.doesNotThrow(() => setValue(button, "CA"));
+  assert.equal(setValue(button, "CA"), false, "and says it did nothing");
+  assert.equal(button.value, "", "leaving the button alone");
+});
+
+test("typing goes to the search box beside the button, not to the button", () => {
+  const { window, button, search } = installWorkday();
+  assert.equal(window.HIRECRAFT_FILL.searchBoxFor(button), search);
+});
+
+test("a wrapper holding two fields is not guessed between", () => {
+  // The mistake this file has made three times: reaching past a field's own
+  // boundary and driving the one next door.
+  const { window, button } = installWorkday();
+  const second = { ...button, tagName: "INPUT", getAttribute: () => "text" };
+  button.parentElement.querySelectorAll = () => [
+    { ...second, getBoundingClientRect: rect(200, 30) },
+    { ...second, getBoundingClientRect: rect(200, 30) },
+  ];
+  assert.equal(window.HIRECRAFT_FILL.searchBoxFor(button), null);
+});
+
+test("a prompt is not an answer, and a database key is not one either", () => {
+  // Both from the same page. "Select One" read as a filled field, so State
+  // would never have been touched; Country read as holding
+  // "bc33aa3152ec42d4995f4791a106ed09", which went into the report exactly like
+  // that — right that the field was answered, but for no reason anyone could
+  // check.
+  const prompt = installWorkday({ text: "Select One" });
+  assert.equal(prompt.window.HIRECRAFT_FILL.displayedValue(prompt.button), "");
+
+  const answered = installWorkday({
+    text: "United States of America",
+    value: "bc33aa3152ec42d4995f4791a106ed09",
+  });
+  assert.equal(
+    answered.window.HIRECRAFT_FILL.displayedValue(answered.button),
+    "United States of America"
+  );
+});
+
+test("a list that never named itself is still found after typing", async () => {
+  // Workday does not link its popup to the button that opens it, so the list can
+  // only be recognised as the one that appeared when we acted. The poll after
+  // typing looked at aria-controls alone: the rows arrived and went unseen, and
+  // a list standing open on screen was reported as one that never opened.
+  //
+  // It also exercises the whole Workday dropdown in one go — a <button> to
+  // open, a separate box to type in, "Select One" as the empty state, and the
+  // chosen value arriving as the button's own text.
+  let open = false;
+  const wrapper = {
+    tagName: "DIV", id: "", className: "", getAttribute: () => null,
+    parentElement: null, closest: () => null, dispatchEvent: () => {}, click() {},
+  };
+  const search = {
+    tagName: "INPUT", id: "", className: "", value: "",
+    disabled: false, readOnly: false, parentElement: wrapper,
+    getAttribute: (n) => (n === "type" ? "text" : null),
+    hasAttribute: () => false, getBoundingClientRect: rect(200, 30),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {},
+  };
+  const button = {
+    tagName: "BUTTON", id: "address--countryRegion", className: "",
+    innerText: "Select One", value: "", disabled: false, readOnly: false,
+    parentElement: wrapper,
+    getAttribute: (n) =>
+      n === "aria-haspopup" ? "listbox"
+      : n === "aria-expanded" ? String(open)
+      : n === "aria-label" ? "State"
+      : null,
+    hasAttribute: (n) => ["aria-haspopup", "aria-expanded"].includes(n),
+    getBoundingClientRect: rect(200, 40),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {},
+    click() { open = true; },
+  };
+  wrapper.querySelector = (sel) => (/input|select|textarea/.test(sel) ? search : null);
+  wrapper.querySelectorAll = (sel) => (/input|textarea/.test(sel) ? [search] : []);
+
+  const option = (text) => ({
+    tagName: "DIV", id: "", className: "", innerText: text, textContent: text,
+    getAttribute: (n) => (n === "role" ? "option" : null),
+    getBoundingClientRect: rect(180, 28),
+    scrollIntoView() {}, dispatchEvent: () => {},
+    click() { button.innerText = text; open = false; },
+  });
+  const rows = [option("California"), option("Kansas")];
+  const listbox = {
+    tagName: "UL", id: "", className: "", parentElement: null,
+    getAttribute: (n) => (n === "role" ? "listbox" : null),
+    querySelectorAll: (sel) => (sel.includes("option") ? rows : []),
+  };
+  for (const row of rows) row.parentElement = listbox;
+
+  // The list renders nothing until the search box has something in it, which is
+  // the whole reason the probe loop exists.
+  const filtered = () => (search.value ? [listbox] : []);
+  const window = {};
+  const document = {
+    querySelectorAll: (sel) => {
+      if (sel === '[role="listbox"]') return filtered();
+      if (sel === '[role="option"]') return search.value ? rows : [];
+      if (sel.includes("aria-haspopup")) return [button];
+      return [];
+    },
+    querySelector: () => null,
+    getElementById: () => null,
+    body: { dispatchEvent: () => {} },
+  };
+  const globals = {
+    window, document, CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+
+  const report = await window.HIRECRAFT_FILL.fillForm(
+    { ...PROFILE, state: "CA" },
+    { stepDelay: 0 }
+  );
+
+  assert.equal(button.innerText, "California", "the button shows what was chosen");
+  assert.deepEqual(report.filled.map((f) => f.label), ["State"]);
+  const row = report.trace.find((e) => e.field === "state");
+  assert.equal(row.outcome, "filled");
+  assert.equal(row.listbox.from, "appeared-on-open", "found by appearing, not by name");
+  assert.notEqual(row.listbox.typedInto, "the control itself", "typed beside the button");
 });

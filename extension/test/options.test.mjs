@@ -394,3 +394,30 @@ test("an agreement is matched however the form words it", () => {
   // An option list that expresses no agreement is reported, not guessed at.
   assert.equal(chooseOption("yes", ["Maybe", "Later"], { kind: "consent" }).index, -1);
 });
+
+test("a state is stored short and offered long", () => {
+  // Workday lists the fifty states in full and the profile holds "CA". Left to
+  // generic text matching that is a substring of California, North Carolina and
+  // South Carolina alike, and which came back would be down to the ranking
+  // rather than to the answer.
+  const states = ["Alabama", "California", "North Carolina", "South Carolina", "Kansas"];
+  const picked = chooseOption("CA", states, { kind: "state" });
+  assert.equal(states[picked.index], "California");
+
+  // And the other way, for a list that offers the abbreviations.
+  assert.equal(
+    ["AL", "CA", "NC"][chooseOption("CA", ["AL", "CA", "NC"], { kind: "state" }).index],
+    "CA"
+  );
+  // A full name stored against a full-name list still works.
+  assert.equal(
+    states[chooseOption("California", states, { kind: "state" }).index],
+    "California"
+  );
+});
+
+test("a state that isn't on the list is refused, not approximated", () => {
+  const { index, why } = chooseOption("CA", ["Ontario", "Quebec"], { kind: "state" });
+  assert.equal(index, -1);
+  assert.match(why, /no option means/);
+});
