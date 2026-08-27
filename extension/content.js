@@ -12,6 +12,17 @@
 
 const ROOT_ID = "hirecraft-root";
 
+/**
+ * Which build of this script is running in the page.
+ *
+ * A content script keeps running in already-open tabs after the extension is
+ * reloaded, so "I changed it and it still misbehaves" and "the page is running
+ * last week's copy" look identical from here. Four rounds went by on that
+ * ambiguity. This ends it: a diagnostics dump either carries this string or it
+ * came from a stale script.
+ */
+const PANEL_BUILD = "2026-08-26.cover-letter-trigger";
+
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
 <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -45,6 +56,8 @@ const state = {
   letter: null,
   /** What to change about the draft, before asking for it again. */
   letterFeedback: "",
+  /** Why the last draft failed, if it did. */
+  letterError: null,
 };
 
 function ask(message) {
@@ -184,6 +197,16 @@ function renderPanel() {
         // fits none of the shapes above still shows itself rather than
         // vanishing — which is how the date pickers hid for three runs.
         widgets: window.HIRECRAFT_FILL.unclassified(),
+        // What the cover letter did, which no previous dump could say — four
+        // rounds of "it didn't work" were read against a report with no room
+        // for the answer.
+        coverLetter: {
+          build: PANEL_BUILD,
+          wanted: state.wantCoverLetter,
+          drafted: Boolean(state.letter),
+          paragraphs: state.letter?.paragraphs?.length ?? 0,
+          error: state.letterError,
+        },
       };
       try {
         await navigator.clipboard.writeText(JSON.stringify(dump, null, 2));
@@ -566,10 +589,15 @@ async function runCoverLetter({ feedback = "" } = {}) {
   });
   state.busy = false;
   if (!reply.ok) {
+    // Kept, not just flashed: a status line is gone by the time anyone asks
+    // what happened, and "nothing happened" is the least diagnosable report
+    // there is.
+    state.letterError = reply.error;
     setStatus(reply.error);
     render();
     return;
   }
+  state.letterError = null;
   state.letter = { ...reply.data, company };
   // Cleared so the box is empty for the next note rather than repeating the
   // last one, which would be applied twice.
