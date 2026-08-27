@@ -59,7 +59,7 @@ function node(tag = "div") {
 }
 
 /** Every node built during a render, so the result can be searched. */
-function harness({ profile, letter = null, fill = {} } = {}) {
+function harness({ profile, letter = null, fill = {}, reply = null } = {}) {
   const built = [];
   const sent = [];
   const copied = [];
@@ -87,8 +87,10 @@ function harness({ profile, letter = null, fill = {} } = {}) {
       inspectForm: () => [],
       choiceCandidates: () => [],
       unclassified: () => [],
+      fillForm: async () => ({ filled: [], missing: [], skipped: [], required: [], trace: [] }),
       ...fill,
     },
+    HIRECRAFT_ADAPTER: { overrides: {} },
     addEventListener() {},
   };
 
@@ -96,7 +98,7 @@ function harness({ profile, letter = null, fill = {} } = {}) {
     runtime: {
       sendMessage: (message, cb) => {
         sent.push(message);
-        cb?.({ ok: true, data: {} });
+        cb?.(reply?.(message) ?? { ok: true, data: {} });
       },
       lastError: null,
     },
@@ -121,7 +123,7 @@ function harness({ profile, letter = null, fill = {} } = {}) {
   // The script exports nothing, so the test asks it to.
   const source =
     readFileSync(join(here, "..", "content.js"), "utf8") +
-    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded, noteError };";
+    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded, noteError, fillOnce };";
   new Function(...Object.keys(globals), source)(...Object.values(globals));
 
   Object.assign(window.__panel.state, { profile, letter });
@@ -286,4 +288,57 @@ test("one broken section does not cost the whole dump", async () => {
     dump.errors.some((e) => e.where === "diagnostics: inspect"),
     "with the failure recorded rather than swallowed"
   );
+});
+
+test("a Career Profile edit reaches a page that is already open", async () => {
+  // The panel read the profile on its first Fill and kept it for as long as the
+  // tab stayed open. So the sequence anyone would actually perform — Fill, read
+  // "no street address stored — add one in Career Profile", go and add one, come
+  // back, Fill — gave the same message back, because the answer had been added
+  // to a copy this page would never see again. A feature working correctly and
+  // looking broken, which is worse than one that is broken.
+  let stored = "";
+  const { window, sent } = harness({
+    profile: { resumes: [], local_resumes: [] },
+    reply: (message) =>
+      message.type === "profile"
+        ? { ok: true, data: { resumes: [], local_resumes: [], address_line1: stored } }
+        : { ok: true, data: {} },
+  });
+
+  await window.__panel.fillOnce();
+  assert.equal(window.__panel.state.profile.address_line1, "");
+
+  // The user goes and fills it in, then comes back to the same tab.
+  stored = "3601 Trousdale Pkwy";
+  await window.__panel.fillOnce();
+
+  assert.equal(
+    window.__panel.state.profile.address_line1,
+    "3601 Trousdale Pkwy",
+    "the second press must see what was added between them"
+  );
+  assert.equal(sent.filter((m) => m.type === "profile").length, 2, "asked once per press");
+});
+
+test("a profile that cannot be fetched falls back to the one we had", async () => {
+  // Re-fetching on every press must not make a working panel depend on the API
+  // being reachable at that instant.
+  let up = true;
+  const { window } = harness({
+    profile: null,
+    reply: (message) =>
+      message.type !== "profile"
+        ? { ok: true, data: {} }
+        : up
+          ? { ok: true, data: { resumes: [], local_resumes: [], phone: "555-0100" } }
+          : { ok: false, error: "HireCraft is not running." },
+  });
+
+  await window.__panel.fillOnce();
+  up = false;
+  await window.__panel.fillOnce();
+
+  assert.equal(window.__panel.state.profile.phone, "555-0100", "the last good copy stands");
+  assert.doesNotMatch(window.__panel.state.status ?? "", /not running/);
 });

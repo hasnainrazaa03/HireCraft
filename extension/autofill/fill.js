@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.errors-say-what-they-were";
+const BUILD = "2026-08-27.profile-read-fresh";
 
 /**
  * When the current fill has to stop.

@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-27.errors-say-what-they-were";
+const PANEL_BUILD = "2026-08-27.profile-read-fresh";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -656,13 +656,24 @@ async function fillOnce() {
   state.status = "Reading your HireCraft profile…";
   render();
 
-  if (!state.profile) {
-    const reply = await ask({ type: "profile" });
-    if (!reply.ok) {
-      state.status = reply.error;
-      return;
-    }
-    state.profile = reply.data;
+  // Fetched every time, not once per page.
+  //
+  // A content script outlives any number of edits made in another tab: the
+  // panel read the profile on its first Fill and kept it for as long as the tab
+  // stayed open. So the sequence anyone would actually perform — press Fill,
+  // see "no street address stored — add one in Career Profile", go and add one,
+  // come back, press Fill — returned the same message, because the answer it
+  // asked for had been added to a copy this page would never see again.
+  //
+  // That is a feature working correctly and looking broken, which is worse than
+  // one that is broken, and the fix costs a single request to a server running
+  // on this machine.
+  const fresh = await ask({ type: "profile" });
+  if (fresh.ok) {
+    state.profile = fresh.data;
+  } else if (!state.profile) {
+    state.status = fresh.error;
+    return;
   }
   const profile = state.profile;
 
