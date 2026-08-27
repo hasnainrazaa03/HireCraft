@@ -151,7 +151,11 @@ test("a fill with progress reporting completes without throwing", async () => {
 
   const seen = [];
   const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, {
-    onProgress: ({ label }) => seen.push(label),
+    // Each field is announced twice: once as it is attempted, once when it
+    // lands. Only the landings are compared here.
+    onProgress: ({ label, attempting }) => {
+      if (!attempting) seen.push(label);
+    },
     stepDelay: 1,
   });
 
@@ -1152,4 +1156,41 @@ test("a real country question still fills", async () => {
   const window = install([country]);
   await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
   assert.equal(country.value, "United States");
+});
+
+test("a fill that cannot finish stops and says so", async () => {
+  // Every wait in the engine is bounded and none of them were bounded
+  // together: four dropdowns that never resolve cost twenty-six seconds, and a
+  // page with more than four could keep the panel on "Filling…" for minutes.
+  // That is indistinguishable from a hang, and was reported as one.
+  const slow = ["First Name", "Last Name", "Email", "Phone"].map((label) =>
+    makeCombobox({ label, options: [] })
+  );
+  const window = install(slow);
+
+  const started = Date.now();
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, {
+    stepDelay: 0,
+    budgetMs: 400,
+  });
+  const took = Date.now() - started;
+
+  assert.ok(took < 6000, `should give up quickly, took ${took}ms`);
+  assert.ok(
+    report.missing.some((m) => /ran out of time/.test(m.why)),
+    "and the report should say what was left"
+  );
+});
+
+test("progress is reported before a field, not only after", async () => {
+  // So a slow control does not leave the panel showing the field before it.
+  const first = makeControl({ label: "First Name" });
+  const window = install([first]);
+
+  const seen = [];
+  await window.HIRECRAFT_FILL.fillForm(PROFILE, {
+    stepDelay: 0,
+    onProgress: ({ label, attempting }) => seen.push(`${attempting ? "…" : "✓"}${label}`),
+  });
+  assert.deepEqual(seen, ["…First name", "✓First name"]);
 });

@@ -9,6 +9,22 @@
  * actually listens for.
  */
 
+/**
+ * When the current fill has to stop.
+ *
+ * Every wait here is bounded and none of them were bounded together. A dropdown
+ * that never resolves costs six and a half seconds of polling, four of them
+ * cost twenty-six, and a page like Workday's has more than four — so a fill
+ * could run for minutes with the panel saying "Filling…" the whole time, which
+ * is indistinguishable from a hang and was reported as one.
+ *
+ * Module-level because every poll below needs it and threading a deadline
+ * through eight call sites would obscure more than it explains. It is set once
+ * per fill and read nowhere else.
+ */
+let fillDeadline = Infinity;
+const outOfTime = () => Date.now() > fillDeadline;
+
 /** Wait, so the user can watch a field fill rather than find the form full. */
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -645,12 +661,13 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   const probes = [];
   if (!nodes.length || nodes.length > 60) {
     for (const probe of probesFor(value, kind)) {
+      if (outOfTime()) break;
       setValue(el, probe);
       pressKey(el, probe.slice(-1) || "a");
       // Poll rather than wait once: these lists are fetched, and a single
       // 180ms guess was shorter than the round trip on every one of them.
-      for (let tries = 0; tries < 14; tries += 1) {
-        await pause(120);
+      for (let tries = 0; tries < 12 && !outOfTime(); tries += 1) {
+        await pause(110);
         box = namedListbox(el) || box;
         nodes = optionNodes(box);
         if (nodes.length && nodes.length <= 60) break;
@@ -795,8 +812,13 @@ function fileFromDataUrl(dataUrl, filename) {
  */
 async function fillForm(
   profile,
-  { resumeFile = null, overrides = {}, onProgress = null, stepDelay = 90 } = {}
+  { resumeFile = null, overrides = {}, onProgress = null, stepDelay = 90, budgetMs = 40000 } = {}
 ) {
+  // A fill that cannot finish should say so rather than appear to hang. What
+  // is left is reported and Fill can be pressed again — already-filled boxes
+  // are left alone, so a second pass costs nothing and picks up where this one
+  // stopped.
+  fillDeadline = Date.now() + budgetMs;
   const filled = [];
   const skipped = [];
   const missing = [];
@@ -854,7 +876,15 @@ async function fillForm(
     }
   }
 
-  for (const { el, raw, label, widget } of controls()) {
+  const scanned = controls();
+  for (const { el, raw, label, widget } of scanned) {
+    if (outOfTime()) {
+      missing.push({
+        label: raw.trim().slice(0, 60) || "the rest of this form",
+        why: "the fill ran out of time — press Fill again to carry on",
+      });
+      continue;
+    }
     const skip = window.HIRECRAFT_SKIP.find((group) =>
       group.match.some((re) => re.test(label))
     );
@@ -909,6 +939,11 @@ async function fillForm(
     }
 
     claimed.add(field.key);
+
+    // Say what is being attempted, not only what succeeded. A dropdown that
+    // takes seconds to resolve left the status on the field before it, so the
+    // panel looked frozen for exactly as long as the slowest control took.
+    if (onProgress) onProgress({ el, label: field.label, attempting: true });
 
     // Every kind of control, through one place that knows how to reach each —
     // and each reporting what it actually managed rather than that it tried.
@@ -1184,8 +1219,8 @@ async function pickPlace(el, value) {
   setValue(el, value);
   pressKey(el, value.slice(-1) || "a");
 
-  for (let tries = 0; tries < 14; tries += 1) {
-    await pause(120);
+  for (let tries = 0; tries < 12 && !outOfTime(); tries += 1) {
+    await pause(110);
     const nodes = optionNodes(namedListbox(el) || listboxFor(el));
     if (!nodes.length) continue;
 

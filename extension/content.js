@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-26.workday-phone-block";
+const PANEL_BUILD = "2026-08-26.workday-time-budget";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -557,9 +557,9 @@ async function runFill() {
   const report = await window.HIRECRAFT_FILL.fillForm(profile, {
     resumeFile,
     overrides: window.HIRECRAFT_ADAPTER.overrides,
-    onProgress: ({ el: field, label }) => {
-      setStatus(`Filled ${label}`);
-      highlight(field);
+    onProgress: ({ el: field, label, attempting }) => {
+      setStatus(attempting ? `${label}…` : `Filled ${label}`);
+      if (!attempting) highlight(field);
     },
   });
 
