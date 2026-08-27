@@ -43,6 +43,11 @@ class CareerProfileUpdate(ProfileModel):
     phone: str | None = Field(default=None, max_length=40)
     location: str | None = Field(default=None, max_length=180)
     country: str | None = Field(default=None, max_length=80)
+    # The rest of a postal address. `location` answers City and State; an
+    # address section asks for two more things and got nothing.
+    address_line1: str | None = Field(default=None, max_length=200)
+    address_line2: str | None = Field(default=None, max_length=200)
+    postal_code: str | None = Field(default=None, max_length=20)
 
     # An application is an employment record, so it asks for the name on the
     # candidate's documents — which is not always the name they go by.
@@ -109,6 +114,9 @@ class CareerProfileResponse(ProfileModel):
     phone: str | None
     location: str | None
     country: str | None
+    address_line1: str | None
+    address_line2: str | None
+    postal_code: str | None
     legal_first_name: str | None
     legal_last_name: str | None
     preferred_name: str | None

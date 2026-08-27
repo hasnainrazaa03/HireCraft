@@ -248,6 +248,9 @@ test("every field can produce a value from a full profile", () => {
     country: "United States",
     city: "Los Angeles",
     state: "CA",
+    address_line1: "3601 Trousdale Pkwy",
+    address_line2: "Apt 4",
+    postal_code: "90089",
     linkedin: "https://linkedin.com/in/ada",
     github: "https://github.com/ada",
     portfolio: "https://ada.dev",
@@ -614,5 +617,40 @@ test("and an ordinary work-authorisation question still is not", () => {
       undefined,
       `"${question}" should still be answered`
     );
+  }
+});
+
+test("an address section's four boxes get four different answers", () => {
+  // Workday asks for Address Line 1, City, State and Postal Code separately.
+  // "Los Angeles, CA" answers two of them and nothing else, so the street and
+  // the postcode came back empty on a real form — and the catalogue has to keep
+  // the four apart, since three of these labels contain the word "address".
+  const expected = {
+    "Address Line 1": "address_line1",
+    "Street Address": "address_line1",
+    "Address": "address_line1",
+    "Address Line 2": "address_line2",
+    "Apartment, suite, etc.": "address_line2",
+    "Postal Code": "postal_code",
+    "Zip Code": "postal_code",
+    "City": "city",
+    "State": "state",
+  };
+  for (const [label, key] of Object.entries(expected)) {
+    const norm = normalise(label);
+    const field = FIELDS.find((f) => f.match.some((re) => re.test(norm)));
+    assert.equal(field?.key, key, `"${label}" should be ${key}`);
+  }
+});
+
+test("an email address is not a street address", () => {
+  // Three of the address matchers contain the word "address", and so does this.
+  // Getting it wrong would put a street into the box an employer writes to.
+  for (const [label, key] of [
+    ["Email Address", "email"],
+    ["Contact Email Address", "email"],
+  ]) {
+    const field = FIELDS.find((f) => f.match.some((re) => re.test(normalise(label))));
+    assert.equal(field?.key, key, `"${label}" should be ${key}`);
   }
 });

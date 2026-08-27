@@ -44,6 +44,15 @@ class CareerProfile(Base, TimestampMixin):
     # "Los Angeles, CA".
     country: Mapped[str | None] = mapped_column(String(80))
 
+    # The rest of a postal address, which `location` does not carry. "Los
+    # Angeles, CA" answers a City box and a State box and nothing else, so
+    # Workday's Address Line 1 and Postal Code sat empty on every form — and
+    # unlike the questions deliberately left to the user, these were empty only
+    # because there was nowhere to put them.
+    address_line1: Mapped[str | None] = mapped_column(String(200))
+    address_line2: Mapped[str | None] = mapped_column(String(200))
+    postal_code: Mapped[str | None] = mapped_column(String(20))
+
     # An application is an employment record, so it asks for the name on the
     # candidate's documents — which is not always the name they go by. Both are
     # stored because a form may ask for either, and answering "Preferred name"

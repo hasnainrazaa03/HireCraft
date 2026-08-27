@@ -205,6 +205,47 @@ def test_career_profile_wins_over_the_resume(client, auth, user, db):
     assert len(body["resumes"]) == 1
 
 
+def test_a_postal_address_reaches_the_filler(client, auth, user, db):
+    """Four boxes, not two.
+
+    `location` holds "Los Angeles, CA", which answers City and State and nothing
+    else — so Workday's Address Line 1 and Postal Code came back empty on a real
+    form. Not because the answer was withheld: there was nowhere to keep it.
+    """
+    from app.models.profile import CareerProfile
+
+    db.add(
+        CareerProfile(
+            user_id=user.id,
+            location="Los Angeles, CA",
+            address_line1="3601 Trousdale Pkwy",
+            address_line2="Apt 4",
+            postal_code="90089",
+        )
+    )
+    db.commit()
+
+    key = issue(client, auth)
+    body = client.get("/api/v1/extension/profile", headers={"X-HireCraft-Key": key}).json()
+
+    assert body["address_line1"] == "3601 Trousdale Pkwy"
+    assert body["address_line2"] == "Apt 4"
+    assert body["postal_code"] == "90089"
+    # And the split still does its half, so the four boxes are answered by four
+    # separate values rather than by one string in the wrong shape.
+    assert body["city"] == "Los Angeles"
+    assert body["state"] == "CA"
+
+
+def test_an_address_nobody_entered_is_empty_rather_than_missing(client, auth):
+    """The filler must never have to tell "absent" from "blank" before typing."""
+    key = issue(client, auth)
+    body = client.get("/api/v1/extension/profile", headers={"X-HireCraft-Key": key}).json()
+
+    for field in ("address_line1", "address_line2", "postal_code"):
+        assert body[field] == ""
+
+
 # --- the two routes that do work, not just read ------------------------------
 #
 # These had no tests at all, and the cost showed: the cover-letter route

@@ -446,6 +446,11 @@ export interface CareerProfile {
   portfolio_url: string | null;
   website_url: string | null;
   country: string | null;
+  // `location` holds "Los Angeles, CA", which is a City and a State. An
+  // application's address section asks for two more things than that.
+  address_line1: string | null;
+  address_line2: string | null;
+  postal_code: string | null;
   legal_first_name: string | null;
   legal_last_name: string | null;
   preferred_name: string | null;

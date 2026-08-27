@@ -68,6 +68,35 @@ const FIELDS = [
     type: "tel",
   },
   {
+    key: "address_line1",
+    label: "Address line 1",
+    from: (p) => p.address_line1,
+    whenEmpty: "no street address stored — add one in Career Profile",
+    // Ahead of `city` and `location`, because "Address" on its own is the first
+    // line of one rather than the whole thing. Line 2 is matched separately
+    // below so that a form offering both does not put the street into each.
+    match: [
+      /\baddress\s*line\s*1\b/, /\bstreet\s*address\b/, /\baddress\s*1\b/,
+      /^address$/, /\bhome\s*address\b/, /\bmailing\s*address\b/,
+    ],
+  },
+  {
+    key: "address_line2",
+    label: "Address line 2",
+    from: (p) => p.address_line2,
+    // Genuinely optional, and usually genuinely empty. Said plainly so it is
+    // not read as something that failed.
+    whenEmpty: "nothing stored, and most addresses have no second line",
+    match: [/\baddress\s*line\s*2\b/, /\baddress\s*2\b/, /\b(apt|apartment|suite|unit)\b/],
+  },
+  {
+    key: "postal_code",
+    label: "Postal code",
+    from: (p) => p.postal_code,
+    whenEmpty: "no postal code stored — add one in Career Profile",
+    match: [/\bpostal\s*code\b/, /\bzip\s*code\b/, /^zip$/, /\bpost\s*code\b/],
+  },
+  {
     key: "city",
     label: "City",
     // Before the general location field, and deliberately narrow. A box inside

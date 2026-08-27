@@ -160,6 +160,14 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         # state in separate boxes, and "Los Angeles, CA" in a box labelled City
         # is the right information in the wrong shape.
         **_split_location(pick(profile.location if profile else None, "location")),
+        # And the rest of the address, which the split cannot produce because
+        # `location` never held it. Workday asks for four boxes; a City and a
+        # State answered two of them and the other two stayed empty on a real
+        # form — not because the answer was withheld but because there was
+        # nowhere to keep it.
+        "address_line1": (profile.address_line1 if profile else "") or "",
+        "address_line2": (profile.address_line2 if profile else "") or "",
+        "postal_code": (profile.postal_code if profile else "") or "",
         "linkedin": pick(profile.linkedin_url if profile else None, "linkedin"),
         "github": pick(profile.github_url if profile else None, "github"),
         "portfolio": pick(profile.portfolio_url if profile else None, "portfolio"),

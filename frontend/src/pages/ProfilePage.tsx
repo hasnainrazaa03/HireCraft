@@ -156,6 +156,15 @@ export default function ProfilePage() {
               where you want to be reached, not necessarily where you sign in. */}
           <Field label="Contact email"><input type="email" className="input" value={form.contact_email ?? ""} onChange={(e) => set("contact_email", e.target.value)} placeholder="The address employers should use" /></Field>
         </div>
+        {/* The rest of a postal address. "Los Angeles, CA" above answers a City
+            box and a State box; Workday's address section asks for four, and
+            the other two stayed empty on a real form because there was nowhere
+            here to keep them. */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Address line 1"><input className="input" value={form.address_line1 ?? ""} onChange={(e) => set("address_line1", e.target.value)} placeholder="Street address" /></Field>
+          <Field label="Address line 2"><input className="input" value={form.address_line2 ?? ""} onChange={(e) => set("address_line2", e.target.value)} placeholder="Apartment, suite (optional)" /></Field>
+          <Field label="Postal code"><input className="input" value={form.postal_code ?? ""} onChange={(e) => set("postal_code", e.target.value)} placeholder="90007" /></Field>
+        </div>
       </Section>
 
       <Section title="Links">
