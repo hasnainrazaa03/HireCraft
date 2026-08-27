@@ -1597,3 +1597,157 @@ test("a file the page has accepted is not a required box left empty", () => {
   const empty = installUploads([{ sectionText: "Resume/CV Select files Drop files here" }]);
   assert.equal(empty.window.HIRECRAFT_FILL.attachedNearby(empty.inputs[0]), false);
 });
+
+test("a widget wrapped around a plain box is driven as a plain box", () => {
+  // Workday's date fields are a div per segment with the real input inside it.
+  // searchBoxFor started at the parent, which holds the month box *and* the
+  // year box, so two candidates came back, the ambiguity rule refused both, and
+  // all four dates on a work-experience block reported "nothing to type into".
+  const month = {
+    tagName: "INPUT", id: "workExperience-8--startDate-dateSectionMonth-input",
+    className: "", value: "", disabled: false, readOnly: false,
+    getAttribute: (n) => (n === "aria-label" ? "Month" : null),
+    hasAttribute: () => false, getBoundingClientRect: rect(40, 30),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {},
+  };
+  const year = { ...month, id: "workExperience-8--startDate-dateSectionYear-input" };
+  const monthWrapper = {
+    tagName: "DIV", id: "workExperience-8--startDate-dateSectionMonth", className: "",
+    getAttribute: (n) => (n === "aria-haspopup" ? "listbox" : null),
+    hasAttribute: (n) => n === "aria-haspopup",
+    getBoundingClientRect: rect(60, 34),
+    querySelector: () => month,
+    querySelectorAll: (sel) => (/input|textarea/.test(sel) ? [month] : []),
+    closest: () => null, dispatchEvent: () => {}, focus() {},
+  };
+  // The parent holds both segments — the shape that defeated the old walk.
+  const group = {
+    tagName: "DIV", id: "workExperience-8--startDate", className: "",
+    textContent: "From* MM / YYYY",
+    getAttribute: () => null,
+    querySelector: () => month,
+    querySelectorAll: (sel) => (/input|textarea/.test(sel) ? [month, year] : []),
+    parentElement: null, closest: () => null,
+  };
+  monthWrapper.parentElement = group;
+  month.parentElement = monthWrapper;
+
+  const { window } = installWorkday();
+  assert.equal(
+    window.HIRECRAFT_FILL.searchBoxFor(monthWrapper),
+    month,
+    "the box inside the widget, not the pair beside it"
+  );
+});
+
+test("a month goes in as digits where the box asks for digits", () => {
+  // A dropdown of month names wants "May". A segmented date field wants "05"
+  // and says so — "MM / YYYY" beside it. Sending the name types nothing at all:
+  // the field rejects what it cannot parse, so the failure arrives as an empty
+  // date rather than as an error.
+  const { window } = installWorkday();
+  const { setValue } = window.HIRECRAFT_FILL;
+  assert.ok(setValue);
+
+  const box = (attrs, parentText) => {
+    const parent = {
+      tagName: "DIV", textContent: parentText, getAttribute: () => null,
+      querySelector: () => null, querySelectorAll: () => [], parentElement: null,
+    };
+    return {
+      tagName: "INPUT", id: "", className: "", value: "",
+      getAttribute: (n) => attrs[n] ?? null,
+      hasAttribute: (n) => attrs[n] != null,
+      getBoundingClientRect: rect(40, 30),
+      parentElement: parent, closest: () => null,
+      querySelector: () => null, querySelectorAll: () => [], dispatchEvent: () => {},
+    };
+  };
+
+  const digits = window.HIRECRAFT_FILL.wantsDigits;
+  assert.equal(digits(box({ placeholder: "MM" }, "")), true);
+  assert.equal(digits(box({ maxlength: "2" }, "")), true);
+  assert.equal(digits(box({}, "From* current value is MM/YYYY MM / YYYY")), true);
+  // A month dropdown says nothing of the kind, and must keep the name.
+  assert.equal(digits(box({ "aria-label": "Graduation month" }, "Graduation Month")), false);
+
+  assert.equal(window.HIRECRAFT_FILL.asDigits("May"), "05");
+  assert.equal(window.HIRECRAFT_FILL.asDigits("December"), "12");
+  assert.equal(window.HIRECRAFT_FILL.asDigits("Sept"), "09");
+  // Anything that is not a month is left exactly as it was.
+  assert.equal(window.HIRECRAFT_FILL.asDigits("2026"), "2026");
+});
+
+test("a dropdown's own prompt is not part of the question it asks", () => {
+  // Workday builds an accessible name out of the question and its current
+  // state: "Degree Select One Required". The question is "Degree", and the
+  // catalogue asks for exactly that — so Degree matched nothing and stayed
+  // empty on both education blocks, on a form that marks it required.
+  const { window } = installWorkday();
+  const { withoutPrompt, normalise } = window.HIRECRAFT_FILL;
+  const FIELDS = window.HIRECRAFT_FIELDS;
+
+  // Normalised first, then de-prompted — the order the scan uses, and it
+  // matters: the prompt is only at the end once "Required" has been taken off.
+  const keyFor = (label) => {
+    const norm = withoutPrompt(normalise(label));
+    return FIELDS.find((f) => f.match.some((re) => re.test(norm)))?.key;
+  };
+  assert.equal(keyFor("Degree Select One Required"), "degree");
+  assert.equal(keyFor("Degree Select One"), "degree");
+  assert.equal(keyFor("State Select One"), "state");
+  // A question that merely contains the word is left alone.
+  assert.equal(withoutPrompt("Select your highest degree"), "Select your highest degree");
+  assert.equal(withoutPrompt("Degree"), "Degree");
+});
+
+test("adding a second block does not rewrite the first", () => {
+  // The one that put a wrong answer on a real application. Adding the second
+  // degree made Workday re-render the first, so its School box came back as a
+  // *different node*, matched nothing in the before-set, counted as new, and was
+  // written over: the finished form said RV College where it should have said
+  // USC. Both blocks then named the same school — not an empty field anyone
+  // would notice, but a wrong answer that reads as a filled one.
+  const { window } = installWorkday();
+  const { oneEach, normalise, withoutPrompt } = window.HIRECRAFT_FILL;
+
+  const seen = (label) => withoutPrompt(normalise(label));
+  const own = oneEach(
+    [
+      { el: "education-6--schoolName", label: seen("School or University*") },
+      { el: "education-7--schoolName", label: seen("School or University*") },
+      { el: "education-7--fieldOfStudy", label: seen("Field of Study") },
+      { el: "education-7--degree", label: seen("Degree Select One Required") },
+    ],
+    window.HIRECRAFT_FIELDS
+  );
+
+  assert.equal(own.size, 3, "three questions, not four controls");
+  assert.equal(
+    own.get("school").el,
+    "education-7--schoolName",
+    "the new block's box, not the re-rendered old one"
+  );
+  assert.equal(own.get("field_of_study").el, "education-7--fieldOfStudy");
+  assert.equal(own.get("degree").el, "education-7--degree", "and Degree is reachable at all now");
+});
+
+test("a job block's questions are read from the job list, not the main one", () => {
+  const { window } = installWorkday();
+  const { oneEach, normalise, withoutPrompt } = window.HIRECRAFT_FILL;
+  const seen = (label) => withoutPrompt(normalise(label));
+
+  const rows = [
+    { el: "jobTitle", label: seen("Job Title*") },
+    { el: "companyName", label: seen("Company*") },
+    { el: "location", label: seen("Location") },
+  ];
+  const asJob = oneEach(rows, window.HIRECRAFT_EXPERIENCE_FIELDS);
+  assert.deepEqual([...asJob.keys()].sort(), ["employer", "job_location", "job_title"]);
+
+  // The same three rows through the main catalogue answer almost nothing —
+  // which is the point of keeping the two lists apart.
+  const asForm = oneEach(rows, window.HIRECRAFT_FIELDS);
+  assert.deepEqual([...asForm.keys()], ["location"]);
+});

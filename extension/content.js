@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-27.blocks-skills-and-jobs";
+const PANEL_BUILD = "2026-08-27.blocks-keep-their-own-answers";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `

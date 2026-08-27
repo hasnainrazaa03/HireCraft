@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.blocks-skills-and-jobs";
+const BUILD = "2026-08-27.blocks-keep-their-own-answers";
 
 /**
  * When the current fill has to stop.
@@ -165,6 +165,25 @@ function labelFor(el) {
 }
 
 /**
+ * A label with the widget's own prompt taken off the end.
+ *
+ * Workday builds a dropdown's accessible name out of the question and its
+ * current state: "Degree Select One Required". The question is "Degree", and
+ * the catalogue asks for exactly that — so the Degree box on both education
+ * blocks matched nothing and stayed empty, on a form that marks it required.
+ *
+ * State already worked, but only by luck: its pattern happens to be anchored at
+ * the start rather than at both ends. Taking the prompt off makes that true on
+ * purpose.
+ */
+function withoutPrompt(text) {
+  return String(text || "")
+    .replace(/\s*\b(select|choose)\s+(one|an?\s+\w+)\s*$/i, "")
+    .replace(/\s*\bselect\s*(\.\.\.|…)\s*$/i, "")
+    .trim();
+}
+
+/**
  * Things the filler must never click, whatever a label match might suggest.
  *
  * The whole design rests on never submitting an application, and a widened scan
@@ -270,7 +289,11 @@ function controls() {
     const box = el.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) continue;
     const raw = labelFor(el);
-    const label = normalise(raw);
+    // Normalised first, then de-prompted: Workday's name is "Degree Select One
+    // Required", and the prompt is only at the end once `normalise` has taken
+    // the "Required" off. The raw label keeps both, since that is what the page
+    // actually says and the report should not pretend otherwise.
+    const label = withoutPrompt(normalise(raw));
     if (!label) continue;
     out.push({ el, raw, label, widget });
   }
@@ -327,28 +350,77 @@ function setValue(el, value) {
 function searchBoxFor(el) {
   if (isTag(el, "INPUT") || isTag(el, "TEXTAREA")) return el;
 
-  const visible = (c) => (c.getBoundingClientRect?.()?.width ?? 0) > 0;
-  const typeable = (root) =>
-    Array.from(root?.querySelectorAll?.("input,textarea") || []).filter(
-      (c) => c !== el && !isOurs(c) && !c.disabled && !c.readOnly && visible(c) &&
-        !["hidden", "checkbox", "radio", "submit", "button", "file"].includes(
-          (c.getAttribute("type") || "text").toLowerCase()
-        )
-    );
+  // Inside the widget itself, first of all. Workday's date fields are a div per
+  // segment with the real input inside it, and the walk below starts at the
+  // parent — which holds the month box *and* the year box, so two candidates
+  // came back, the ambiguity rule refused both, and all four date fields on a
+  // work-experience block reported "nothing we could type into".
+  const within = typeableIn(el, el);
+  if (within.length === 1) return within[0];
 
   // Inside the popup this control names, if it names one.
-  const inside = typeable(namedListbox(el));
+  const inside = typeableIn(namedListbox(el), el);
   if (inside.length === 1) return inside[0];
 
   // Otherwise a sibling: Workday puts the search box next to the button that
   // opens it, under the same wrapper.
   let node = el.parentElement;
   for (let depth = 0; node && depth < 3; depth += 1, node = node.parentElement) {
-    const found = typeable(node);
+    const found = typeableIn(node, el);
     if (found.length === 1) return found[0];
     if (found.length > 1) return null;
   }
   return null;
+}
+
+/** Every box inside `root` that a person could type into, excluding `self`. */
+function typeableIn(root, self) {
+  return Array.from(root?.querySelectorAll?.("input,textarea") || []).filter(
+    (c) =>
+      c !== self &&
+      !isOurs(c) &&
+      !c.disabled &&
+      !c.readOnly &&
+      (c.getBoundingClientRect?.()?.width ?? 0) > 0 &&
+      !["hidden", "checkbox", "radio", "submit", "button", "file"].includes(
+        (c.getAttribute("type") || "text").toLowerCase()
+      )
+  );
+}
+
+/** Months, so a name can be written as a number and back. */
+const MONTH_NAMES = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+/**
+ * Does this box want a month as "05" rather than as "May"?
+ *
+ * A dropdown of month names wants the name. A segmented date field wants two
+ * digits, and says so: Workday's reads "MM / YYYY" beside it and its month
+ * segment takes exactly two characters. Sending "May" to that box types nothing
+ * at all — the field silently rejects what it cannot parse, so the failure
+ * arrives as an empty date rather than as an error.
+ */
+function wantsDigits(el) {
+  const own = `${el.getAttribute?.("placeholder") || ""} ${el.getAttribute?.("aria-label") || ""}`;
+  if (/\bmm\b/i.test(own)) return true;
+  const max = Number(el.getAttribute?.("maxlength") || 0);
+  if (max > 0 && max <= 2) return true;
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 3; depth += 1, node = node.parentElement) {
+    if (/\bmm\s*\/\s*(dd\s*\/\s*)?yyyy\b/i.test((node.textContent || "").slice(0, 200))) return true;
+  }
+  return false;
+}
+
+/** "May" as "05", when the box asked for digits. */
+function asDigits(value) {
+  const name = normalise(value);
+  const index = MONTH_NAMES.findIndex((month) => month.startsWith(name.slice(0, 3)));
+  if (index < 0) return value;
+  return String(index + 1).padStart(2, "0");
 }
 
 /**
@@ -966,7 +1038,17 @@ function fileFromDataUrl(dataUrl, filename) {
  */
 async function fillForm(
   profile,
-  { resumeFile = null, overrides = {}, onProgress = null, stepDelay = 90, budgetMs = 40000 } = {}
+  // Forty seconds was set for a page of boxes. Workday's My Experience is three
+  // sections the fill has to build first — two education blocks, a job, and a
+  // skills list picked one at a time — and each dropdown on it costs a click, a
+  // wait and a search. The run that prompted this had used the whole budget
+  // before it reached the skills, then reported them as though the employer had
+  // never heard of any of them.
+  //
+  // Long is safe now in a way it was not before: every field announces itself as
+  // it is attempted, so a slow fill reads as a working one rather than a hung
+  // one, and whatever is left says "press Fill again to carry on".
+  { resumeFile = null, overrides = {}, onProgress = null, stepDelay = 90, budgetMs = 90000 } = {}
 ) {
   // A fill that cannot finish should say so rather than appear to hang. What
   // is left is reported and Fill can be pressed again — already-filled boxes
@@ -1999,13 +2081,27 @@ async function applyTo(el, field, value, profile, widget) {
     return { ok: true, actual: texts[choice.index] };
   }
   if (widget || isCombobox(el)) {
+    // A wrapper around a plain box is a plain box, whatever ARIA it carries.
+    // Workday's date fields are a div per segment with the real input inside;
+    // driven as dropdowns they looked for an option list that does not exist
+    // and reported all four as unfillable.
+    const inner = isTag(el, "SELECT") ? null : typeableIn(el, el);
+    if (inner?.length === 1 && !optionNodes(namedListbox(el)).length) {
+      return setAndVerify(inner[0], forBox(inner[0], field, value));
+    }
     const result = await chooseFromCombobox(
       el, value, field.kind, field.unit, field.context?.(profile)
     );
     if (result.ok) result.actual = result.chosen;
     return result;
   }
-  return setAndVerify(el, value);
+  return setAndVerify(el, forBox(el, field, value));
+}
+
+/** The value in the form this particular box will accept. */
+function forBox(el, field, value) {
+  const isMonth = field.key === "start_month" || field.key === "end_month";
+  return isMonth && wantsDigits(el) ? asDigits(value) : value;
 }
 
 /** The button that adds another education block, if the form offers one. */
@@ -2137,6 +2233,29 @@ async function addExperience(entry, { trace, filled, missing, onProgress, stepDe
 }
 
 /**
+ * One control per question, and the last one on the page.
+ *
+ * Identity alone cannot tell a new block from an old one. Adding the second
+ * degree made Workday re-render the first, so its School box came back as a
+ * different node, matched nothing in the before-set, counted as new, and was
+ * written over — the finished form said RV College where it should have said
+ * USC. Both blocks then named the same school, which is not an empty field
+ * anyone would notice; it is a wrong answer that reads as a filled one.
+ *
+ * A form appends the block it has just added, so the last School box on the
+ * page is the one that block owns. Taking only that leaves every earlier block
+ * holding what it was given.
+ */
+function oneEach(controls, fields) {
+  const own = new Map();
+  for (const control of controls) {
+    const field = fields.find((f) => f.match.some((re) => re.test(control.label)));
+    if (field) own.set(field.key, control);
+  }
+  return own;
+}
+
+/**
  * Press an Add button and fill whatever block appears.
  *
  * Which controls are new is worked out by comparing the form before and after
@@ -2161,7 +2280,19 @@ async function addBlock({
     return false;
   }
 
-  for (const { el, raw, label, widget } of fresh) {
+  // One box per question, and the last one on the page.
+  //
+  // Identity is not enough to tell a new block from an old one. Adding the
+  // second degree made Workday re-render the first, so its School box came back
+  // as a different node, matched nothing in `before`, counted as new, and was
+  // written over — the finished form said RV College where it should have said
+  // USC. Both blocks then named the same school, which is not an empty field
+  // anyone would notice; it is a wrong answer that reads as a filled one.
+  //
+  // A form appends the block it has just added, so the last School box on the
+  // page is the one that block owns. Taking only that leaves every earlier
+  // block holding what it was given.
+  for (const { el, raw, label, widget } of oneEach(fresh, fields).values()) {
     if (outOfTime()) break;
     const field = fields.find((f) => f.match.some((re) => re.test(label)));
     if (!field || (keys && !keys.has(field.key))) continue;
@@ -2280,8 +2411,13 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
 
   const added = [];
   const refused = [];
+  let ranOut = false;
   for (const skill of skills) {
-    if (outOfTime() || added.length >= 12) break;
+    if (added.length >= 12) break;
+    if (outOfTime()) {
+      ranOut = true;
+      break;
+    }
     const already = normalise(nearbyPills(el).join(" "));
     if (already.includes(normalise(skill))) continue;
 
@@ -2292,7 +2428,11 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
       result = { ok: false, why: `this control threw: ${error?.message || error}` };
     }
     if (result.ok) added.push(result.chosen ?? skill);
-    else refused.push(skill);
+    // Each refusal keeps its own reason. Counting them and reporting one
+    // sentence for the lot said "none of them were on this employer's list" for
+    // a run that had simply run out of time before trying any — a guess dressed
+    // as a finding, and the sort that sends the next round to the wrong place.
+    else refused.push({ skill, why: result.why, listbox: result.listbox ?? null });
   }
 
   trace.push({
@@ -2303,9 +2443,14 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
     wanted: skills.slice(0, 12).join(", "),
     outcome: added.length ? "filled" : "failed",
     got: added.join(", ") || null,
-    why: added.length
-      ? `${added.length} added${refused.length ? `, ${refused.length} not on this employer's list` : ""}`
-      : "none of them were on this employer's list",
+    why: [
+      added.length ? `${added.length} added` : "none added",
+      refused.length ? `${refused.length} refused` : "",
+      ranOut ? "then the fill ran out of time" : "",
+    ]
+      .filter(Boolean)
+      .join(", "),
+    refused: refused.slice(0, 4),
   });
 
   if (!added.length) return false;
@@ -2446,4 +2591,10 @@ window.HIRECRAFT_FILL = {
   attachedNearby,
   skillsBox,
   fillSkills,
+  // A date field that is a wrapper round a two-character box, and a dropdown
+  // whose accessible name carries its own prompt.
+  wantsDigits,
+  asDigits,
+  withoutPrompt,
+  oneEach,
 };
