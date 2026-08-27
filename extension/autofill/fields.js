@@ -58,6 +58,25 @@ const FIELDS = [
     type: "tel",
   },
   {
+    key: "city",
+    label: "City",
+    // Before the general location field, and deliberately narrow. A box inside
+    // an address section wants the city alone; Greenhouse's "Location (City)"
+    // is a place picker that wants the whole thing, and it falls through to
+    // `location` below because none of these match it.
+    from: (p) => p.city,
+    match: [/\baddress\s*(section\s*)?city\b/, /^city$/, /\bcity\s*name\b/, /^town$/],
+  },
+  {
+    key: "state",
+    label: "State",
+    from: (p) => p.state,
+    match: [
+      /\baddress\s*(section\s*)?(state|region|province)\b/,
+      /^state$/, /^province$/, /^region$/, /^state\s*\/?\s*province$/,
+    ],
+  },
+  {
     key: "location",
     label: "Location",
     // A place is matched by its parts, not as a string: "Los Angeles, CA"

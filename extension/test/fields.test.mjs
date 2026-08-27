@@ -246,6 +246,8 @@ test("every field can produce a value from a full profile", () => {
     phone: "555-0100",
     location: "Los Angeles, CA",
     country: "United States",
+    city: "Los Angeles",
+    state: "CA",
     linkedin: "https://linkedin.com/in/ada",
     github: "https://github.com/ada",
     portfolio: "https://ada.dev",
@@ -524,4 +526,32 @@ test("still-a-student is answered from the dates, not asked", () => {
   assert.equal(field.from({ education: { is_current: true } }), "yes");
   assert.equal(field.from({ education: { is_current: false } }), "no");
   assert.equal(field.from({ education: {} }), "");
+});
+
+test("an address section's city box gets the city, not the whole place", () => {
+  // Workday asks for city and state in separate boxes; Greenhouse's "Location
+  // (City)" is a place picker that wants the lot. Both are labelled with the
+  // word "city", so the narrow patterns go first and the general one catches
+  // what is left.
+  assert.equal(claim("addressSection_city".replace(/_/g, " ")), "city");
+  assert.equal(claim("City"), "city");
+  assert.equal(claim("addressSection_countryRegion".replace(/_/g, " ")), "country");
+  assert.equal(claim("State"), "state");
+  assert.equal(claim("State / Province"), "state");
+
+  // Greenhouse's place picker still wants the whole thing.
+  assert.equal(claim("Location (City)"), "location");
+  assert.equal(claim("Where are you currently located?"), "location");
+});
+
+test("Workday names its controls, and the names are usable", () => {
+  // data-automation-id is Workday's own stable hook and is semantic, which
+  // makes it a better label than a placeholder — once the separators are
+  // spaces, since an underscore is a word character and \bfirst never matches
+  // across one.
+  const asLabel = (id) => claim(id.replace(/[_-]+/g, " "));
+  assert.equal(asLabel("legalNameSection_firstName"), "first_name");
+  assert.equal(asLabel("legalNameSection_lastName"), "last_name");
+  assert.equal(asLabel("email"), "email");
+  assert.equal(asLabel("phone-number"), "phone");
 });

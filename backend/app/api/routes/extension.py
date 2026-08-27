@@ -156,6 +156,10 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         "country": pick(profile.country if profile else None, "country"),
         "phone": pick(profile.phone if profile else None, "phone"),
         "location": pick(profile.location if profile else None, "location"),
+        # Split as well as whole. An address section asks for the city and the
+        # state in separate boxes, and "Los Angeles, CA" in a box labelled City
+        # is the right information in the wrong shape.
+        **_split_location(pick(profile.location if profile else None, "location")),
         "linkedin": pick(profile.linkedin_url if profile else None, "linkedin"),
         "github": pick(profile.github_url if profile else None, "github"),
         "portfolio": pick(profile.portfolio_url if profile else None, "portfolio"),
@@ -281,6 +285,20 @@ def _still_studying(end: str) -> bool:
     year = int(parts[0])
     month = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 12
     return (year, month) > (today.year, today.month)
+
+
+def _split_location(location: str) -> dict[str, str]:
+    """"Los Angeles, CA" as its parts, for a form that asks for them separately.
+
+    Only splits what is unambiguous. One part is a city and nothing else; three
+    or more is somebody's full address and is left alone rather than guessed at.
+    """
+    parts = [piece.strip() for piece in (location or "").split(",") if piece.strip()]
+    if len(parts) == 1:
+        return {"city": parts[0], "state": ""}
+    if len(parts) == 2:
+        return {"city": parts[0], "state": parts[1]}
+    return {"city": "", "state": ""}
 
 
 def _field_from_degree(degree: str) -> str:

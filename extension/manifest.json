@@ -25,7 +25,9 @@
       "matches": [
         "https://*.greenhouse.io/*",
         "https://*.ashbyhq.com/*",
-        "https://*.lever.co/*"
+        "https://*.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.myworkdaysite.com/*"
       ],
       "js": [
         "autofill/visa.js",

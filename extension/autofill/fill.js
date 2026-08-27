@@ -121,6 +121,17 @@ function labelFor(el) {
     if (text) return text;
   }
 
+  // Workday names every control with a data-automation-id, and the names are
+  // semantic rather than generated: legalNameSection_firstName, email,
+  // phone-number. That is a better label than a placeholder, and it is the
+  // hook Workday itself keeps stable across releases.
+  //
+  // Separators become spaces first: the camelCase split leaves
+  // "section_first name", and an underscore is a word character, so \bfirst
+  // never matches across it.
+  const automation = el.getAttribute("data-automation-id");
+  if (automation) return automation.replace(/[_-]+/g, " ");
+
   // The placeholder last. It is a hint about how to use the box, not a name for
   // what it holds, and preferring it over a real label was the whole bug above.
   return el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
