@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-27.panel-always-comes-back";
+const PANEL_BUILD = "2026-08-27.errors-say-what-they-were";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -58,7 +58,67 @@ const state = {
   letterFeedback: "",
   /** Why the last draft failed, if it did. */
   letterError: null,
+  /** Whatever has gone wrong, kept where a diagnostics dump can reach it. */
+  errors: [],
 };
+
+/**
+ * Keep what went wrong, rather than letting it fall into Chrome's error log.
+ *
+ * That log is the wrong place for these, and this session has now spent two
+ * rounds proving it. It retains entries across reloads, so something fixed a
+ * week ago still sits at the top of the list looking current. It identifies a
+ * failure by a line number in a file that moves under it, so an entry can end
+ * up pointing at what is now a closing brace — which nobody can diagnose,
+ * including me. And it separates the failure from the run it belonged to.
+ *
+ * So they are kept here instead: the message, the function names rather than
+ * the line, the build that produced them, and the page it happened on — and
+ * they travel with the rest of the diagnostics.
+ */
+function noteError(where, error) {
+  const entry = {
+    where,
+    build: PANEL_BUILD,
+    message: error?.message || String(error),
+    // Function names, not line numbers. A name still means something after the
+    // next edit; a line number means something else entirely.
+    at: String(error?.stack || "")
+      .split("\n")
+      .slice(1, 4)
+      .map((line) => line.trim().replace(/^at\s+/, "").replace(/chrome-extension:\/\/[a-z]+\//, ""))
+      .filter(Boolean)
+      .join(" ← "),
+    url: location.href,
+  };
+  state.errors = [...state.errors, entry].slice(-5);
+  console.error("[HireCraft]", where, error);
+  return entry;
+}
+
+/**
+ * Errors that pass through no awaited call, and so reach no catch.
+ *
+ * `guarded` covers the panel's three buttons and nothing else — not a timer,
+ * not an observer, not a promise nobody awaited, which between them are most
+ * of what this script does while it waits for a form to appear. Those surfaced
+ * only in Chrome's log, stripped of which action they belonged to.
+ *
+ * Only ours are recorded. Workday's own console is a busy place, and one of a
+ * page's own bugs reported as HireCraft's would send the next round looking in
+ * the wrong file entirely.
+ */
+function watchForErrors() {
+  const ours = (text) => /chrome-extension:\/\//.test(String(text || ""));
+  window.addEventListener("error", (event) => {
+    if (ours(event?.error?.stack) || ours(event?.filename)) {
+      noteError("something outside an action", event.error || event.message);
+    }
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    if (ours(event?.reason?.stack)) noteError("an unawaited call", event.reason);
+  });
+}
 
 function ask(message) {
   return new Promise((resolve) => {
@@ -175,33 +235,81 @@ function renderPanel() {
       panel.append(warn);
     }
 
-    // Everything the fill actually did, as text you can paste. The panel's
-    // summary says a field failed; this says which option list it read, where
-    // that list came from, and what was on it — which is the difference between
-    // reporting a bug and diagnosing one.
+    panel.append(
+      el("div", "hc-note", "Nothing has been submitted. Check the form, then submit it yourself.")
+    );
+  }
+
+  // What went wrong, on the panel rather than only in a log. An error from a
+  // timer or an observer reaches no catch here and so never touched the status
+  // line — the panel went on looking perfectly well while something had
+  // failed, which is the least useful state it could be in.
+  if (state.errors.length) {
+    const box = el("div", "hc-required");
+    const n = state.errors.length;
+    box.append(el("div", "hc-required-head", `${n} error${n === 1 ? "" : "s"} — copy the diagnostics`));
+    for (const entry of state.errors.slice(-3)) {
+      box.append(el("div", "hc-required-item", `${entry.where}: ${entry.message}`));
+    }
+    panel.append(box);
+  }
+
+  // Everything the fill actually did, as text you can paste. The panel's
+  // summary says a field failed; this says which option list it read, where
+  // that list came from, and what was on it — which is the difference between
+  // reporting a bug and diagnosing one.
+  //
+  // Offered after a failure as well as after a fill. It used to appear only
+  // beside a report, so the run that produced no report — the run there is most
+  // to explain — was also the run with nothing to copy, and the only account of
+  // it left anywhere was an entry in Chrome's error log.
+  if (state.report || state.errors.length) {
     const diag = el("button", "hc-btn hc-small", "Copy diagnostics");
     diag.onclick = async () => {
+      // Each section behind its own catch. Building the dump has to be the one
+      // thing here that cannot fail, because it is how a page nobody has seen
+      // gets diagnosed — and a single section throwing took the whole dump with
+      // it, which from outside is a button that does nothing.
+      const section = (name, read) => {
+        try {
+          return read();
+        } catch (error) {
+          return { failed: noteError(`diagnostics: ${name}`, error).message };
+        }
+      };
+      const report = state.report || {};
       const dump = {
         url: location.href,
-        filled: state.report.filled,
-        missing: state.report.missing,
-        skipped: state.report.skipped,
-        required: state.report.required,
-        trace: state.report.trace,
-        inspect: window.HIRECRAFT_FILL.inspectForm(),
+        // Both halves. They ship together and a tab keeps whichever pair it
+        // opened with, so "which build was this" needs two answers, not one.
+        build: PANEL_BUILD,
+        engine: window.HIRECRAFT_FILL?.BUILD || "(engine did not load)",
+        filled: report.filled ?? null,
+        missing: report.missing ?? null,
+        skipped: report.skipped ?? null,
+        required: report.required ?? null,
+        trace: report.trace ?? null,
+        inspect: section("inspect", () => window.HIRECRAFT_FILL.inspectForm()),
         // Choice-shaped questions, which the scan above cannot represent.
         // Included so a form that asks yes/no with buttons rather than a
         // dropdown shows its real structure instead of vanishing.
-        choices: window.HIRECRAFT_FILL.choiceCandidates(),
+        choices: section("choices", () => window.HIRECRAFT_FILL.choiceCandidates()),
         // Anything interactive the scan could not classify, so a control that
         // fits none of the shapes above still shows itself rather than
         // vanishing — which is how the date pickers hid for three runs.
-        widgets: window.HIRECRAFT_FILL.unclassified(),
+        widgets: section("widgets", () => window.HIRECRAFT_FILL.unclassified()),
+        // Anything that threw, with the run it belonged to, so a failure is
+        // reported here rather than found later in Chrome's log with its
+        // message gone and its line number pointing somewhere else.
+        //
+        // Read after the sections above, not before: a section that fails adds
+        // to this list, and taking the list first left the dump saying nothing
+        // had gone wrong on the very run that proved otherwise.
+        errors: state.errors,
         // What the cover letter did, which no previous dump could say — four
         // rounds of "it didn't work" were read against a report with no room
         // for the answer.
         coverLetter: {
-          build: PANEL_BUILD,
           wanted: state.wantCoverLetter,
           drafted: Boolean(state.letter),
           paragraphs: state.letter?.paragraphs?.length ?? 0,
@@ -218,10 +326,6 @@ function renderPanel() {
       }
     };
     panel.append(diag);
-
-    panel.append(
-      el("div", "hc-note", "Nothing has been submitted. Check the form, then submit it yourself.")
-    );
   }
 
   // Choose the résumé before filling rather than after. Attaching the default
@@ -534,9 +638,7 @@ async function guarded(what, run) {
   try {
     await run();
   } catch (error) {
-    const message = error?.message || String(error);
-    state.status = `${what} failed: ${message}`;
-    console.error("[HireCraft]", what, "failed", error);
+    state.status = `${what} failed: ${noteError(what, error).message}`;
   } finally {
     state.busy = false;
     render();
@@ -984,6 +1086,8 @@ function watchForForm() {
   look();
 }
 
+// First of all, so that anything below failing is itself reported.
+watchForErrors();
 // Before anything else, and regardless of whether this page has a form: the
 // page we were sent to after submitting will not have one.
 checkArrivedAtConfirmation();

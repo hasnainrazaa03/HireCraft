@@ -10,6 +10,17 @@
  */
 
 /**
+ * Which build of the engine is running in the page.
+ *
+ * The panel already stamps itself, and the engine is the half that gets
+ * blamed — a report says "the fill did nothing", not "the panel did nothing".
+ * They are loaded together but they are separate files, and a tab left open
+ * across a reload keeps whichever pair it started with, so a dump has to say
+ * which pair that was.
+ */
+const BUILD = "2026-08-27.errors-say-what-they-were";
+
+/**
  * When the current fill has to stop.
  *
  * Every wait here is bounded and none of them were bounded together. A dropdown
@@ -854,7 +865,17 @@ async function fillForm(
     if (value !== "yes" && value !== "no") continue;
     claimed.add(field.key);
 
-    const how = await setCheckbox(el, value === "yes");
+    // This loop runs before the main scan, so a throw here cost the entire
+    // fill rather than one box — and these are the tick-boxes a page puts at
+    // the top, which means the failure looked like Fill doing nothing at all.
+    let how = null;
+    let threw = null;
+    try {
+      how = await setCheckbox(el, value === "yes");
+    } catch (error) {
+      threw = error?.message || String(error);
+    }
+    const why = how ? `set by ${how}` : threw ? `this box threw: ${threw}` : "the box would not change";
     trace.push({
       label: shown,
       at: pathTo(el),
@@ -863,7 +884,7 @@ async function fillForm(
       wanted: value,
       outcome: how ? "filled" : "failed",
       got: how ? (value === "yes" ? "checked" : "unchecked") : null,
-      why: how ? `set by ${how}` : "the box would not change",
+      why,
     });
     if (how) {
       filled.push({
@@ -872,7 +893,7 @@ async function fillForm(
         holds: () => Boolean(el.checked) === (value === "yes"),
       });
     } else {
-      missing.push({ label: field.label, why: "the box would not change" });
+      missing.push({ label: field.label, why });
     }
   }
 
@@ -947,7 +968,18 @@ async function fillForm(
 
     // Every kind of control, through one place that knows how to reach each —
     // and each reporting what it actually managed rather than that it tried.
-    const result = await applyTo(el, field, value, profile, widget);
+    //
+    // Behind a catch, because one control must not cost the rest of the form.
+    // This runs on pages nobody has seen, so a widget that throws when it is
+    // driven is an ordinary thing to meet rather than a remote one — and until
+    // now it ended the fill where it stood. Every field after it then went
+    // unreported rather than unfilled, which from outside is a fill that hung.
+    let result;
+    try {
+      result = await applyTo(el, field, value, profile, widget);
+    } catch (error) {
+      result = { ok: false, why: `this control threw: ${error?.message || error}` };
+    }
 
     trace.push({
       label: raw.trim().slice(0, 70),
@@ -1032,9 +1064,18 @@ async function fillForm(
       continue;
     }
 
-    const how = group.buttons
-      ? await pickButton(group.options[index])
-      : await pickRadio(group.options[index]);
+    // Same catch as above, for the same reason: a row of choices is clicked
+    // rather than written to, and clicking is the part that reaches furthest
+    // into a page's own code.
+    let how = null;
+    let threw = null;
+    try {
+      how = group.buttons
+        ? await pickButton(group.options[index])
+        : await pickRadio(group.options[index]);
+    } catch (error) {
+      threw = error?.message || String(error);
+    }
     const took = Boolean(how);
     trace.push({
       label: shown,
@@ -1044,7 +1085,7 @@ async function fillForm(
       wanted: value,
       outcome: took ? "filled" : "failed",
       got: took ? texts[index] : null,
-      why: took ? why : "the option would not take",
+      why: took ? why : threw ? `this control threw: ${threw}` : "the option would not take",
       listbox: {
         from: group.buttons ? "button-group" : "radio-group",
         count: texts.length,
@@ -1072,14 +1113,29 @@ async function fillForm(
         if (stepDelay) await pause(stepDelay);
       }
     } else {
-      missing.push({ label: field.label, why: "the option would not take" });
+      missing.push({
+        label: field.label,
+        why: threw ? `this control threw: ${threw}` : "the option would not take",
+      });
     }
   }
 
   // A second degree, where the form offers to take one and the résumé has one.
   const moreEducation = (profile.education_all || []).slice(1);
   if (moreEducation.length) {
-    await addEducation(moreEducation[0], { trace, filled, onProgress, stepDelay });
+    try {
+      await addEducation(moreEducation[0], { trace, filled, onProgress, stepDelay });
+    } catch (error) {
+      // Pressing "+ Add Education" makes a form grow a whole new section, which
+      // is the most page-specific thing this engine does. A failure there used
+      // to take the résumé upload down with it — the single most valuable field
+      // on the form, lost to the least important one.
+      trace.push({
+        label: "second degree",
+        outcome: "failed",
+        why: `adding it threw: ${error?.message || error}`,
+      });
+    }
   }
 
   // Résumé upload, handled separately: file inputs are excluded from `controls`
@@ -1860,6 +1916,7 @@ function inspectForm() {
 }
 
 window.HIRECRAFT_FILL = {
+  BUILD,
   fillForm,
   inspectForm,
   fileFromDataUrl,

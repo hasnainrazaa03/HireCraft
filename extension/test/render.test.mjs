@@ -59,9 +59,10 @@ function node(tag = "div") {
 }
 
 /** Every node built during a render, so the result can be searched. */
-function harness({ profile, letter = null } = {}) {
+function harness({ profile, letter = null, fill = {} } = {}) {
   const built = [];
   const sent = [];
+  const copied = [];
 
   const document = {
     createElement(tag) {
@@ -81,7 +82,13 @@ function harness({ profile, letter = null } = {}) {
     HIRECRAFT_VISA: { classifyVisa: () => null, visaLabel: () => ({}), pageText: () => "a job" },
     HIRECRAFT_SUBMISSION: { isConfirmationUrl: () => false, isConfirmationText: () => false },
     HIRECRAFT_POSTING: { companyFrom: () => "Vercel", roleFromTitle: () => "SWE", clean: (s) => s },
-    HIRECRAFT_FILL: { inspectForm: () => [], choiceCandidates: () => [], unclassified: () => [] },
+    HIRECRAFT_FILL: {
+      BUILD: "test",
+      inspectForm: () => [],
+      choiceCandidates: () => [],
+      unclassified: () => [],
+      ...fill,
+    },
     addEventListener() {},
   };
 
@@ -102,7 +109,7 @@ function harness({ profile, letter = null } = {}) {
     chrome,
     location: { href: "https://job-boards.greenhouse.io/vercel/jobs/1", hostname: "job-boards.greenhouse.io", pathname: "/vercel/jobs/1", origin: "https://job-boards.greenhouse.io" },
     history: { pushState() {}, replaceState() {} },
-    navigator: { clipboard: { writeText: async () => {} } },
+    navigator: { clipboard: { writeText: async (text) => void copied.push(text) } },
     MutationObserver: class { observe() {} disconnect() {} },
     requestAnimationFrame: (fn) => fn(),
     setTimeout,
@@ -114,11 +121,11 @@ function harness({ profile, letter = null } = {}) {
   // The script exports nothing, so the test asks it to.
   const source =
     readFileSync(join(here, "..", "content.js"), "utf8") +
-    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded };";
+    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded, noteError };";
   new Function(...Object.keys(globals), source)(...Object.values(globals));
 
   Object.assign(window.__panel.state, { profile, letter });
-  return { window, built, sent, render: () => window.__panel.renderPanel() };
+  return { window, built, sent, copied, render: () => window.__panel.renderPanel() };
 }
 
 const PROFILE = {
@@ -225,4 +232,58 @@ test("an action already running is not started twice", async () => {
 
   assert.equal(runs, 1, "a second press while busy does nothing");
   assert.equal(state.busy, false);
+});
+
+test("a failure can be copied, not only read", async () => {
+  // The diagnostics used to hang off a report, so the run that failed outright
+  // produced nothing to paste — and the only account of it left anywhere was an
+  // entry in Chrome's error log, by then pointing at a line that had moved.
+  const { window, built, copied, render } = harness({ profile: PROFILE });
+  const { guarded } = window.__panel;
+
+  await guarded("Fill", async () => {
+    throw new Error("this page is unlike the others");
+  });
+  render();
+
+  const diag = built.find((n) => n.textContent === "Copy diagnostics");
+  assert.ok(diag, "with no report at all, there is still something to copy");
+  await diag.onclick();
+
+  const dump = JSON.parse(copied.at(-1));
+  assert.equal(dump.errors.length, 1);
+  assert.equal(dump.errors[0].message, "this page is unlike the others");
+  assert.equal(dump.errors[0].where, "Fill");
+  assert.ok(dump.build, "stamped with the panel that produced it");
+  assert.equal(dump.engine, "test", "and with the engine, which ships separately");
+});
+
+test("one broken section does not cost the whole dump", async () => {
+  // Building the dump is the one thing that has to work: it is how a page
+  // nobody has seen gets diagnosed. A section that threw took the rest with it,
+  // and pressing the button then looked like pressing nothing.
+  const { window, built, copied, render } = harness({
+    profile: PROFILE,
+    fill: {
+      inspectForm() {
+        throw new Error("this form cannot be read");
+      },
+    },
+  });
+  Object.assign(window.__panel.state, {
+    report: { filled: [], missing: [], skipped: [], required: [], trace: [] },
+  });
+  render();
+
+  const diag = built.find((n) => n.textContent === "Copy diagnostics");
+  await diag.onclick();
+
+  const dump = JSON.parse(copied.at(-1));
+  assert.match(dump.inspect.failed, /cannot be read/, "the broken section says so");
+  assert.deepEqual(dump.choices, [], "and the others still came through");
+  assert.deepEqual(dump.widgets, []);
+  assert.ok(
+    dump.errors.some((e) => e.where === "diagnostics: inspect"),
+    "with the failure recorded rather than swallowed"
+  );
 });
