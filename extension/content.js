@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-27.blocks-keep-their-own-answers";
+const PANEL_BUILD = "2026-08-27.panel-redesign";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -60,6 +60,15 @@ const state = {
   letterError: null,
   /** Whatever has gone wrong, kept where a diagnostics dump can reach it. */
   errors: [],
+  /**
+   * Which groups of answers are open, by id.
+   *
+   * Empty means "the defaults": the first group with anything in it. An entry
+   * only appears here once somebody has opened or shut something themselves,
+   * so a choice made on one form survives the re-render after the next field
+   * is filled.
+   */
+  sections: {},
 };
 
 /**
@@ -151,6 +160,92 @@ function el(tag, className, text) {
 
 // --- rendering ---------------------------------------------------------------
 
+/**
+ * The mark on each group's header.
+ *
+ * Line icons rather than emoji. An emoji is somebody else's artwork at
+ * somebody else's colour: it arrives full-colour into a restrained palette, it
+ * is drawn differently on every platform, and at 14px most of them are a blob.
+ * These inherit the panel's own colour and sit at the weight everything else
+ * here is drawn at.
+ */
+const SECTION_ICONS = {
+  personal: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0"/></svg>`,
+  education: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 9 12 4.5 21.5 9 12 13.5 2.5 9Z"/><path d="M6.5 11v4.6c0 1.3 2.5 2.4 5.5 2.4s5.5-1.1 5.5-2.4V11"/></svg>`,
+  experience: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7.5" width="18" height="12" rx="2.2"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3 12.5h18"/></svg>`,
+  details: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9L19 8v12.5H6z"/><path d="M14.5 3.7V8H19M9 12h6M9 15.5h4"/></svg>`,
+};
+
+/** One answered — or unanswered — question, as a row. */
+function fieldRow(cls, mark, label, value, extra) {
+  const r = el("div", `hc-row ${cls}`);
+  r.append(el("span", "hc-dot", mark), el("span", "hc-label", label));
+  r.append(el("span", "hc-val", String(value)));
+  if (extra) r.append(el("div", "hc-row-extra", extra));
+  return r;
+}
+
+/**
+ * A group of rows behind a header that can stay shut.
+ *
+ * Only the first is open by default. Twenty-four rows of equal weight is a list
+ * nobody reads: the eye has no way in, and the handful that need attention sit
+ * among two dozen that do not. A shut header still carries its count and its
+ * tick, which is the part most people want — the detail is there for the times
+ * it is wrong.
+ */
+function renderSection(group, rows) {
+  const open = state.sections[group.id] ?? group.first;
+  const box = el("div", `hc-sec${open ? " hc-sec-open" : ""}`);
+
+  const head = el("button", "hc-sec-head");
+  head.setAttribute("aria-expanded", String(open));
+  head.onclick = () => {
+    state.sections = { ...state.sections, [group.id]: !open };
+    render();
+  };
+  const mark = el("span", "hc-sec-mark");
+  mark.innerHTML = SECTION_ICONS[group.id] || SECTION_ICONS.details;
+  head.append(mark);
+  head.append(el("span", "hc-sec-title", group.title));
+
+  // One glyph, not two. A blank span where a tick would go left a hole in the
+  // header of every group that had something outstanding — which is the group
+  // you most want to read cleanly.
+  const unfilled = rows.filter((r) => r.kind !== "ok").length;
+  head.append(el("span", "hc-sec-count", `${rows.length}`));
+  head.append(
+    unfilled
+      ? el("span", "hc-sec-warn", String(unfilled))
+      : el("span", "hc-sec-tick", "✓")
+  );
+  head.append(el("span", "hc-sec-chev", "▾"));
+  box.append(head);
+
+  if (!open) return box;
+
+  const body = el("div", "hc-sec-body");
+  // Whatever needs attention first, then what is done. A group shows six rows
+  // before offering the rest, and burying the one unanswered question below
+  // that cut would hide it behind a card marked as needing attention.
+  const rank = { miss: 0, skip: 1, ok: 2 };
+  const ordered = [...rows].sort((a, b) => rank[a.kind] - rank[b.kind]);
+  // A long group shows a few and offers the rest, so one card cannot become
+  // the flat list this exists to replace.
+  const shown = state.sections[`${group.id}:all`] ? ordered : ordered.slice(0, 6);
+  for (const r of shown) body.append(fieldRow(r.cls, r.mark, r.label, r.value, r.extra));
+  if (ordered.length > shown.length) {
+    const more = el("button", "hc-more", `View all ${rows.length} fields`);
+    more.onclick = () => {
+      state.sections = { ...state.sections, [`${group.id}:all`]: true };
+      render();
+    };
+    body.append(more);
+  }
+  box.append(body);
+  return box;
+}
+
 function renderPanel() {
   const panel = el("div", "hc-panel");
 
@@ -161,6 +256,7 @@ function renderPanel() {
   brand.append(mark, el("span", "hc-brand-text", "HireCraft"));
   header.append(brand);
 
+  const tools = el("span", "hc-head-tools");
   const collapse = el("button", "hc-x", "—");
   collapse.title = "Collapse";
   collapse.setAttribute("aria-label", "Collapse HireCraft");
@@ -168,76 +264,154 @@ function renderPanel() {
     state.open = false;
     render();
   };
-  header.append(collapse);
+  tools.append(collapse);
+  header.append(tools);
   panel.append(header);
 
-  // The visa verdict, read from the posting on this page. Shown before anything
-  // else because it decides whether filling the form is worth doing at all.
+  // The scrolling middle. The action area below it never scrolls away, because
+  // a long report is exactly when the button is most wanted and hardest to
+  // reach.
+  const body = el("div", "hc-body");
+  panel.append(body);
+
+  // Built now, attached last. The résumé picker and the buttons belong to the
+  // area that never scrolls, and they are written further down the file next to
+  // the state they read.
+  const foot = el("div", "hc-foot");
+
+  // How much of this form is answered, before any of the detail. This is the
+  // question someone opens the panel to ask, and it used to be a sentence in
+  // the same weight as everything under it.
+  if (state.report) {
+    const { filled, missing } = state.report;
+    const gaps = state.report.required ?? [];
+    const total = filled.length + missing.length;
+    const done = filled.length;
+    const ring = el("div", "hc-ring");
+    const sweep = total ? Math.round((done / total) * 360) : 0;
+    const colour = gaps.length ? "#fbbf24" : "#4ade80";
+    ring.style.background = `conic-gradient(${colour} ${sweep}deg, rgba(255,255,255,0.07) ${sweep}deg)`;
+
+    const inner = el("div", "hc-ring-in");
+    inner.append(el("div", "hc-ring-n", String(done)));
+    inner.append(el("div", "hc-ring-of", total ? `of ${total}` : "fields"));
+    ring.append(inner);
+
+    const readyBody = el("div", "hc-ready-body");
+    readyBody.append(el("div", "hc-ready-title", "Application readiness"));
+    const chips = el("div", "hc-chips");
+    chips.append(el("span", "hc-chip hc-chip-good", `${done} of ${total} filled`));
+    if (gaps.length) {
+      chips.append(
+        el("span", "hc-chip hc-chip-warn", `${gaps.length} required`)
+      );
+    }
+    readyBody.append(chips);
+
+    const ready = el("div", "hc-ready");
+    ready.append(ring, readyBody);
+    body.append(ready);
+  }
+
+  // The visa verdict, read from the posting on this page. Near the top because
+  // it decides whether filling the form is worth doing at all.
   if (state.visa) {
     const { text, tone, blocks } = window.HIRECRAFT_VISA.visaLabel(state.visa.verdict);
     const box = el("div", `hc-visa hc-visa-${tone}`);
-    box.append(el("div", "hc-visa-head", text));
+    box.append(el("span", "hc-visa-icon", tone === "ok" ? "✓" : tone === "bad" ? "✕" : "!"));
+    const text_ = el("div", "hc-visa-text");
+    text_.append(el("div", "hc-visa-head", text));
     if (state.visa.evidence) {
-      box.append(el("div", "hc-visa-why", `…${state.visa.evidence.slice(0, 190)}…`));
+      text_.append(el("div", "hc-visa-why", `…${state.visa.evidence.slice(0, 190)}…`));
     } else if (!blocks) {
-      box.append(el("div", "hc-visa-why", "Worth confirming with the recruiter."));
+      text_.append(el("div", "hc-visa-why", "Worth confirming with the recruiter."));
     }
-    panel.append(box);
+    box.append(text_);
+    body.append(box);
   }
 
-  if (state.status) panel.append(el("div", "hc-status", state.status));
+  if (state.status) body.append(el("div", "hc-status", state.status));
 
   if (state.report) {
     const { filled, missing, skipped } = state.report;
-    panel.append(
-      el(
-        "div",
-        "hc-summary",
-        `Filled ${filled.length} field${filled.length === 1 ? "" : "s"}` +
-          (missing.length ? ` · ${missing.length} left for you` : "")
-      )
-    );
-
-    const list = el("div", "hc-list");
-    // Long values wrap rather than being cut. Truncating at 36 characters made
-    // a correctly-filled LinkedIn URL read as though it had lost its last
-    // character, which is a report that creates the bug it is meant to rule out.
-    const row = (cls, label, value, extra) => {
-      const r = el("div", `hc-row ${cls}`);
-      r.append(el("span", "hc-dot"), el("span", "hc-label", label));
-      r.append(el("span", "hc-val", String(value)));
-      if (extra) r.append(el("div", "hc-row-extra", extra));
-      return r;
+    // Sorted into cards by what each question is about, so the panel shows the
+    // shape of the answer before any of the detail.
+    const groupOf = window.HIRECRAFT_GROUP_FOR;
+    const rows = new Map();
+    const put = (label, row) => {
+      const id = groupOf(label);
+      if (!rows.has(id)) rows.set(id, []);
+      rows.get(id).push(row);
     };
     for (const item of filled) {
-      list.append(row("hc-ok", item.label, item.value, item.note));
+      put(item.label, {
+        kind: "ok", cls: "hc-ok", mark: "✓",
+        label: item.label, value: item.value, extra: item.note,
+      });
     }
     for (const item of missing) {
       // When a dropdown had no answer for us, show what it did offer — that is
       // the difference between "this failed" and knowing what to pick by hand.
-      const offered = item.offered?.length ? `offers: ${item.offered.join(" · ")}` : null;
-      list.append(row("hc-miss", item.label, item.why, offered));
+      put(item.label, {
+        kind: "miss", cls: "hc-miss", mark: "!",
+        label: item.label, value: item.why,
+        extra: item.offered?.length ? `offers: ${item.offered.join(" · ")}` : null,
+      });
     }
-    for (const item of skipped) list.append(row("hc-skip", item.label, item.why));
-    panel.append(list);
+    for (const item of skipped) {
+      put(item.label, {
+        kind: "skip", cls: "hc-skip", mark: "–",
+        label: item.label, value: item.why,
+      });
+    }
 
-    // Required questions the form still has no answer for. Worth its own block
-    // rather than another row in the list: a filled-in form that will bounce on
-    // submit is the failure mode this panel exists to prevent, and it is the one
-    // thing here you have to act on before submitting.
+    let first = true;
+    for (const group of window.HIRECRAFT_GROUPS) {
+      const mine = rows.get(group.id);
+      if (!mine?.length) continue;
+      body.append(renderSection({ ...group, first }, mine));
+      first = false;
+    }
+
+    // Required questions the form still has no answer for. Its own card rather
+    // than another row in a list: a filled-in form that will bounce on submit is
+    // the failure this panel exists to prevent, and it is the one thing here you
+    // have to act on before submitting.
     const gaps = state.report.required ?? [];
     if (gaps.length) {
-      const warn = el("div", "hc-required");
-      warn.append(
-        el("div", "hc-required-head", `${gaps.length} required question${gaps.length === 1 ? "" : "s"} still empty`)
-      );
-      for (const label of gaps) warn.append(el("div", "hc-required-item", label));
-      panel.append(warn);
+      const needs = el("div", "hc-needs");
+      needs.append(el("div", "hc-needs-head", "Needs your input"));
+      const list = el("ul", "hc-needs-list");
+      for (const label of gaps.slice(0, 6)) list.append(el("li", "hc-needs-item", label));
+      needs.append(list);
+
+      // Takes you to the question rather than describing it. The questions are
+      // on the employer's page, not in this panel, so the useful action is to
+      // put the first one in front of you.
+      const go = el("button", "hc-btn hc-small", "Show me on the form");
+      go.onclick = () => {
+        const target = window.HIRECRAFT_FILL.gapDetails().find((gap) => gap.el)?.el;
+        if (!target) {
+          go.textContent = "Can't find it — scroll the form";
+          return;
+        }
+        highlight(target);
+      };
+      const act = el("div", "hc-needs-act");
+      act.append(go);
+      needs.append(act);
+      body.append(needs);
     }
 
-    panel.append(
-      el("div", "hc-note", "Nothing has been submitted. Check the form, then submit it yourself.")
+    const note = el("div", "hc-note");
+    note.append(el("span", "hc-visa-icon", "✓"));
+    const noteText = el("div", "hc-visa-text");
+    noteText.append(el("div", "hc-note-head", "Fields filled"));
+    noteText.append(
+      el("div", "hc-note-sub", "Nothing has been submitted. Check the form, then submit it yourself.")
     );
+    note.append(noteText);
+    body.append(note);
   }
 
   // What went wrong, on the panel rather than only in a log. An error from a
@@ -251,7 +425,7 @@ function renderPanel() {
     for (const entry of state.errors.slice(-3)) {
       box.append(el("div", "hc-required-item", `${entry.where}: ${entry.message}`));
     }
-    panel.append(box);
+    body.append(box);
   }
 
   // Everything the fill actually did, as text you can paste. The panel's
@@ -325,7 +499,7 @@ function renderPanel() {
         diag.textContent = "Logged to console (⌥⌘J)";
       }
     };
-    panel.append(diag);
+    body.append(diag);
   }
 
   // Choose the résumé before filling rather than after. Attaching the default
@@ -378,7 +552,7 @@ function renderPanel() {
     };
     select.disabled = state.busy;
     row.append(select);
-    panel.append(row);
+    foot.append(row);
 
     const check = el("label", "hc-check");
     const box = el("input");
@@ -395,9 +569,9 @@ function renderPanel() {
       render();
     };
     check.append(box, el("span", null, "Also draft a cover letter"));
-    panel.append(check);
+    foot.append(check);
     if (state.wantCoverLetter) {
-      panel.append(
+      foot.append(
         el("div", "hc-hint", "Drafted when you press Fill. Uses AI credit — a few cents. Written from this posting and the résumé above.")
       );
     }
@@ -468,7 +642,7 @@ function renderPanel() {
     notes.placeholder =
       "What should change? e.g. lead with the equivariance work, cut the last paragraph, less formal";
     notes.value = state.letterFeedback || "";
-    notes.rows = 2;
+    notes.rows = 3;
     notes.disabled = state.busy;
     notes.oninput = (e) => {
       state.letterFeedback = e.target.value;
@@ -493,7 +667,7 @@ function renderPanel() {
       }
     };
     box.append(copy);
-    panel.append(box);
+    body.append(box);
   }
 
   const actions = el("div", "hc-actions");
@@ -514,7 +688,8 @@ function renderPanel() {
   track.disabled = state.busy || state.stage === "applied";
   track.onclick = () => runTrack("draft");
   actions.append(track);
-  panel.append(actions);
+  foot.append(actions);
+  panel.append(foot);
 
   return panel;
 }

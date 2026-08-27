@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.blocks-keep-their-own-answers";
+const BUILD = "2026-08-27.panel-redesign";
 
 /**
  * When the current fill has to stop.
@@ -1960,6 +1960,20 @@ function choiceCandidates() {
  * anticipated still gets counted.
  */
 function requiredGaps() {
+  // De-duplicated by label, since one question can reach here as several
+  // controls — a radio group is a box per option.
+  return [...new Set(gapDetails().map((gap) => gap.label))];
+}
+
+/**
+ * The same gaps, each with the control it belongs to.
+ *
+ * Kept apart from `requiredGaps` so the report's shape does not change: it
+ * carries labels, everything downstream reads labels, and a list of objects
+ * where a list of strings used to be would break the dump and the panel at
+ * once. This is for the one thing a label cannot do — take you to the question.
+ */
+function gapDetails() {
   const gaps = [];
   const groupChecked = new Map();
 
@@ -2015,7 +2029,7 @@ function requiredGaps() {
     } else {
       empty = !displayedValue(el);
     }
-    if (empty) gaps.push(raw.replace(/[*✱]/g, "").trim().slice(0, 70));
+    if (empty) gaps.push({ label: raw.replace(/[*✱]/g, "").trim().slice(0, 70), el });
   }
 
   // Questions asked as a row of choices, which the loop above cannot see. The
@@ -2030,9 +2044,14 @@ function requiredGaps() {
     const answered = group.buttons
       ? group.options.some((option) => buttonChosen(option.el))
       : group.options.some((option) => option.el.checked);
-    if (!answered) gaps.push(question.replace(/[*✱]/g, "").replace(/\s+/g, " ").trim().slice(0, 70));
+    if (!answered) {
+      gaps.push({
+        label: question.replace(/[*✱]/g, "").replace(/\s+/g, " ").trim().slice(0, 70),
+        el: group.options[0]?.el,
+      });
+    }
   }
-  return [...new Set(gaps)];
+  return gaps;
 }
 
 /**
@@ -2565,6 +2584,7 @@ window.HIRECRAFT_FILL = {
   isCombobox,
   setAndVerify,
   requiredGaps,
+  gapDetails,
   // Exported to be tested directly. Both were caused by the same assumption —
   // that a dropdown is a text input — which Workday does not share.
   setValue,

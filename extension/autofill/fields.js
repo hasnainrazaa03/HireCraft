@@ -639,10 +639,82 @@ const EXPERIENCE_FIELDS = [
   },
 ];
 
+/**
+ * Which card a filled row belongs to on the panel.
+ *
+ * Twenty-four rows of equal weight is a list nobody reads: the eye has no way
+ * in, and the two that need attention sit among twenty-two that do not. Grouping
+ * is what lets the panel show the shape of the answer — personal details done,
+ * education done, two questions outstanding — before showing any of the detail.
+ *
+ * Keyed by field key rather than by label so renaming a label cannot silently
+ * drop a row into the wrong card. Anything unlisted lands in "Application
+ * details", which is where an unfamiliar question genuinely belongs.
+ */
+const GROUPS = [
+  {
+    id: "personal",
+    title: "Personal information",
+    keys: [
+      "preferred_name", "first_name", "last_name", "full_name", "email", "phone",
+      "address_line1", "address_line2", "postal_code", "city", "state", "location",
+      "country", "linkedin", "github", "portfolio", "website",
+    ],
+  },
+  {
+    id: "education",
+    title: "Education",
+    keys: [
+      "school", "degree", "field_of_study", "start_year", "end_year",
+      "start_month", "end_month", "still_student", "graduation_year", "gpa",
+    ],
+  },
+  {
+    id: "experience",
+    title: "Work experience",
+    keys: EXPERIENCE_FIELDS.map((f) => f.key).concat("skills", "resume"),
+  },
+  {
+    id: "details",
+    title: "Application details",
+    keys: [
+      "authorized_to_work", "requires_sponsorship", "years_experience",
+      "open_to_relocation", "consent_to_terms", "military_service",
+      "gender", "race_ethnicity", "hispanic_latino", "veteran_status",
+      "disability_status",
+    ],
+  },
+];
+
+/**
+ * The card a row belongs to, found from the label the report carries.
+ *
+ * The report holds labels rather than keys, because a label is what the panel
+ * shows — so the lookup goes back the other way, through the catalogue. A block
+ * row is labelled "School (2nd)", so the ordinal comes off first.
+ */
+const LABEL_TO_KEY = new Map(
+  [...FIELDS, ...EXPERIENCE_FIELDS].map((f) => [f.label.toLowerCase(), f.key])
+);
+// Two rows the fill reports that no catalogue entry produces.
+LABEL_TO_KEY.set("résumé", "resume");
+LABEL_TO_KEY.set("skills", "skills");
+
+function groupIdFor(label) {
+  const plain = String(label || "")
+    .replace(/\s*\((?:\d+(?:st|nd|rd|th)|2nd)\)\s*$/i, "")
+    .trim()
+    .toLowerCase();
+  const key = LABEL_TO_KEY.get(plain);
+  return GROUPS.find((g) => g.keys.includes(key))?.id || "details";
+}
+
 // Attached to window so the content script can read them; MV3 content scripts
 // share one scope per frame but are not modules.
 window.HIRECRAFT_FIELDS = FIELDS;
 window.HIRECRAFT_EXPERIENCE_FIELDS = EXPERIENCE_FIELDS;
+window.HIRECRAFT_GROUPS = GROUPS;
+window.HIRECRAFT_GROUP_FOR = groupIdFor;
 window.HIRECRAFT_SKIP = SKIP;
 window.HIRECRAFT_RESUME_FILE = RESUME_FILE;
 window.HIRECRAFT_NOT_RESUME = NOT_RESUME;

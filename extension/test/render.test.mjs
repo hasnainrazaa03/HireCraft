@@ -91,6 +91,13 @@ function harness({ profile, letter = null, fill = {}, reply = null } = {}) {
       ...fill,
     },
     HIRECRAFT_ADAPTER: { overrides: {} },
+    // The panel sorts rows into cards by what each question is about.
+    HIRECRAFT_GROUPS: [
+      { id: "personal", title: "Personal information" },
+      { id: "education", title: "Education" },
+      { id: "details", title: "Application details" },
+    ],
+    HIRECRAFT_GROUP_FOR: (label) => (/name|email|phone/i.test(label) ? "personal" : "details"),
     addEventListener() {},
   };
 
@@ -341,4 +348,87 @@ test("a profile that cannot be fetched falls back to the one we had", async () =
 
   assert.equal(window.__panel.state.profile.phone, "555-0100", "the last good copy stands");
   assert.doesNotMatch(window.__panel.state.status ?? "", /not running/);
+});
+
+/** A report big enough to need grouping, the way a real form produces one. */
+const REPORT = {
+  filled: [
+    { label: "Full name", value: "Mohammad Hasnain Raza" },
+    { label: "Email", value: "razam@usc.edu" },
+    { label: "Phone", value: "(213) 994-5086" },
+    { label: "School", value: "University of Southern California" },
+    { label: "Degree", value: "Master's Degree" },
+    { label: "Work authorization", value: "Yes" },
+  ],
+  missing: [{ label: "Why Applied Intuition?", why: "an essay question — yours to write" }],
+  skipped: [],
+  required: ["Why Applied Intuition?"],
+  trace: [],
+};
+
+test("answers are grouped into cards rather than listed flat", () => {
+  // Twenty-four rows of equal weight is a list nobody reads: the eye has no way
+  // in, and the handful that need attention sit among two dozen that do not.
+  const { window, built, render } = harness({ profile: PROFILE });
+  Object.assign(window.__panel.state, { report: REPORT });
+  render();
+
+  assert.ok(find(built, "Personal information"), "a card per kind of question");
+  assert.ok(find(built, "Application details"));
+  // The first group is open, so its rows are on screen…
+  assert.ok(find(built, "Full name"));
+  // …and a shut one contributes a header without its rows.
+  assert.equal(find(built, "Work authorization"), undefined, "a shut group shows no rows");
+});
+
+test("a group opens and shuts, and the choice sticks", () => {
+  const { window, built, render } = harness({ profile: PROFILE });
+  Object.assign(window.__panel.state, { report: REPORT });
+  render();
+
+  const head = built.find((n) => n.className === "hc-sec-head" && n.onclick);
+  assert.ok(head, "each group's header is the control");
+  head.onclick();
+  assert.equal(
+    window.__panel.state.sections.personal,
+    false,
+    "shutting the first group is remembered, not re-defaulted on the next render"
+  );
+});
+
+test("what needs attention comes first inside its card", () => {
+  // A group shows six rows before offering the rest. Burying the one unanswered
+  // question below that cut would hide it behind a card marked as needing
+  // attention — the exact thing the marking is for.
+  const { window, built, render } = harness({ profile: PROFILE });
+  const many = {
+    ...REPORT,
+    filled: Array.from({ length: 9 }, (_, i) => ({ label: `Detail ${i}`, value: `v${i}` })),
+    missing: [{ label: "Detail X", why: "nothing stored for this" }],
+  };
+  Object.assign(window.__panel.state, { report: many, sections: {} });
+  render();
+
+  assert.ok(find(built, "nothing stored for this"), "the unanswered one is on screen");
+  assert.ok(find(built, "View all 10 fields"), "with the rest behind a control");
+});
+
+test("readiness counts what was filled against what was asked", () => {
+  const { window, built, render } = harness({ profile: PROFILE });
+  Object.assign(window.__panel.state, { report: REPORT });
+  render();
+
+  assert.ok(find(built, "Application readiness"));
+  assert.ok(find(built, "6 of 7 filled"), "the chip states both halves");
+  assert.ok(find(built, "1 required"), "and what will bounce the form is its own chip");
+  assert.ok(find(built, "Needs your input"), "with the questions themselves in their own card");
+});
+
+test("before a fill there is nothing to be ready about", () => {
+  // The panel opens onto this, and a readiness ring reading "0 of 0" would be
+  // an answer to a question nobody has asked yet.
+  const { built, render } = harness({ profile: PROFILE });
+  render();
+  assert.equal(find(built, "Application readiness"), undefined);
+  assert.ok(find(built, "Fill this form"), "just the thing to press");
 });
