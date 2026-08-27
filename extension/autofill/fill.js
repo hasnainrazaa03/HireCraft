@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.lone-upload-is-the-resume";
+const BUILD = "2026-08-27.blocks-skills-and-jobs";
 
 /**
  * When the current fill has to stop.
@@ -1263,20 +1263,74 @@ async function fillForm(
     }
   }
 
-  // A second degree, where the form offers to take one and the résumé has one.
-  const moreEducation = (profile.education_all || []).slice(1);
-  if (moreEducation.length) {
+  // Sections a form starts without and grows on request.
+  //
+  // Two different situations wear the same shape. Greenhouse and Ashby put one
+  // education block on the page and offer to add a second, so the first degree
+  // is filled by the loop above and only the rest need adding. Workday's
+  // Education section starts with nothing at all — there is no block until a
+  // button makes one — so every degree needs adding, including the first.
+  //
+  // Told apart by looking rather than by knowing which board this is: if the
+  // form has no School box, the loop above filled no degree, and entry zero is
+  // still owed.
+  const degrees = profile.education_all || [];
+  const haveInlineEducation = blocksPresent(window.HIRECRAFT_FIELDS, "school") > 0;
+  const owedDegrees = haveInlineEducation ? degrees.slice(1) : degrees;
+  const ordinal = ["1st", "2nd", "3rd", "4th"];
+
+  for (const [index, entry] of owedDegrees.entries()) {
+    if (outOfTime()) break;
+    const nth = ordinal[haveInlineEducation ? index + 1 : index] || `${index + 1}th`;
     try {
-      await addEducation(moreEducation[0], { trace, filled, onProgress, stepDelay });
+      await addEducation(entry, { trace, filled, missing, onProgress, stepDelay, nth });
     } catch (error) {
-      // Pressing "+ Add Education" makes a form grow a whole new section, which
-      // is the most page-specific thing this engine does. A failure there used
-      // to take the résumé upload down with it — the single most valuable field
-      // on the form, lost to the least important one.
+      // Pressing Add makes a form grow a whole new section, which is the most
+      // page-specific thing this engine does. A failure there used to take the
+      // résumé upload down with it — the single most valuable field on the
+      // form, lost to the least important one.
       trace.push({
-        label: "second degree",
+        label: `${nth} degree`,
         outcome: "failed",
         why: `adding it threw: ${error?.message || error}`,
+      });
+      break;
+    }
+  }
+
+  // Work experience, which no board has ever put on the page ready to fill.
+  const jobs = profile.experience || [];
+  const haveInlineJobs = blocksPresent(window.HIRECRAFT_EXPERIENCE_FIELDS, "job_title") > 0;
+  if (!haveInlineJobs) {
+    for (const [index, entry] of jobs.entries()) {
+      // Bounded at three. A block is a click, a wait and six fields, and an
+      // application asking for employment history is asking for the recent
+      // part of it — the rest is what the résumé attached above is for.
+      if (outOfTime() || index >= 3) break;
+      try {
+        await addExperience(entry, {
+          trace, filled, missing, onProgress, stepDelay, nth: ordinal[index] || `${index + 1}th`,
+        });
+      } catch (error) {
+        trace.push({
+          label: `${ordinal[index]} job`,
+          outcome: "failed",
+          why: `adding it threw: ${error?.message || error}`,
+        });
+        break;
+      }
+    }
+  }
+
+  // Skills, which are a list rather than an answer.
+  if ((profile.skills || []).length) {
+    try {
+      await fillSkills(profile.skills, { trace, filled, onProgress });
+    } catch (error) {
+      trace.push({
+        label: "Skills",
+        outcome: "failed",
+        why: `this control threw: ${error?.message || error}`,
       });
     }
   }
@@ -1334,6 +1388,23 @@ async function fillForm(
 
   // Checked last, so anything the fill just satisfied no longer counts.
   return { filled, skipped, missing, required: requiredGaps(), trace };
+}
+
+/**
+ * Has the page shown that a file went in, whatever the input now holds?
+ *
+ * The filename is what a person reads as "this is attached", and it is what an
+ * uploader puts on screen: a row naming the file, a Delete button beside it.
+ * Looked for as a filename rather than as any particular markup, since every
+ * uploader renders that differently and all of them show the name.
+ */
+function attachedNearby(el) {
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+    const text = (node.textContent || "").slice(0, 600);
+    if (/\.(pdf|docx?|rtf|txt|odt|htm|html)\b/i.test(text)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1840,7 +1911,12 @@ function requiredGaps() {
 
     let empty;
     if (type === "file") {
-      empty = !(el.files && el.files.length);
+      // Not `el.files` alone. An uploader that sends the file straight away
+      // clears the input afterwards so you can pick another — Workday does,
+      // and answered "MHR_AIML.pdf successfully uploaded" while the input went
+      // back to holding nothing. The résumé was attached, accepted, and still
+      // reported as a required box left empty.
+      empty = !(el.files && el.files.length) && !attachedNearby(el);
     } else if (type === "radio" || type === "checkbox") {
       // One answer satisfies the whole group, so judge the group, not the box.
       const name = el.getAttribute("name") || raw;
@@ -1939,7 +2015,52 @@ function addEducationButton() {
     const text = (el.innerText || "").replace(/\s+/g, " ").trim();
     if (/^\+?\s*add\s+(another\s+)?(education|school|degree)\b/i.test(text)) return el;
   }
+  return sectionAddButton(/\b(education|school|degree|university)\b/);
+}
+
+/**
+ * The "Add" button belonging to a named section.
+ *
+ * Workday's My Experience step has three and they all say "Add" — same
+ * automation id, same class, no distinguishing mark on any of them. The only
+ * thing that says which is which is the heading above it, which is exactly what
+ * a person reads: Work Experience / Add / Education / Add / Skills.
+ *
+ * So a button belongs to the last heading before it, taken in document order
+ * rather than by nesting. Document order is what the eye follows and it holds
+ * however deeply either one happens to be wrapped, which is not something the
+ * markup here would let us rely on: the button sits four divs down from
+ * anything named.
+ */
+function sectionAddButton(wanted) {
+  let section = "";
+  for (const node of document.querySelectorAll(
+    "h1,h2,h3,h4,h5,h6,legend,[role='heading'],button,[role='button']"
+  ) || []) {
+    if (isOurs(node)) continue;
+    const text = (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+
+    const isButton = isTag(node, "BUTTON") || node.getAttribute?.("role") === "button";
+    if (!isButton) {
+      // A heading, if it is short enough to be one rather than a paragraph that
+      // happens to carry a heading role.
+      if (text.length <= 60) section = text;
+      continue;
+    }
+    if (text.length > 30 || !/^\+?\s*add\b/i.test(text)) continue;
+    // The heading and the button's own words together, so both "Education" over
+    // "Add" and a bare "+ Add Another Education" are answered by one rule.
+    if (wanted.test(normalise(`${section} ${text}`))) return node;
+  }
   return null;
+}
+
+/** How many blocks of this kind the form already holds. */
+function blocksPresent(fields, key) {
+  return controls().filter(
+    ({ label }) => fields.find((f) => f.match.some((re) => re.test(label)))?.key === key
+  ).length;
 }
 
 /**
@@ -1951,45 +2072,99 @@ function addEducationButton() {
  * at how the block is numbered, which is the same approach that finally sorted
  * out which dropdown belonged to which field.
  */
-async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
+async function addEducation(entry, { trace, filled, missing, onProgress, stepDelay, nth = "2nd" }) {
   const button = addEducationButton();
   if (!button) return false;
 
-  const before = new Set(controls().map((c) => c.el));
   // Belt as well as braces: even with the click fixed, adding a block the form
   // already has would duplicate a degree, and a duplicated degree on an
   // application is the user's problem to clean up.
-  const schoolBoxes = controls().filter(({ label }) =>
-    window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)))?.key === "school"
-  );
-  if (schoolBoxes.length > 1) {
+  if (blocksPresent(window.HIRECRAFT_FIELDS, "school") > 1) {
     trace.push({ label: "Add education", outcome: "left alone", why: "the form already has a second block" });
     return false;
   }
+
+  return addBlock({
+    button,
+    what: `${nth} education`,
+    nth,
+    stand_in: { education: entry },
+    fields: window.HIRECRAFT_FIELDS,
+    // Only the education questions, answered from this entry rather than from
+    // the profile's most recent degree.
+    keys: new Set([
+      "school", "degree", "field_of_study", "start_month", "start_year",
+      "end_month", "end_year", "gpa", "still_student",
+    ]),
+    trace,
+    filled,
+    missing,
+    onProgress,
+    stepDelay,
+  });
+}
+
+/**
+ * Add one job, from the résumé.
+ *
+ * Workday's Work Experience section starts empty: there is no block to fill
+ * until an Add button makes one, and the button says nothing but "Add".
+ *
+ * The questions inside are matched against their own small catalogue rather
+ * than the main one. "Company", "Title" and "Location" are ordinary enough
+ * words to appear on any form for other reasons, and a pattern loose enough to
+ * catch them inside an experience block would be loose enough to answer the
+ * wrong question outside one. Keeping the list separate means it can only ever
+ * be consulted for a block this function just created.
+ */
+async function addExperience(entry, { trace, filled, missing, onProgress, stepDelay, nth }) {
+  const button = sectionAddButton(/\b(work\s*experience|employment|job\s*history)\b/);
+  if (!button) return false;
+
+  return addBlock({
+    button,
+    what: `${nth} job`,
+    nth,
+    stand_in: entry,
+    fields: window.HIRECRAFT_EXPERIENCE_FIELDS,
+    keys: null, // the whole list is about experience already
+    trace,
+    filled,
+    missing,
+    onProgress,
+    stepDelay,
+  });
+}
+
+/**
+ * Press an Add button and fill whatever block appears.
+ *
+ * Which controls are new is worked out by comparing the form before and after
+ * the click rather than by guessing at how the block is numbered — the same
+ * approach that sorted out which dropdown belonged to which field.
+ */
+async function addBlock({
+  button, what, nth, stand_in, fields, keys, trace, filled, missing, onProgress, stepDelay,
+}) {
+  const before = new Set(controls().map((c) => c.el));
+  const beforeBoxes = new Set(checkboxQuestions().map((c) => c.el));
   clickLike(button);
 
   let fresh = [];
-  for (let tries = 0; tries < 12; tries += 1) {
+  for (let tries = 0; tries < 12 && !outOfTime(); tries += 1) {
     await pause(120);
     fresh = controls().filter((c) => !before.has(c.el));
     if (fresh.length >= 2) break;
   }
   if (!fresh.length) {
-    trace.push({ label: "Add education", outcome: "failed", why: "no new fields appeared" });
+    trace.push({ label: `Add ${what}`, outcome: "failed", why: "no new fields appeared" });
     return false;
   }
 
-  // Only the education questions, answered from this entry rather than from the
-  // profile's most recent degree.
-  const EDUCATION = new Set([
-    "school", "degree", "field_of_study", "start_month", "start_year",
-    "end_month", "end_year", "gpa", "still_student",
-  ]);
-  const stand_in = { education: entry };
-
   for (const { el, raw, label, widget } of fresh) {
-    const field = window.HIRECRAFT_FIELDS.find((f) => f.match.some((re) => re.test(label)));
-    if (!field || !EDUCATION.has(field.key)) continue;
+    if (outOfTime()) break;
+    const field = fields.find((f) => f.match.some((re) => re.test(label)));
+    if (!field || (keys && !keys.has(field.key))) continue;
     // No "leave it alone if it already holds something" here. This block did
     // not exist a moment ago — the filler created it — so nothing in it is the
     // user's answer, and everything in it is a default the form chose. Ashby
@@ -1999,10 +2174,15 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
     const value = String(field.from(stand_in) ?? "").trim();
     if (!value) continue;
 
-    const result = await applyTo(el, field, value, stand_in, widget);
+    let result;
+    try {
+      result = await applyTo(el, field, value, stand_in, widget);
+    } catch (error) {
+      result = { ok: false, why: `this control threw: ${error?.message || error}` };
+    }
 
     trace.push({
-      label: `${raw.trim().slice(0, 50)} (2nd education)`,
+      label: `${raw.trim().slice(0, 50)} (${what})`,
       at: pathTo(el),
       field: field.key,
       control: isTag(el, "SELECT") ? "select" : widget || isCombobox(el) ? "combobox" : "text",
@@ -2014,17 +2194,147 @@ async function addEducation(entry, { trace, filled, onProgress, stepDelay }) {
 
     if (result.ok) {
       filled.push({
-        label: `${field.label} (2nd)`,
+        label: `${field.label} (${nth})`,
         value: result.actual ?? result.chosen ?? value,
         holds: () => stillHolds(el, result.actual ?? result.chosen ?? value),
       });
       if (onProgress) {
-        onProgress({ el, label: `${field.label} (2nd)`, value: result.actual ?? value });
+        onProgress({ el, label: `${field.label} (${nth})`, value: result.actual ?? value });
         if (stepDelay) await pause(stepDelay);
       }
+    } else {
+      // Reported rather than dropped. A block the filler opened and could not
+      // finish is worse than one it never opened, so what is left inside it has
+      // to be visible without anyone reading the trace to find it.
+      missing.push({
+        label: `${field.label} (${nth})`,
+        why: result.why || "this one is still empty",
+        offered: result.offered,
+      });
+    }
+  }
+
+  // "I currently work here" and "I am still studying here" are checkboxes,
+  // which the scan above excludes because everything there assumes a text
+  // value. They decide whether the end date is a question at all.
+  for (const { el, question } of checkboxQuestions()) {
+    if (beforeBoxes.has(el) || outOfTime()) continue;
+    const label = normalise(question);
+    const field = fields.find((f) => f.match.some((re) => re.test(label)));
+    if (!field || (keys && !keys.has(field.key))) continue;
+    const value = String(field.from(stand_in) ?? "").trim().toLowerCase();
+    if (value !== "yes" && value !== "no") continue;
+    const how = await setCheckbox(el, value === "yes");
+    trace.push({
+      label: `${question.replace(/\s+/g, " ").trim().slice(0, 50)} (${what})`,
+      at: pathTo(el),
+      field: field.key,
+      control: "checkbox",
+      wanted: value,
+      outcome: how ? "filled" : "failed",
+      why: how ? `set by ${how}` : "the box would not change",
+    });
+    if (how) {
+      filled.push({
+        label: `${field.label} (${nth})`,
+        value: value === "yes" ? "Yes" : "No",
+        holds: () => Boolean(el.checked) === (value === "yes"),
+      });
     }
   }
   return true;
+}
+
+
+/**
+ * The box a form offers for skills, if it has one.
+ *
+ * Every other control this engine drives holds one answer. This one holds a
+ * list, which is a different job: pick, wait for the pill, pick again — and
+ * knowing when to stop, because the résumé has forty and a form does not want
+ * forty.
+ */
+function skillsBox() {
+  for (const { el, label } of controls()) {
+    if (/\bskills?\b/.test(label) && !/\bsoft\s*skills?\b/.test(label)) return el;
+  }
+  return null;
+}
+
+/**
+ * Add skills, one at a time, from the résumé.
+ *
+ * Workday's list is a controlled vocabulary: you type, it offers what it knows,
+ * and anything it does not know cannot be added at all. So a skill that finds
+ * no match is not a failure to report loudly — it is a word this employer's
+ * taxonomy does not carry, and there will be several. What matters is how many
+ * went in.
+ *
+ * Bounded twice over: by `wanted`, since a form asking for skills wants the
+ * ones that matter rather than the whole résumé, and by the fill's own
+ * deadline, because each one costs a type, a wait and a click.
+ */
+async function fillSkills(skills, { trace, filled, onProgress }) {
+  const el = skillsBox();
+  if (!el || !skills.length) return false;
+
+  const added = [];
+  const refused = [];
+  for (const skill of skills) {
+    if (outOfTime() || added.length >= 12) break;
+    const already = normalise(nearbyPills(el).join(" "));
+    if (already.includes(normalise(skill))) continue;
+
+    let result;
+    try {
+      result = await chooseFromCombobox(el, skill, "skill", null, null);
+    } catch (error) {
+      result = { ok: false, why: `this control threw: ${error?.message || error}` };
+    }
+    if (result.ok) added.push(result.chosen ?? skill);
+    else refused.push(skill);
+  }
+
+  trace.push({
+    label: "Skills",
+    at: pathTo(el),
+    field: "skills",
+    control: "multi-select",
+    wanted: skills.slice(0, 12).join(", "),
+    outcome: added.length ? "filled" : "failed",
+    got: added.join(", ") || null,
+    why: added.length
+      ? `${added.length} added${refused.length ? `, ${refused.length} not on this employer's list` : ""}`
+      : "none of them were on this employer's list",
+  });
+
+  if (!added.length) return false;
+  filled.push({
+    label: "Skills",
+    value: added.join(", "),
+    // Counted against the pills on screen, not against what we think we did:
+    // a multi-select that quietly drops one is exactly the failure the single
+    // -value path had to learn to catch.
+    holds: () => nearbyPills(el).length >= added.length,
+  });
+  if (onProgress) onProgress({ el, label: "Skills", value: `${added.length} added` });
+  return true;
+}
+
+/** The chips a multi-select is currently showing. */
+function nearbyPills(el) {
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+    const pills = Array.from(
+      node.querySelectorAll?.("[id^='pill-'],[data-automation-id='selectedItem'],[class*='multi-value']") || []
+    );
+    if (pills.length) {
+      return pills.map((p) =>
+        String(p.textContent ?? "").replace(/,\s*press delete.*$/i, "").replace(/\s+/g, " ").trim()
+      );
+    }
+  }
+  return [];
 }
 
 /**
@@ -2129,4 +2439,11 @@ window.HIRECRAFT_FILL = {
   addEducationButton,
   clickLike,
   choiceCandidates,
+  // Workday's My Experience step: three identical Add buttons, an uploader that
+  // clears its own input, and a box that holds a list rather than an answer.
+  sectionAddButton,
+  blocksPresent,
+  attachedNearby,
+  skillsBox,
+  fillSkills,
 };

@@ -654,3 +654,64 @@ test("an email address is not a street address", () => {
     assert.equal(field?.key, key, `"${label}" should be ${key}`);
   }
 });
+
+test("the experience questions are answerable and stay out of the main catalogue", () => {
+  const EXPERIENCE = window.HIRECRAFT_EXPERIENCE_FIELDS;
+  const job = {
+    title: "AI Software Engineer Intern",
+    company: "Sunbase Data",
+    location: "Orlando, FL (Remote)",
+    start_month: "May",
+    start_year: "2026",
+    end_month: "August",
+    end_year: "2026",
+    is_current: false,
+    description: "• Fine-tuned YOLO11 for roof-damage detection.",
+  };
+  for (const field of EXPERIENCE) {
+    const value = String(field.from(job) ?? "").trim();
+    assert.ok(value.length > 0, `${field.key} produced nothing from a full job entry`);
+  }
+  // And nothing from an empty one, so an application never receives the word
+  // "undefined" or a stray "no" nobody chose.
+  for (const field of EXPERIENCE) {
+    assert.equal(String(field.from({}) ?? "").trim(), "", `${field.key} should be blank when unset`);
+  }
+});
+
+test("a job's own words are never answered from the main catalogue", () => {
+  // This is the reason the experience list is separate. "Company", "Title" and
+  // "Location" are ordinary enough to appear on any form for other reasons —
+  // the company you are applying to, the title of a posting, where a role is
+  // based — so a pattern loose enough to catch them inside a block would be
+  // loose enough to answer one of those outside it.
+  const EXPERIENCE = window.HIRECRAFT_EXPERIENCE_FIELDS;
+  for (const [label, key] of [
+    ["Job Title", "job_title"],
+    ["Company", "employer"],
+    ["Role Description", "role_description"],
+    ["I currently work here", "currently_work_here"],
+  ]) {
+    const norm = normalise(label);
+    assert.equal(
+      EXPERIENCE.find((f) => f.match.some((re) => re.test(norm)))?.key,
+      key,
+      `"${label}" should be the experience list's ${key}`
+    );
+    assert.equal(
+      FIELDS.find((f) => f.match.some((re) => re.test(norm))),
+      undefined,
+      `"${label}" must not be answerable from the main catalogue`
+    );
+  }
+});
+
+test("a job location is not the location the whole profile lives in", () => {
+  // The main catalogue's `location` answers "where are you based"; a block's
+  // Location asks where that job was. Both are the word "Location", and only
+  // the list they are read from tells them apart.
+  const EXPERIENCE = window.HIRECRAFT_EXPERIENCE_FIELDS;
+  const norm = normalise("Location");
+  assert.equal(EXPERIENCE.find((f) => f.match.some((re) => re.test(norm)))?.key, "job_location");
+  assert.equal(FIELDS.find((f) => f.match.some((re) => re.test(norm)))?.key, "location");
+});

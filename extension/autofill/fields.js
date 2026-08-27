@@ -555,9 +555,94 @@ const NOT_COVER = [
   /\bcertificat(e|ion)s?\b/,
 ];
 
+/**
+ * The questions inside one work-experience block.
+ *
+ * Kept out of the main catalogue on purpose. "Company", "Title", "Location" and
+ * "Description" are ordinary enough words to appear on any form for reasons
+ * that have nothing to do with employment history — a company you are applying
+ * to, the title of a posting, where a role is based — and a pattern loose
+ * enough to catch them inside a block would be loose enough to answer one of
+ * those outside it.
+ *
+ * A separate list makes that impossible rather than unlikely: nothing consults
+ * it except the code filling a block it has just created, where every control
+ * in reach is known to belong to one job.
+ *
+ * Each `from` reads a single flattened entry, not the whole profile.
+ */
+const EXPERIENCE_FIELDS = [
+  {
+    key: "job_title",
+    label: "Job title",
+    from: (e) => e.title,
+    match: [/\bjob\s*title\b/, /^title$/, /\bposition\s*title\b/, /^position$/, /^role$/],
+  },
+  {
+    key: "employer",
+    label: "Company",
+    from: (e) => e.company,
+    match: [/^company$/, /\bcompany\s*name\b/, /^employer$/, /\bemployer\s*name\b/, /^organization$/],
+  },
+  {
+    key: "job_location",
+    label: "Location",
+    from: (e) => e.location,
+    match: [/^location$/, /\bwork\s*location\b/, /\bjob\s*location\b/],
+  },
+  {
+    key: "role_description",
+    label: "What you did",
+    from: (e) => e.description,
+    match: [
+      /\brole\s*description\b/, /\bjob\s*description\b/, /^description$/,
+      /\bresponsibilit(y|ies)\b/, /\bduties\b/, /\bachievements\b/,
+    ],
+  },
+  // Dates. A block asks "From" and "To" with a month and a year apiece, and the
+  // halves are labelled by the group rather than individually — the same shape
+  // as an education block's, which is why these read the same way.
+  {
+    key: "start_month",
+    label: "From (month)",
+    from: (e) => e.start_month,
+    match: [/\b(from|start)\b[^?]{0,24}\bmonth\b/, /\bstart\s*date\b[^?]{0,20}\bmm\b/],
+  },
+  {
+    key: "start_year",
+    label: "From (year)",
+    from: (e) => e.start_year,
+    match: [/\b(from|start)\b[^?]{0,24}\byear\b/, /\bstart\s*date\b[^?]{0,20}\byyyy\b/],
+  },
+  {
+    key: "end_month",
+    label: "To (month)",
+    from: (e) => e.end_month,
+    match: [/\b(to|end)\b[^?]{0,24}\bmonth\b/, /\bend\s*date\b[^?]{0,20}\bmm\b/],
+  },
+  {
+    key: "end_year",
+    label: "To (year)",
+    from: (e) => e.end_year,
+    match: [/\b(to|end)\b[^?]{0,24}\byear\b/, /\bend\s*date\b[^?]{0,20}\byyyy\b/],
+  },
+  {
+    // The checkbox beside the end date, which decides whether the end date is a
+    // question at all — the form disables it once this is ticked.
+    key: "currently_work_here",
+    label: "Currently work here",
+    from: (e) => (e.is_current === true ? "yes" : e.is_current === false ? "no" : ""),
+    match: [
+      /\bi\s*currently\s*work\s*here\b/, /\bcurrently\s*work\s*(here|at)\b/,
+      /\bcurrent\s*(position|role|job)\b/, /\bpresent\s*employer\b/,
+    ],
+  },
+];
+
 // Attached to window so the content script can read them; MV3 content scripts
 // share one scope per frame but are not modules.
 window.HIRECRAFT_FIELDS = FIELDS;
+window.HIRECRAFT_EXPERIENCE_FIELDS = EXPERIENCE_FIELDS;
 window.HIRECRAFT_SKIP = SKIP;
 window.HIRECRAFT_RESUME_FILE = RESUME_FILE;
 window.HIRECRAFT_NOT_RESUME = NOT_RESUME;

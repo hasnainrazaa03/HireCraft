@@ -200,6 +200,12 @@ def extension_profile(user: ExtensionUser, db: DbSession) -> dict:
         # Newest first. A form that lets you add a second education block is
         # asking for the rest of them, and the résumé already has them.
         "education_all": _all_education(basics_source),
+        # Workday's My Experience step asks for these outright: a Skills box you
+        # pick from a controlled vocabulary, and a Work Experience section you
+        # add a block at a time. Both were already on the résumé and neither had
+        # ever been sent, so the step could only ever be half filled.
+        "skills": _all_skills(basics_source),
+        "experience": _all_experience(basics_source),
         "resumes": [
             {"id": str(r.id), "name": r.name, "is_default": r.is_default, "source": "hirecraft"}
             for r in resumes
@@ -274,6 +280,76 @@ def _flatten_education(entry: dict) -> dict:
 def _all_education(content: dict) -> list[dict]:
     """Every degree, newest first, each flattened the same way as the latest."""
     return [_flatten_education(entry) for entry in _sorted_education(content)]
+
+
+#: How many skills to offer a form.
+#:
+#: The résumé groups forty-odd across six categories, which is the right number
+#: for a page someone reads and the wrong number for a controlled vocabulary you
+#: pick from one at a time. Each one is a type, a wait for the list and a click,
+#: so all of them would take a minute and fill the box with long-tail entries
+#: that say less than the first dozen.
+_SKILL_LIMIT = 20
+
+
+def _all_skills(content: dict) -> list[str]:
+    """Every skill on the résumé, flattened and de-duplicated, best first.
+
+    Résumé order is the answer to "which matter most": the categories are listed
+    the way the candidate wants them read, and within each the items are ordered
+    deliberately. So this flattens rather than sorts — inventing a ranking here
+    would override one that already exists.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for group in content.get("skills") or []:
+        items = group.get("items") if isinstance(group, dict) else None
+        # A résumé may hold a flat list of strings instead of categories.
+        for item in items if isinstance(items, list) else [group]:
+            name = str(item or "").strip()
+            key = name.lower()
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            out.append(name)
+    return out[:_SKILL_LIMIT]
+
+
+def _flatten_experience(entry: dict) -> dict:
+    """One job, in the shape a form asks its questions.
+
+    Same split as education: a form wants the month and the year in separate
+    boxes far more often than it wants "2026-05".
+    """
+    start = str(entry.get("start_date") or "")
+    end = str(entry.get("end_date") or "")
+    current = not end or end.lower() == "present"
+    highlights = [str(h).strip() for h in (entry.get("highlights") or []) if str(h).strip()]
+    return {
+        "title": entry.get("title") or "",
+        "company": entry.get("company") or "",
+        "location": entry.get("location") or "",
+        "start_year": start[:4],
+        "start_month": _month_name(start),
+        "end_year": "" if current else end[:4],
+        "end_month": "" if current else _month_name(end),
+        "is_current": current,
+        # A description box takes the bullets as they are. Rewriting them into a
+        # paragraph would be the app editing the candidate's own words on the way
+        # into an application, which is not its job here.
+        "description": "\n".join(f"• {line}" for line in highlights),
+    }
+
+
+def _all_experience(content: dict) -> list[dict]:
+    """Every job, newest first."""
+    entries = [e for e in (content.get("experience") or []) if isinstance(e, dict)]
+
+    def newest_first(entry: dict) -> str:
+        end = str(entry.get("end_date") or "")
+        return "9999" if end.lower() in {"", "present"} else end
+
+    return [_flatten_experience(entry) for entry in sorted(entries, key=newest_first, reverse=True)]
 
 
 def _degree_only(degree: str) -> str:

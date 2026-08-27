@@ -471,3 +471,102 @@ def test_a_drafted_letter_is_kept_and_charged_to_the_application(
     db.refresh(app_row)
     assert app_row.cover_letter == ["Edited by hand."]
     assert app_row.total_cost_usd == charged, "one draft, charged once"
+
+
+def test_skills_are_flattened_in_the_order_the_resume_puts_them():
+    """Résumé order is the answer to "which matter most".
+
+    The categories are listed the way the candidate wants them read, and within
+    each the items are ordered deliberately. Inventing a ranking here would
+    override one that already exists.
+    """
+    from app.api.routes.extension import _all_skills
+
+    content = {
+        "skills": [
+            {"category": "Languages", "items": ["Python", "Java", "SQL"]},
+            {"category": "ML", "items": ["PyTorch", "python", "TensorFlow"]},
+        ]
+    }
+    assert _all_skills(content) == ["Python", "Java", "SQL", "PyTorch", "TensorFlow"]
+
+
+def test_skills_survive_a_resume_that_lists_them_flat():
+    from app.api.routes.extension import _all_skills
+
+    assert _all_skills({"skills": ["Python", "  ", "Rust"]}) == ["Python", "Rust"]
+    assert _all_skills({}) == []
+
+
+def test_skills_are_capped_rather_than_sent_whole():
+    """Forty skills is right for a page someone reads and wrong for a taxonomy
+    you pick from one at a time — each is a type, a wait and a click."""
+    from app.api.routes.extension import _SKILL_LIMIT, _all_skills
+
+    many = {"skills": [{"items": [f"Skill {n}" for n in range(60)]}]}
+    assert len(_all_skills(many)) == _SKILL_LIMIT
+
+
+def test_a_job_is_split_the_way_a_form_asks_for_it():
+    from app.api.routes.extension import _all_experience
+
+    content = {
+        "experience": [
+            {
+                "title": "AI Software Engineer Intern",
+                "company": "Sunbase Data",
+                "location": "Orlando, FL (Remote)",
+                "start_date": "2026-05",
+                "end_date": "2026-08",
+                "highlights": ["Fine-tuned YOLO11.", "Lifted mAP@50 to 0.69."],
+            },
+            {
+                "title": "Research Assistant",
+                "company": "USC",
+                "start_date": "2025-01",
+                "end_date": "present",
+            },
+        ]
+    }
+    jobs = _all_experience(content)
+
+    # Newest first, and "present" is the newest of all rather than the oldest.
+    assert [j["company"] for j in jobs] == ["USC", "Sunbase Data"]
+
+    current, past = jobs
+    assert current["is_current"] is True
+    assert current["end_year"] == "" and current["end_month"] == ""
+
+    assert past["start_month"] == "May" and past["start_year"] == "2026"
+    assert past["end_month"] == "August" and past["end_year"] == "2026"
+    assert past["is_current"] is False
+    # The bullets go in as the candidate wrote them. Rewriting them into a
+    # paragraph would be the app editing someone's own words on the way into an
+    # application.
+    assert past["description"] == "• Fine-tuned YOLO11.\n• Lifted mAP@50 to 0.69."
+
+
+def test_the_experience_step_gets_what_it_asks_for(client, auth, user, db):
+    """Workday's My Experience asks for skills and jobs outright. Both were on
+    the résumé already and neither had ever been sent."""
+    from app.models.resume import ResumeProfile
+
+    db.add(
+        ResumeProfile(
+            user_id=user.id,
+            name="Master",
+            is_default=True,
+            content={
+                "basics": {"name": "Ada Lovelace King"},
+                "skills": [{"category": "Languages", "items": ["Python"]}],
+                "experience": [{"title": "Engineer", "company": "Acme", "start_date": "2024-01"}],
+            },
+        )
+    )
+    db.commit()
+
+    key = issue(client, auth)
+    body = client.get("/api/v1/extension/profile", headers={"X-HireCraft-Key": key}).json()
+
+    assert body["skills"] == ["Python"]
+    assert body["experience"][0]["company"] == "Acme"

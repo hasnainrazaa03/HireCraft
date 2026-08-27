@@ -1505,3 +1505,95 @@ test("a cover letter never takes a lone unnamed box", () => {
     null
   );
 });
+
+/**
+ * Workday's My Experience step: three "Add" buttons that all say "Add".
+ *
+ * Same automation id, same class, no distinguishing mark on any of them. The
+ * only thing that says which is which is the heading above it — Work Experience
+ * / Add / Education / Add / Skills — which is exactly what a person reads.
+ */
+function installSections(order) {
+  const window = {};
+  const nodes = order.map(({ tag, text }) => ({
+    tagName: tag.toUpperCase(),
+    id: "", className: "", innerText: text, textContent: text,
+    getAttribute: () => null,
+    hasAttribute: () => false,
+    getBoundingClientRect: rect(120, 40),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, click() {}, parentElement: null,
+  }));
+  const globals = {
+    window,
+    document: {
+      // Document order, which is the whole basis of the rule.
+      querySelectorAll: (sel) => (/h1|heading|button/.test(sel) ? nodes : []),
+      querySelector: () => null,
+      getElementById: () => null,
+    },
+    CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+  return { window, nodes };
+}
+
+const WORKDAY_SECTIONS = [
+  { tag: "h4", text: "Work Experience" },
+  { tag: "button", text: "Add" },
+  { tag: "h4", text: "Education" },
+  { tag: "button", text: "Add" },
+  { tag: "h4", text: "Skills" },
+];
+
+test("an Add button belongs to the heading above it", () => {
+  const { window, nodes } = installSections(WORKDAY_SECTIONS);
+  const { sectionAddButton } = window.HIRECRAFT_FILL;
+
+  assert.equal(sectionAddButton(/\bwork\s*experience\b/), nodes[1], "the first Add is the job one");
+  assert.equal(sectionAddButton(/\b(education|school|degree)\b/), nodes[3], "the second is education");
+});
+
+test("a section with no Add button of its own does not borrow one", () => {
+  // Skills is last and has no Add. Reaching back for Education's would open an
+  // education block while filling skills, which is worse than doing nothing.
+  const { window } = installSections(WORKDAY_SECTIONS);
+  assert.equal(window.HIRECRAFT_FILL.sectionAddButton(/\bskills\b/), null);
+});
+
+test("a button that says Add Another Education names itself", () => {
+  // Greenhouse and Ashby put the words on the button, with no heading to read.
+  const { window, nodes } = installSections([
+    { tag: "button", text: "+ Add Another Education" },
+  ]);
+  assert.equal(window.HIRECRAFT_FILL.addEducationButton(), nodes[0]);
+});
+
+test("Submit is never an Add button, whatever heading precedes it", () => {
+  const { window } = installSections([
+    { tag: "h4", text: "Education" },
+    { tag: "button", text: "Save and Continue" },
+  ]);
+  assert.equal(window.HIRECRAFT_FILL.sectionAddButton(/\beducation\b/), null);
+});
+
+test("a file the page has accepted is not a required box left empty", () => {
+  // Workday uploads immediately and clears the input so you can add another,
+  // then says "MHR_AIML.pdf successfully uploaded" and shows a Delete button.
+  // The résumé was attached, accepted, and still reported as missing.
+  const { window, inputs } = installUploads([
+    { sectionText: "Resume/CV MHR_AIML.pdf Delete MHR_AIML.pdf Successfully uploaded" },
+  ]);
+  assert.equal(window.HIRECRAFT_FILL.attachedNearby(inputs[0]), true);
+
+  const empty = installUploads([{ sectionText: "Resume/CV Select files Drop files here" }]);
+  assert.equal(empty.window.HIRECRAFT_FILL.attachedNearby(empty.inputs[0]), false);
+});
