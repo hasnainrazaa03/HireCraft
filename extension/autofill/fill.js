@@ -163,6 +163,12 @@ const NEVER_TOUCH =
 
 const IGNORED_TYPES = new Set([
   "hidden", "submit", "button", "reset", "image", "checkbox", "radio",
+  // Never a password. Workday puts a sign-in ahead of its form, so the filler
+  // now runs on pages that have one, and nothing here holds a credential to
+  // type into it — but a scan that can reach a password field is a scan one
+  // bad label match away from writing something into it, and that is not a
+  // risk worth carrying for a field we would never fill.
+  "password",
 ]);
 
 /**
@@ -207,6 +213,16 @@ function controls() {
     const text = (el.innerText || "").replace(/\s+/g, " ").trim();
     if (text.length > 40) return false;
     if (NEVER_TOUCH.test(text)) return false;
+    // Near a real control, or it is page furniture. Workday's chrome is all
+    // focusable — a skip link, the nav, a settings menu, decorative spans —
+    // and every one of them was being scanned, labelled and reported. Nothing
+    // matched them, which is luck rather than design.
+    let near = el.parentElement;
+    let hasControl = Boolean(el.closest?.("form"));
+    for (let depth = 0; !hasControl && near && depth < 5; depth += 1, near = near.parentElement) {
+      if (near.querySelector?.("input,select,textarea")) hasControl = true;
+    }
+    if (!hasControl) return false;
     // One of a row of choices belongs to its group, not to this scan. Taking it
     // here as well would have the same question answered twice, by two
     // different mechanisms, with no way to tell which one landed.
@@ -874,8 +890,16 @@ async function fillForm(
     // Second guard, independent of the label match above.
     if (NEVER_TOUCH.test((el.innerText || "").trim()) || NEVER_TOUCH.test(raw.trim())) continue;
     // Left unclaimed on purpose, so a genuine country question later on the
-    // form can still be answered.
-    if (field.key === "country" && isPhoneCountryPicker(el)) continue;
+    // form can still be answered. The label is checked as well as the markup:
+    // the neighbour test looks for a telephone input, and Workday's phone
+    // number box is type="text", so "Country Phone Code" reached the country
+    // field and would have been sent a country name.
+    if (
+      field.key === "country" &&
+      (isPhoneCountryPicker(el) || /\b(phone|dial|calling)\s*code\b/.test(label))
+    ) {
+      continue;
+    }
 
     const value = String(field.from(profile) ?? "").trim();
     if (!value) {

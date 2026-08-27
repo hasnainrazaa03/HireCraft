@@ -555,3 +555,24 @@ test("Workday names its controls, and the names are usable", () => {
   assert.equal(asLabel("email"), "email");
   assert.equal(asLabel("phone-number"), "phone");
 });
+
+test("only one box in a phone block wants a phone number", () => {
+  // Workday's phone block is four controls and every one of them says "phone".
+  // A bare \bphone\b matched Country Phone Code first, typed a US number into
+  // it, and claimed the field — so Phone Number, which is required, stayed
+  // empty and the form carried a wrong answer instead of a missing one.
+  assert.equal(claim("Phone Number*"), "phone");
+  assert.equal(claim("Phone"), "phone");
+  assert.equal(claim("Mobile Phone"), "phone");
+
+  for (const other of ["Country Phone Code*", "Phone Device Type", "Phone Extension"]) {
+    assert.notEqual(claim(other), "phone", `${other} is not where a number goes`);
+  }
+});
+
+test("Workday's state picker is recognised by its prompt", () => {
+  // Labelled "State Select One", because the prompt is part of the label.
+  assert.equal(claim("State Select One"), "state");
+  assert.equal(claim("State"), "state");
+  assert.equal(claim("State / Province"), "state");
+});

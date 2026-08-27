@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-26.workday-first-pass";
+const PANEL_BUILD = "2026-08-26.workday-phone-block";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -881,6 +881,7 @@ function mount() {
   root.id = ROOT_ID;
   document.body.append(root);
   render();
+  console.debug("[HireCraft] panel mounted", PANEL_BUILD, location.pathname);
   // Only after the page has been judged an application form, so a "thank you"
   // in a careers-page footer cannot be read as a submission.
   watchForSubmission();
@@ -890,24 +891,63 @@ function mount() {
 // page we were sent to after submitting will not have one.
 checkArrivedAtConfirmation();
 
-if (looksLikeApplicationForm()) {
-  mount();
-} else {
-  // Two of the three ATSs render their form after load, so waiting for the DOM
-  // is not enough. The check is debounced: a React app mutates constantly
-  // during hydration, and running a querySelectorAll on every mutation is a
-  // measurable cost on the page we are a guest on.
-  let pending = 0;
-  const observer = new MutationObserver(() => {
-    if (pending) return;
-    pending = requestAnimationFrame(() => {
-      pending = 0;
-      if (looksLikeApplicationForm()) {
-        observer.disconnect();
-        mount();
-      }
-    });
-  });
+/**
+ * Wait for a form to exist, for as long as the page does.
+ *
+ * The first version gave up after twenty seconds, which is fine for a board
+ * that renders its form on load and useless for one that makes you sign in
+ * first. On Workday the wait is a login, a redirect and several steps of a
+ * wizard — minutes — and by the time the form appeared the watcher had been
+ * disconnected for most of the session. The panel simply never showed up.
+ *
+ * So it waits indefinitely, and cheaply. A React app mutates constantly during
+ * hydration, so the check is throttled to once a second rather than debounced
+ * to the next frame: four querySelectorAll calls a second is nothing, and this
+ * runs on a page we are a guest on.
+ *
+ * It also re-checks when the URL changes. A single-page app moves between steps
+ * without reloading, so nothing would otherwise notice that a page with no form
+ * has become one with a form.
+ */
+function watchForForm() {
+  if (document.getElementById(ROOT_ID)) return;
+
+  let last = 0;
+  let timer = 0;
+  const look = () => {
+    if (document.getElementById(ROOT_ID)) return true;
+    if (!looksLikeApplicationForm()) return false;
+    mount();
+    return true;
+  };
+
+  const throttled = () => {
+    const now = Date.now();
+    if (now - last < 1000) {
+      if (!timer) timer = setTimeout(() => { timer = 0; throttled(); }, 1000);
+      return;
+    }
+    last = now;
+    if (look()) observer.disconnect();
+  };
+
+  const observer = new MutationObserver(throttled);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  setTimeout(() => observer.disconnect(), 20000);
+
+  // A step change in a single-page app is a navigation with no reload.
+  for (const method of ["pushState", "replaceState"]) {
+    const original = history[method];
+    history[method] = function (...args) {
+      const result = original.apply(this, args);
+      queueMicrotask(throttled);
+      return result;
+    };
+  }
+  window.addEventListener("popstate", throttled);
+  look();
 }
+
+// Before anything else, and regardless of whether this page has a form: the
+// page we were sent to after submitting will not have one.
+checkArrivedAtConfirmation();
+watchForForm();

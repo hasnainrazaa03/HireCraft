@@ -54,7 +54,17 @@ const FIELDS = [
     key: "phone",
     label: "Phone",
     from: (p) => p.phone,
-    match: [/\bphone\b/, /\bmobile\b/, /\btelephone\b/, /\bcell\b/],
+    // Narrow, because Workday's phone block is four boxes and only one of them
+    // wants a number: Country Phone Code, Phone Device Type, Phone Number and
+    // Phone Extension all contain the word "phone". A bare \bphone\b matched
+    // the country code first, typed a US number into it, and claimed the field
+    // — leaving Phone Number, which is required, empty.
+    match: [
+      /^phone$/, /^phone\s*number$/, /\bphone\s*number\b/,
+      /^mobile$/, /\bmobile\s*(phone|number)\b/,
+      /^telephone\b/, /^cell\s*(phone|number)?$/,
+      /\bprimary\s*phone\b/, /\bhome\s*phone\b/,
+    ],
     type: "tel",
   },
   {
@@ -73,7 +83,7 @@ const FIELDS = [
     from: (p) => p.state,
     match: [
       /\baddress\s*(section\s*)?(state|region|province)\b/,
-      /^state$/, /^province$/, /^region$/, /^state\s*\/?\s*province$/,
+      /^state\b/, /^province\b/, /^region\b/, /^state\s*\/?\s*province\b/,
     ],
   },
   {

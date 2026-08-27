@@ -1121,3 +1121,35 @@ test("a reformatted value still counts as held", async () => {
   assert.equal(report.filled.length, 1, "the field kept the number, its own way");
   assert.equal(report.missing.length, 0);
 });
+
+test("a password field is never even looked at", async () => {
+  // Workday puts a sign-in ahead of its form, so the filler now runs on pages
+  // that have one. Nothing here holds a credential to type into it, but a scan
+  // that can reach a password field is one bad label match from writing to it.
+  const password = makeControl({ label: "Email", type: "password" });
+  const window = install([password]);
+
+  const rows = window.HIRECRAFT_FILL.inspectForm();
+  assert.equal(rows.length, 0, "not even listed");
+  await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(password.value, "", "and never written to");
+});
+
+test("a country picker for a dialling code is not the country question", async () => {
+  // The neighbour test looks for a telephone input, and Workday's phone number
+  // box is type="text" — so the label has to be read too, or a box wanting
+  // "+1" is sent "United States".
+  const code = makeControl({ label: "Country Phone Code" });
+  const window = install([code]);
+  const report = await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+
+  assert.equal(code.value, "", "the dialling-code box is left alone");
+  assert.equal(report.filled.length, 0);
+});
+
+test("a real country question still fills", async () => {
+  const country = makeControl({ label: "Country" });
+  const window = install([country]);
+  await window.HIRECRAFT_FILL.fillForm(PROFILE, { stepDelay: 0 });
+  assert.equal(country.value, "United States");
+});
