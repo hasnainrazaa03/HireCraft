@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.profile-read-fresh";
+const BUILD = "2026-08-27.lone-upload-is-the-resume";
 
 /**
  * When the current fill has to stop.
@@ -1284,7 +1284,9 @@ async function fillForm(
   // Résumé upload, handled separately: file inputs are excluded from `controls`
   // because everything above them assumes a text value.
   if (resumeFile) {
-    const target = findUploadInput(window.HIRECRAFT_RESUME_FILE, window.HIRECRAFT_NOT_RESUME);
+    const target = findUploadInput(window.HIRECRAFT_RESUME_FILE, window.HIRECRAFT_NOT_RESUME, {
+      soleIsThis: true,
+    });
     if (target) {
       try {
         attachFile(target, resumeFile);
@@ -1345,7 +1347,7 @@ async function fillForm(
  * not the others. `reject` matters as much as `want`: without it the résumé
  * lands in the cover-letter box, which is worse than not filling at all.
  */
-function findUploadInput(want, reject = []) {
+function findUploadInput(want, reject = [], { soleIsThis = false } = {}) {
   const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
   if (!inputs.length) return null;
 
@@ -1375,6 +1377,31 @@ function findUploadInput(want, reject = []) {
         break;
       }
     }
+  }
+
+  // One box on the whole page, and nothing saying it is for something else.
+  //
+  // Everything above exists because a real form has four uploads and putting
+  // the résumé in the cover-letter box is worse than filling nothing. With one
+  // box that care has nothing to do and starts costing instead: Workday's
+  // upload sits behind a "Select Files" button with the input hidden, unnamed
+  // and unlabelled, and the words "Resume/CV" live further up the page than the
+  // walk reaches. So the single most valuable field on the form was reported as
+  // "couldn't tell which upload box" on a page that offers exactly one.
+  //
+  // Only for the résumé. A lone upload box on an application form is a résumé
+  // box; a lone box is not a cover-letter box, and guessing it into one would
+  // attach the wrong document under the right name.
+  if (soleIsThis && inputs.length === 1) {
+    const [only] = inputs;
+    // Not over something already attached — including a file the user chose by
+    // hand before pressing Fill.
+    if (only.files?.length) return null;
+    const around = normalise(
+      (only.closest?.("form,section,div")?.textContent || "").slice(0, 400)
+    );
+    if (reject.some((re) => re.test(around))) return null;
+    return only;
   }
   return null;
 }

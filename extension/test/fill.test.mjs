@@ -1400,3 +1400,108 @@ test("a list that never named itself is still found after typing", async () => {
   assert.equal(row.listbox.from, "appeared-on-open", "found by appearing, not by name");
   assert.notEqual(row.listbox.typedInto, "the control itself", "typed beside the button");
 });
+
+/**
+ * Workday's résumé upload: one hidden input behind a "Select Files" button.
+ *
+ * The input has no id, no name and no label, and the words "Resume/CV" sit
+ * further up the page than the section walk reaches — so the single most
+ * valuable field on the form came back as "couldn't tell which upload box" on a
+ * page that offers exactly one.
+ */
+function installUploads(boxes) {
+  const window = {};
+  const inputs = boxes.map(({ sectionText, files = [] }) => {
+    const section = {
+      tagName: "DIV", id: "", className: "", textContent: sectionText,
+      getAttribute: () => null, querySelector: () => null, querySelectorAll: () => [],
+      parentElement: null,
+    };
+    const input = {
+      tagName: "INPUT", id: "", className: "", value: "", files,
+      disabled: false, readOnly: false, parentElement: section,
+      getAttribute: (n) => (n === "type" ? "file" : null),
+      hasAttribute: () => false,
+      getBoundingClientRect: rect(0, 0),   // hidden behind the button
+      closest: (sel) => (/form|section|div/.test(sel) ? section : null),
+      querySelector: () => null, querySelectorAll: () => [],
+      dispatchEvent: () => {},
+    };
+    section.querySelector = () => input;
+    return input;
+  });
+
+  const globals = {
+    window,
+    document: {
+      querySelectorAll: (sel) => (sel.includes("file") ? inputs : []),
+      querySelector: () => null,
+      getElementById: () => null,
+    },
+    CSS: { escape: (s) => s },
+    Event: class { constructor(type) { this.type = type; } },
+    MouseEvent: class { constructor(type) { this.type = type; } },
+    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+  return { window, inputs };
+}
+
+const forResume = (window) =>
+  window.HIRECRAFT_FILL.findUploadInput(
+    window.HIRECRAFT_RESUME_FILE,
+    window.HIRECRAFT_NOT_RESUME,
+    { soleIsThis: true }
+  );
+
+test("the only upload box on the page takes the résumé", () => {
+  // Workday's My Experience step. Nothing within reach of the input names it.
+  const { window, inputs } = installUploads([
+    { sectionText: "Upload a file (5MB max) Select files Drop files here" },
+  ]);
+  assert.equal(forResume(window), inputs[0]);
+});
+
+test("a lone box that says it is for something else is still refused", () => {
+  for (const text of ["Cover Letter Select files", "Graduate Transcript Select files"]) {
+    const { window } = installUploads([{ sectionText: text }]);
+    assert.equal(forResume(window), null, `"${text}" must not take a résumé`);
+  }
+});
+
+test("a lone box that already holds a file is left alone", () => {
+  // Including a file the user chose by hand before pressing Fill.
+  const { window } = installUploads([
+    { sectionText: "Upload a file (5MB max)", files: [{ name: "theirs.pdf" }] },
+  ]);
+  assert.equal(forResume(window), null);
+});
+
+test("two unnamed boxes stay ambiguous rather than becoming a guess", () => {
+  // The whole reason the section walk exists: a form with four uploads, where
+  // the résumé landing in the transcript box looks filled and is wrong.
+  const { window } = installUploads([
+    { sectionText: "Select files" },
+    { sectionText: "Select files" },
+  ]);
+  assert.equal(forResume(window), null);
+});
+
+test("a cover letter never takes a lone unnamed box", () => {
+  // The asymmetry is deliberate. A single upload box on an application form is
+  // a résumé box; it is not a cover-letter box, and guessing it into one would
+  // attach the wrong document under the right name.
+  const { window } = installUploads([{ sectionText: "Upload a file (5MB max)" }]);
+  assert.equal(
+    window.HIRECRAFT_FILL.findUploadInput(
+      window.HIRECRAFT_COVER_FILE,
+      window.HIRECRAFT_NOT_COVER
+    ),
+    null
+  );
+});
