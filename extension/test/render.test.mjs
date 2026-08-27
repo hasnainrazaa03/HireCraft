@@ -108,13 +108,13 @@ function harness({ profile, letter = null } = {}) {
     setTimeout,
     Event: class { constructor(type) { this.type = type; } },
     HTMLFormElement: class {},
-    console: { debug() {}, log() {} },
+    console: { debug() {}, log() {}, warn() {}, error() {} },
   };
 
   // The script exports nothing, so the test asks it to.
   const source =
     readFileSync(join(here, "..", "content.js"), "utf8") +
-    "\n;window.__panel = { renderPanel, state, runCoverLetter };";
+    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded };";
   new Function(...Object.keys(globals), source)(...Object.values(globals));
 
   Object.assign(window.__panel.state, { profile, letter });
@@ -194,4 +194,35 @@ test("a failed draft is remembered, not just flashed", () => {
   assert.match(source, /state\.letterError = reply\.error/, "the reason is kept");
   assert.match(source, /coverLetter: \{/, "and travels with the diagnostics");
   assert.match(source, /build: PANEL_BUILD/, "alongside which build produced them");
+});
+
+test("a failing action costs one action, not the session", async () => {
+  // The stuck panel. Each action set `busy`, which disables every control, and
+  // cleared it on the paths that reached the end — so a throw in between left
+  // everything greyed with nothing to say. The engine reaches into pages nobody
+  // has seen, so a throw is the ordinary way an unfamiliar form goes wrong.
+  const { window } = harness({ profile: PROFILE });
+  const { guarded, state } = window.__panel;
+
+  await guarded("Fill", async () => {
+    throw new Error("this page is unlike the others");
+  });
+
+  assert.equal(state.busy, false, "the panel has to come back");
+  assert.match(state.status, /Fill failed/, "and say what happened");
+  assert.match(state.status, /unlike the others/);
+});
+
+test("an action already running is not started twice", async () => {
+  const { window } = harness({ profile: PROFILE });
+  const { guarded, state } = window.__panel;
+
+  let runs = 0;
+  const slow = () => new Promise((resolve) => setTimeout(() => { runs += 1; resolve(); }, 30));
+  const first = guarded("Fill", slow);
+  await guarded("Fill", slow);   // while the first is still going
+  await first;
+
+  assert.equal(runs, 1, "a second press while busy does nothing");
+  assert.equal(state.busy, false);
 });

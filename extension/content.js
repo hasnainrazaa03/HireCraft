@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-26.workday-time-budget";
+const PANEL_BUILD = "2026-08-27.panel-always-comes-back";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -515,19 +515,49 @@ function resolveResume(profile, wanted) {
   );
 }
 
+/**
+ * Run one of the panel's actions, and always give the panel back.
+ *
+ * Each of these sets `busy`, which disables every control, and each cleared it
+ * on the way out — on the paths that reached the way out. A throw anywhere in
+ * between left it set, so the panel sat with everything greyed and nothing to
+ * say, which is exactly what "the extension got stuck" looks like from outside.
+ *
+ * The engine reaches into pages nobody has seen, so a throw is not a remote
+ * possibility; it is the ordinary way an unfamiliar form goes wrong. What
+ * matters is that it costs one action rather than the session.
+ */
+async function guarded(what, run) {
+  if (state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    await run();
+  } catch (error) {
+    const message = error?.message || String(error);
+    state.status = `${what} failed: ${message}`;
+    console.error("[HireCraft]", what, "failed", error);
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
 async function runFill() {
+  return guarded("Fill", fillOnce);
+}
+
+async function fillOnce() {
   // Written before filling rather than after: a form that posts on the very
   // next click should still leave a trace of having been filled here.
   rememberFilling();
-  state.busy = true;
   state.status = "Reading your HireCraft profile…";
   render();
 
   if (!state.profile) {
     const reply = await ask({ type: "profile" });
     if (!reply.ok) {
-      Object.assign(state, { busy: false, status: reply.error });
-      render();
+      state.status = reply.error;
       return;
     }
     state.profile = reply.data;
@@ -568,14 +598,17 @@ async function runFill() {
   const first = document.querySelector("form") || document.body;
   first.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  Object.assign(state, { busy: false, status: "", report });
+  Object.assign(state, { status: "", report });
   render();
 
-  if (state.wantCoverLetter && !state.letter) await runCoverLetter();
+  if (state.wantCoverLetter && !state.letter) await draftLetter();
 }
 
-async function runCoverLetter({ feedback = "" } = {}) {
-  state.busy = true;
+async function runCoverLetter(options = {}) {
+  return guarded("Cover letter", () => draftLetter(options));
+}
+
+async function draftLetter({ feedback = "" } = {}) {
   // Both go together: the note says what to change, the draft says what to
   // change it from. Sending the note alone would start over and lose the
   // paragraphs that were already right.
@@ -593,7 +626,6 @@ async function runCoverLetter({ feedback = "" } = {}) {
     feedback: revising ? feedback.trim() : null,
     previous: revising ? state.letter.paragraphs : null,
   });
-  state.busy = false;
   if (!reply.ok) {
     // Kept, not just flashed: a status line is gone by the time anyone asks
     // what happened, and "nothing happened" is the least diagnosable report
@@ -663,7 +695,10 @@ function guessCompany() {
 }
 
 async function runTrack(stage = "draft") {
-  state.busy = true;
+  return guarded("Tracking", () => trackOnce(stage));
+}
+
+async function trackOnce(stage) {
   setStatus(stage === "applied" ? "Recording that you applied…" : "Adding to your tracker…");
   // The company and role go with it. Left to work them out from the URL alone,
   // the server had only the path's first segment to go on, and a tracker row
@@ -682,7 +717,6 @@ async function runTrack(stage = "draft") {
     coverLetterUsage: state.letter?.usage || null,
   });
   Object.assign(state, {
-    busy: false,
     stage: reply.ok ? stage : state.stage,
     status: reply.ok
       ? stage === "applied"
@@ -775,7 +809,14 @@ async function pendingFill() {
  *
  * Runs whether or not this page has a form, since a confirmation page does not.
  */
+let confirmationChecked = false;
+
 async function checkArrivedAtConfirmation() {
+  // Once per page. Two concurrent runs would both read the pending note before
+  // either cleared it, and both would report the same submission.
+  if (confirmationChecked) return;
+  confirmationChecked = true;
+
   const looksDone =
     window.HIRECRAFT_SUBMISSION.isConfirmationUrl(location.pathname) ||
     (window.HIRECRAFT_SUBMISSION.isConfirmationText(document.body?.innerText || "") &&
@@ -886,10 +927,6 @@ function mount() {
   // in a careers-page footer cannot be read as a submission.
   watchForSubmission();
 }
-
-// Before anything else, and regardless of whether this page has a form: the
-// page we were sent to after submitting will not have one.
-checkArrivedAtConfirmation();
 
 /**
  * Wait for a form to exist, for as long as the page does.

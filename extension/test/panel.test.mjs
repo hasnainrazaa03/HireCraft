@@ -97,7 +97,7 @@ test("the checkbox says what Fill should do, and Fill does it", () => {
   assert.doesNotMatch(handler[1], /runCoverLetter/, "and does not draft on its own");
 
   // Fill is where it happens.
-  assert.match(source, /state\.wantCoverLetter && !state\.letter\) await runCoverLetter\(\)/);
+  assert.match(source, /state\.wantCoverLetter && !state\.letter\) await draftLetter\(\)/);
 });
 
 test("a ticked box changes what Fill offers to do", () => {
