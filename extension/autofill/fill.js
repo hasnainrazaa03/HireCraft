@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.dates-are-typed";
+const BUILD = "2026-08-27.questions-named-by-their-question";
 
 /**
  * When the current fill has to stop.
@@ -86,12 +86,52 @@ function ownHint(el) {
  * back to nearby text — some forms render a styled <div> as the label with no
  * association at all, and those are exactly the ones a selector map misses.
  */
+/**
+ * The label in `node` that belongs to `el` — the nearest one above it.
+ *
+ * Taking the first label in the container is only right when the container
+ * holds one field. Workday's Application Questions put three dropdowns in one
+ * wrapper, and the first label in it is question one — so all three were named
+ * "Are you legally authorized to work in the United States?", the first claimed
+ * that answer and the other two were dropped as already-claimed. The Back and
+ * Save buttons were called it too.
+ *
+ * A form's label sits above its control, so the right one is the last that
+ * comes before it. Falls back to the first where the document cannot be
+ * compared, which is every test stub and no real page.
+ */
+function nearestLabelIn(node, el) {
+  const found = Array.from(
+    node.querySelectorAll?.(
+      "label,legend,[class*='label'],[class*='Label'],[class*='question'],[class*='Question']"
+    ) || []
+  ).filter((c) => (c.innerText || "").trim() && !c.contains?.(el));
+  if (!found.length) return "";
+
+  let best = null;
+  for (const candidate of found) {
+    // DOCUMENT_POSITION_PRECEDING — this label comes before the control.
+    const before = safely(() => Boolean(el.compareDocumentPosition?.(candidate) & 2));
+    if (before) best = candidate;
+  }
+  return ((best || found[0]).innerText || "").trim();
+}
+
 function labelFor(el) {
   // Called over arbitrary elements since the widget scan widened, and not every
   // node in a page answers the whole Element interface.
   if (!el?.getAttribute) return "";
+  // An accessible name that is only the widget's own prompt is not a name.
+  //
+  // Workday's Application Questions put the question in a <label> and give the
+  // dropdown `aria-label="Select One Required"` — so taking the aria-label and
+  // stopping left every question on the page called "Select One", which reduces
+  // to nothing and was dropped by the scan for having no label at all. On the
+  // education blocks the same attribute reads "Degree Select One Required" and
+  // is exactly right, which is why this went unnoticed: the attribute is
+  // sometimes the question and sometimes only the state.
   const byAria = el.getAttribute("aria-label");
-  if (byAria) return byAria;
+  if (byAria && withoutPrompt(normalise(byAria))) return byAria;
 
   const labelledBy = el.getAttribute("aria-labelledby");
   if (labelledBy) {
@@ -141,10 +181,7 @@ function labelFor(el) {
       if (heading && own) return `${heading} ${own}`;
       break;
     }
-    const candidate = node.querySelector?.(
-      "label,legend,[class*='label'],[class*='Label'],[class*='question'],[class*='Question']"
-    );
-    const text = candidate?.innerText?.trim();
+    const text = nearestLabelIn(node, el);
     if (text) return text;
   }
 
@@ -293,7 +330,11 @@ function controls() {
     // Required", and the prompt is only at the end once `normalise` has taken
     // the "Required" off. The raw label keeps both, since that is what the page
     // actually says and the report should not pretend otherwise.
-    const label = withoutPrompt(normalise(raw));
+    // The stripped form when there is one, the raw form when stripping empties
+    // it. A control whose whole name is "Select One" matches no field either
+    // way, but dropping it here removed it from the diagnostics as well — and a
+    // control that appears in no list is the hardest kind of miss to find.
+    const label = withoutPrompt(normalise(raw)) || normalise(raw);
     if (!label) continue;
     out.push({ el, raw, label, widget });
   }
@@ -1583,14 +1624,12 @@ async function fillForm(
       } catch (error) {
         missing.push({ label: "Résumé", why: "the upload field refused the file" });
       }
-    } else {
-      missing.push({
-        label: "Résumé",
-        why: document.querySelector('input[type="file"]')
-          ? "couldn't tell which upload box"
-          : "no upload box on this page",
-      });
+    } else if (document.querySelector('input[type="file"]')) {
+      missing.push({ label: "Résumé", why: "couldn't tell which upload box" });
     }
+    // A step that asks for no file is not a step where the résumé went missing.
+    // Saying so on every page of a six-step application trains the reader to
+    // skip the one list they must not skip.
   }
 
   // One last look at everything claimed, after the page has had time to settle.
@@ -2450,12 +2489,20 @@ async function addExperience(entry, { trace, filled, missing, onProgress, stepDe
     // the report — not filled, not missing, not even a failed line — because
     // returning false is silent and a silent skip is the one outcome that gives
     // the next round nothing to work from.
-    trace.push({
-      label: `Add ${nth} job`,
-      outcome: "failed",
-      why: "no Add button belongs to a work-experience section on this page",
-      buttons: addLikeButtons(),
-    });
+    // But only where there was something to miss. On a page with no Add buttons
+    // at all there is nothing to explain: Workday's Application Questions step
+    // is not a page that failed to add a job, it is a page with no jobs on it,
+    // and three lines saying otherwise are noise in the one list that has to
+    // stay readable.
+    const buttons = addLikeButtons();
+    if (buttons.length) {
+      trace.push({
+        label: `Add ${nth} job`,
+        outcome: "failed",
+        why: "no Add button belongs to a work-experience section on this page",
+        buttons,
+      });
+    }
     return false;
   }
 

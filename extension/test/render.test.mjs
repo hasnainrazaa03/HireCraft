@@ -63,6 +63,7 @@ function harness({ profile, letter = null, fill = {}, reply = null } = {}) {
   const built = [];
   const sent = [];
   const copied = [];
+  const listeners = {};
 
   const document = {
     createElement(tag) {
@@ -98,7 +99,11 @@ function harness({ profile, letter = null, fill = {}, reply = null } = {}) {
       { id: "details", title: "Application details" },
     ],
     HIRECRAFT_GROUP_FOR: (label) => (/name|email|phone/i.test(label) ? "personal" : "details"),
-    addEventListener() {},
+    // Kept rather than dropped, so a test can fire one. A stub that swallows
+    // every listener cannot exercise anything that reacts to the page.
+    addEventListener(type, fn) {
+      (listeners[type] ??= []).push(fn);
+    },
   };
 
   const chrome = {
@@ -130,11 +135,15 @@ function harness({ profile, letter = null, fill = {}, reply = null } = {}) {
   // The script exports nothing, so the test asks it to.
   const source =
     readFileSync(join(here, "..", "content.js"), "utf8") +
-    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded, noteError, fillOnce };";
+    "\n;window.__panel = { renderPanel, state, runCoverLetter, guarded, noteError, fillOnce, watchForStepChange };";
   new Function(...Object.keys(globals), source)(...Object.values(globals));
 
   Object.assign(window.__panel.state, { profile, letter });
-  return { window, built, sent, copied, render: () => window.__panel.renderPanel() };
+  return {
+    window, built, sent, copied, listeners,
+    location: globals.location,
+    render: () => window.__panel.renderPanel(),
+  };
 }
 
 const PROFILE = {
@@ -431,4 +440,30 @@ test("before a fill there is nothing to be ready about", () => {
   render();
   assert.equal(find(built, "Application readiness"), undefined);
   assert.ok(find(built, "Fill this form"), "just the thing to press");
+});
+
+test("moving to the next step clears the last one's report", () => {
+  // An application is six pages on Workday and the panel outlives all of them.
+  // The report from the step before stayed on screen saying thirty-eight fields
+  // were filled — none of them on the page being looked at. A report describing
+  // a form the reader is not in front of answers the question they came to ask
+  // with yesterday's answer.
+  const { window, listeners, location } = harness({ profile: PROFILE });
+  const { state, watchForStepChange } = window.__panel;
+  Object.assign(state, {
+    report: REPORT,
+    status: "Filled 6 fields",
+    letter: { paragraphs: ["kept"] },
+    resumeId: "u1",
+  });
+  watchForStepChange();
+
+  location.href = "https://x.myworkdayjobs.com/apply/4";
+  for (const fn of listeners.popstate ?? []) fn();
+
+  assert.equal(state.report, null, "the last step's report goes");
+  assert.equal(state.status, "");
+  // These are about this application, not this page.
+  assert.ok(state.letter, "a drafted letter survives the step change");
+  assert.equal(state.resumeId, "u1", "and so does the résumé you picked");
 });

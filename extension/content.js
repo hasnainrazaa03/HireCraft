@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-08-27.dates-are-typed";
+const PANEL_BUILD = "2026-08-27.questions-named-by-their-question";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -1214,6 +1214,52 @@ function mount() {
   // Only after the page has been judged an application form, so a "thank you"
   // in a careers-page footer cannot be read as a submission.
   watchForSubmission();
+  watchForStepChange();
+}
+
+/**
+ * Notice when the application moves to a different step.
+ *
+ * An application is six pages on Workday and the panel outlives all of them:
+ * the URL changes, the form underneath is replaced, and the report from the
+ * step before stays on screen saying thirty-eight fields are filled. None of
+ * them are — they were filled on a page that is no longer here — and a report
+ * describing a form the reader is not looking at is worse than no report, since
+ * it answers the question they came to ask with yesterday's answer.
+ *
+ * So a step change clears what was said about the last one. The résumé choice
+ * and the cover letter stay: those are about this application, not this page.
+ */
+function watchForStepChange() {
+  let last = location.href;
+  const check = () => {
+    if (location.href === last) return;
+    last = location.href;
+    if (!state.report && !state.status) return;
+    Object.assign(state, { report: null, status: "", sections: {} });
+    render();
+    console.debug("[HireCraft] new step, report cleared", location.pathname);
+  };
+  for (const method of ["pushState", "replaceState"]) {
+    const original = history[method];
+    history[method] = function (...args) {
+      const result = original.apply(this, args);
+      queueMicrotask(check);
+      return result;
+    };
+  }
+  window.addEventListener("popstate", check);
+  // Workday moves between steps without always touching history, so the DOM is
+  // watched too — throttled, since a step change re-renders a great deal.
+  let timer = 0;
+  const observer = new MutationObserver(() => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = 0;
+      check();
+    }, 500);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 /**

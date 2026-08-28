@@ -2015,3 +2015,101 @@ test("a date segment is typed into, because it disbelieves what it is handed", a
   await window.HIRECRAFT_FILL.setAndVerify(plain, "Sunbase Data");
   assert.deepEqual(keys, [], "nothing is typed when nothing asked for typing");
 });
+
+/**
+ * Workday's Application Questions: three dropdowns in one wrapper, each named
+ * only by its own state.
+ */
+function installQuestions() {
+  const window = {};
+  const label = (text) => ({
+    tagName: "LABEL", id: "", className: "", innerText: text, textContent: text,
+    getAttribute: () => null, querySelectorAll: () => [], contains: () => false,
+    getBoundingClientRect: rect(300, 20),
+  });
+  const button = (text) => ({
+    tagName: "BUTTON", id: "", className: "", innerText: "Select One", value: "",
+    disabled: false, readOnly: false,
+    getAttribute: (n) => (n === "aria-label" ? text : n === "aria-haspopup" ? "listbox" : null),
+    hasAttribute: (n) => ["aria-label", "aria-haspopup"].includes(n),
+    getBoundingClientRect: rect(300, 34),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {},
+  });
+
+  const labels = [
+    label("Are you legally authorized to work in the United States?*"),
+    label("Will you now or in the future, require sponsorship for employment status?*"),
+    label("Solely for the purpose of determining if an export control license is needed, please indicate if you are currently a citizen of any of the following countries: Iran, Syria, N. Korea, Cuba, China or Russia.*"),
+  ];
+  const buttons = [button("Select One Required"), button("Select One Required"), button("Select One Required")];
+
+  // One wrapper over all six, which is the shape that defeated the old rule.
+  const wrap = {
+    tagName: "DIV", id: "", className: "", getAttribute: () => null,
+    querySelector: () => labels[0],
+    querySelectorAll: (sel) => (/label|legend|question/.test(sel) ? labels : []),
+    parentElement: null, contains: () => true,
+  };
+  const order = [labels[0], buttons[0], labels[1], buttons[1], labels[2], buttons[2]];
+  for (const node of order) node.parentElement = wrap;
+  // Document order, as compareDocumentPosition reports it: bit 2 means the
+  // other node comes before this one.
+  for (const node of order) {
+    node.compareDocumentPosition = (other) => (order.indexOf(other) < order.indexOf(node) ? 2 : 4);
+  }
+
+  const globals = {
+    window,
+    document: {
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      getElementById: () => null,
+    },
+    CSS: { escape: (x) => x },
+    Event: class { constructor(t) { this.type = t; } },
+    MouseEvent: class { constructor(t) { this.type = t; } },
+    KeyboardEvent: class { constructor(t, init) { this.type = t; Object.assign(this, init); } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+  return { window, buttons, labels };
+}
+
+test("a dropdown named only by its own state is named by its question instead", () => {
+  // Workday gives these `aria-label="Select One Required"`. Taking that and
+  // stopping left every question on the page called "Select One", which reduces
+  // to nothing — so the scan dropped all three for having no label at all.
+  //
+  // On the education blocks the same attribute reads "Degree Select One
+  // Required" and is exactly right, which is why this went unnoticed: the
+  // attribute is sometimes the question and sometimes only the state.
+  const { window, buttons } = installQuestions();
+  const { labelFor } = window.HIRECRAFT_FILL;
+
+  assert.match(labelFor(buttons[0]), /legally authorized/);
+  assert.match(labelFor(buttons[1]), /require sponsorship/);
+  assert.match(labelFor(buttons[2]), /export control/);
+});
+
+test("three questions in one wrapper get three different labels", () => {
+  // Taking the first label in the container is only right when the container
+  // holds one field. All three were named "Are you legally authorized…", the
+  // first claimed that answer, and the other two were dropped as already
+  // claimed — so two required questions were silently left blank.
+  const { window, buttons } = installQuestions();
+  const { labelFor, normalise, withoutPrompt } = window.HIRECRAFT_FILL;
+  const FIELDS = window.HIRECRAFT_FIELDS;
+  const SKIP = window.HIRECRAFT_SKIP;
+
+  const keys = buttons.map((b) => {
+    const label = withoutPrompt(normalise(labelFor(b)));
+    if (SKIP.find((g) => g.match.some((re) => re.test(label)))) return "(skipped)";
+    return FIELDS.find((f) => f.match.some((re) => re.test(label)))?.key;
+  });
+  assert.deepEqual(keys, ["authorized_to_work", "requires_sponsorship", "(skipped)"]);
+});
