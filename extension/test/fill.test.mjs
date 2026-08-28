@@ -1884,3 +1884,89 @@ test("the icon beside a box counts as a way to open it", () => {
   icon.getBoundingClientRect = rect(0, 0);
   assert.equal(window.HIRECRAFT_FILL.nearbyPromptIcon(input), null);
 });
+
+test("a multi-select is filled without being shut between values", async () => {
+  // The first version drove each skill through the single-value path: open,
+  // type, pick, close — twenty times. That teardown is twenty presses of
+  // Escape, twenty clicks on the control, twenty clicks on the page body and
+  // twenty blurs, each landing on a field about to be typed into again.
+  const escapes = [];
+  const pills = [];
+  const window = {};
+
+  const row = (text) => ({
+    tagName: "DIV", id: "", className: "", innerText: text, textContent: text,
+    getAttribute: (n) => (n === "role" ? "option" : null),
+    getBoundingClientRect: rect(180, 26),
+    scrollIntoView() {}, dispatchEvent: () => {},
+    click() { pills.push({ id: "", textContent: text }); box.value = ""; },
+    parentElement: null,
+  });
+  const rows = [row("Python"), row("PyTorch"), row("Java")];
+
+  const listbox = {
+    tagName: "UL", id: "", className: "", parentElement: null,
+    getAttribute: (n) => (n === "role" ? "listbox" : null),
+    // Filtered by what has been typed, the way a search-backed list behaves.
+    querySelectorAll: (sel) =>
+      sel.includes("option")
+        ? rows.filter((r) => r.innerText.toLowerCase().startsWith(box.value.toLowerCase()) && box.value)
+        : [],
+  };
+  for (const r of rows) r.parentElement = listbox;
+
+  const shell = {
+    tagName: "DIV", id: "", className: "", getAttribute: () => null,
+    querySelector: (sel) => (/pill|selectedItem|multi-value/.test(sel) ? (pills[0] ?? null) : null),
+    querySelectorAll: (sel) => (/pill|selectedItem|multi-value/.test(sel) ? pills : []),
+    parentElement: null,
+  };
+  const box = {
+    tagName: "INPUT", id: "skills--skills", className: "", value: "",
+    disabled: false, readOnly: false, parentElement: shell,
+    getAttribute: (n) => (n === "aria-label" ? "Type to Add Skills" : null),
+    hasAttribute: () => false, getBoundingClientRect: rect(300, 34),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    // Escape is the first thing closeListbox tries, so counting it counts the
+    // teardowns — blurs would not, since closing stops at whatever works.
+    dispatchEvent: (e) => { if (e.key === "Escape" && e.type === "keydown") escapes.push(1); },
+    focus() {}, blur() {},
+  };
+
+  const globals = {
+    window,
+    document: {
+      querySelectorAll: (sel) => {
+        if (sel === '[role="listbox"]') return [listbox];
+        if (sel.includes("promptOption") || sel === '[role="option"]') return rows;
+        if (/input|select|textarea/.test(sel)) return [box];
+        return [];
+      },
+      querySelector: () => null, getElementById: () => null, body: { dispatchEvent: () => {} },
+    },
+    CSS: { escape: (x) => x },
+    Event: class { constructor(t) { this.type = t; } },
+    MouseEvent: class { constructor(t) { this.type = t; } },
+    KeyboardEvent: class { constructor(t, init) { this.type = t; Object.assign(this, init); } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+
+  const trace = [];
+  const filled = [];
+  await window.HIRECRAFT_FILL.fillSkills(["Python", "PyTorch", "Rust"], { trace, filled });
+
+  const row_ = trace.find((t) => t.field === "skills");
+  assert.equal(row_.outcome, "filled");
+  assert.match(row_.got, /Python/);
+  assert.match(row_.got, /PyTorch/);
+  // Rust is not on this employer's list, which is a fact about the employer
+  // rather than a failure — and the step says so instead of the whole run
+  // reporting one guess for the lot.
+  assert.ok(row_.steps.some((s) => s.typed === "Rust" && /not on the list|no suggestions/.test(s.why)));
+  assert.equal(escapes.length, 1, "put away once at the end, not after every value");
+});

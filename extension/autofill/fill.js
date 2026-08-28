@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.skills-are-typed-not-assigned";
+const BUILD = "2026-08-27.skills-in-one-session";
 
 /**
  * When the current fill has to stop.
@@ -828,7 +828,7 @@ async function openListbox(el) {
   pressKey(el, "ArrowDown");
   for (let tries = 0; tries < 8; tries += 1) {
     const box = mine();
-    if (box || isOpen()) return { box, find: mine };
+    if (box || isOpen()) return { box, find: mine, how: "keyboard" };
     await pause(70);
   }
 
@@ -839,7 +839,7 @@ async function openListbox(el) {
     clickLike(el.closest?.("[class*='control'],[class*='select-shell'],[role='combobox']") || el);
     for (let tries = 0; tries < 10; tries += 1) {
       const box = mine();
-      if (box || isOpen()) return { box, find: mine };
+      if (box || isOpen()) return { box, find: mine, how: "the control" };
       await pause(70);
     }
   }
@@ -854,11 +854,14 @@ async function openListbox(el) {
     clickLike(icon);
     for (let tries = 0; tries < 10; tries += 1) {
       const box = mine();
-      if (box || isOpen()) return { box, find: mine };
+      if (box || isOpen()) return { box, find: mine, how: "its icon" };
       await pause(70);
     }
   }
-  return { box: mine(), find: mine };
+  // Named, so a failure downstream can say whether anything opened it at
+  // all. "The dropdown never opened" is three words that cover four different
+  // situations, and three rounds went by without distinguishing them.
+  return { box: mine(), find: mine, how: icon ? "nothing, and it has an icon" : "nothing" };
 }
 
 /** The affordance beside a box that opens its menu, if it has one. */
@@ -2612,27 +2615,35 @@ function skillsBox() {
 }
 
 /**
- * Add skills, one at a time, from the résumé.
+ * Add skills, one after another, without shutting the box in between.
  *
- * Workday's list is a controlled vocabulary: you type, it offers what it knows,
- * and anything it does not know cannot be added at all. So a skill that finds
- * no match is not a failure to report loudly — it is a word this employer's
- * taxonomy does not carry, and there will be several. What matters is how many
- * went in.
+ * The first version drove each skill through the single-value path: open, type,
+ * pick, close — twenty times. That teardown is not tidiness on a multi-select,
+ * it is twenty presses of Escape, twenty clicks on the control, twenty clicks
+ * on the page body and twenty blurs, each one landing on a field that was about
+ * to be typed into again. Nobody uses one of these that way, and there is no
+ * reason for us to either: the box stays focused, each skill is typed, its
+ * suggestions are picked from, and the whole thing is put away once at the end.
  *
- * Bounded twice over: by `wanted`, since a form asking for skills wants the
- * ones that matter rather than the whole résumé, and by the fill's own
- * deadline, because each one costs a type, a wait and a click.
+ * Workday's list is a controlled vocabulary, so a skill it does not know cannot
+ * be added at all. That is not a failure worth shouting about — it is this
+ * employer's taxonomy — and what matters is how many went in.
  */
 async function fillSkills(skills, { trace, filled, onProgress }) {
   const el = skillsBox();
   if (!el || !skills.length) return false;
 
   const added = [];
-  const refused = [];
+  const steps = [];
   let ranOut = false;
+
+  // Once, before the first skill. Some boxes need the menu opened before they
+  // will search at all; the ones that do not are unaffected by having been
+  // asked.
+  const opened = await openListbox(el);
+
   for (const skill of skills) {
-    if (added.length >= 12) break;
+    if (added.length >= 12 || steps.length >= 14) break;
     if (outOfTime()) {
       ranOut = true;
       break;
@@ -2640,19 +2651,57 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
     const already = normalise(nearbyPills(el).join(" "));
     if (already.includes(normalise(skill))) continue;
 
-    let result;
-    try {
-      result = await chooseFromCombobox(el, skill, "skill", null, null);
-    } catch (error) {
-      result = { ok: false, why: `this control threw: ${error?.message || error}` };
+    // Diffed per skill, not once: the suggestion list is rebuilt for each query
+    // and the one standing open from the previous skill is not this skill's.
+    const before = new Set(visibleListboxes());
+    await typeText(el, skill);
+
+    let box = null;
+    let nodes = [];
+    for (let tries = 0; tries < 14 && !outOfTime(); tries += 1) {
+      await pause(110);
+      const fresh = visibleListboxes().filter((b) => !before.has(b));
+      box = namedListbox(el) || opened.find?.() || fresh[0] || null;
+      nodes = optionNodes(box);
+      if (nodes.length) break;
     }
-    if (result.ok) added.push(result.chosen ?? skill);
-    // Each refusal keeps its own reason. Counting them and reporting one
-    // sentence for the lot said "none of them were on this employer's list" for
-    // a run that had simply run out of time before trying any — a guess dressed
-    // as a finding, and the sort that sends the next round to the wrong place.
-    else refused.push({ skill, why: result.why, listbox: result.listbox ?? null, onScreen: result.onScreen ?? null });
+
+    if (!nodes.length) {
+      steps.push({ typed: skill, options: 0, why: "no suggestions appeared" });
+      continue;
+    }
+
+    // A filtered list has already done the matching, so its first row is
+    // usually the answer — but only when it is plausibly the same thing. A
+    // list that came back with something unrelated is a list we should leave
+    // alone rather than put a word into someone's application that they did
+    // not write.
+    const texts = nodes.map(optionText);
+    const { normText } = window.HIRECRAFT_OPTIONS;
+    const want = normText(skill);
+    let index = texts.findIndex((t) => normText(t) === want);
+    if (index < 0) index = texts.findIndex((t) => normText(t).includes(want));
+    if (index < 0) {
+      steps.push({ typed: skill, options: texts.length, offered: texts.slice(0, 3), why: "not on the list" });
+      continue;
+    }
+
+    const pillsBefore = nearbyPills(el).length;
+    nodes[index].scrollIntoView?.({ block: "nearest" });
+    clickLike(nodes[index]);
+    await pause(140);
+    // Counted against the chips on screen rather than against what we think we
+    // did: a multi-select that quietly drops one is exactly the failure the
+    // single-value path had to learn to catch.
+    if (nearbyPills(el).length > pillsBefore) {
+      added.push(texts[index]);
+      steps.push({ typed: skill, options: texts.length, picked: texts[index] });
+    } else {
+      steps.push({ typed: skill, options: texts.length, picked: texts[index], why: "the pill never appeared" });
+    }
   }
+
+  await closeListbox(el);
 
   trace.push({
     label: "Skills",
@@ -2664,21 +2713,20 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
     got: added.join(", ") || null,
     why: [
       added.length ? `${added.length} added` : "none added",
-      refused.length ? `${refused.length} refused` : "",
       ranOut ? "then the fill ran out of time" : "",
-    ]
-      .filter(Boolean)
-      .join(", "),
-    refused: refused.slice(0, 4),
+    ].filter(Boolean).join(", "),
+    // Every attempt, with what came back. "None of them were on the list" was a
+    // guess reported as a finding for three rounds running; this is the record
+    // that would have said so.
+    steps: steps.slice(0, 6),
+    openedBy: opened.how ?? null,
+    onScreen: added.length ? null : whatIsOpen(el),
   });
 
   if (!added.length) return false;
   filled.push({
     label: "Skills",
     value: added.join(", "),
-    // Counted against the pills on screen, not against what we think we did:
-    // a multi-select that quietly drops one is exactly the failure the single
-    // -value path had to learn to catch.
     holds: () => nearbyPills(el).length >= added.length,
   });
   if (onProgress) onProgress({ el, label: "Skills", value: `${added.length} added` });
