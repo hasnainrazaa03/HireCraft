@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.skills-give-up-early";
+const BUILD = "2026-08-27.dates-are-typed";
 
 /**
  * When the current fill has to stop.
@@ -1099,8 +1099,17 @@ function committed(el, node, chosen) {
  * A field that reformats what it was given (a phone mask, a trimmed URL) counts
  * as filled and says what it now holds. Only an empty field is a failure.
  */
-async function setAndVerify(el, value) {
-  setValue(el, value);
+async function setAndVerify(el, value, { type = false } = {}) {
+  if (type) {
+    await typeText(el, value);
+    // The commit. A widget that builds its own model from keystrokes usually
+    // finalises it when the box is left — and leaving it is what a person does
+    // next anyway, since the following segment is the next thing they fill.
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+    el.blur?.();
+  } else {
+    setValue(el, value);
+  }
   await pause(30); // a controlled component re-renders on the next tick
   const now = String(el.value ?? "").trim();
   if (!now) return { ok: false, why: "the field discarded the value" };
@@ -2249,7 +2258,18 @@ async function applyTo(el, field, value, profile, widget) {
     // and reported all four as unfillable.
     const inner = isTag(el, "SELECT") ? null : typeableIn(el, el);
     if (inner?.length === 1 && !optionNodes(namedListbox(el)).length) {
-      return setAndVerify(inner[0], forBox(inner[0], field, value));
+      // Typed rather than assigned. This path is reached by a widget wrapping a
+      // single box, which so far means a date segment — and Workday's showed
+      // "05/2026" while the form beneath it said "The field From is required
+      // and must have a value". The text was in the DOM and the widget's own
+      // model had never heard of it: it builds that model from keystrokes, and
+      // a value written straight in arrives without any.
+      //
+      // Nothing snapped back, which is what said this was not the usual
+      // controlled-component problem. A React input rejecting a write puts its
+      // old value back; this one kept the text and disbelieved it, which looks
+      // like success from every angle except the one that counts.
+      return setAndVerify(inner[0], forBox(inner[0], field, value), { type: true });
     }
     const result = await chooseFromCombobox(
       el, value, field.kind, field.unit, field.context?.(profile)

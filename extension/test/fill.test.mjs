@@ -1970,3 +1970,48 @@ test("a multi-select is filled without being shut between values", async () => {
   assert.ok(row_.steps.some((s) => s.typed === "Rust" && /not on the list|no suggestions/.test(s.why)));
   assert.equal(escapes.length, 1, "put away once at the end, not after every value");
 });
+
+test("a date segment is typed into, because it disbelieves what it is handed", async () => {
+  // The report said filled and the box showed 05/2026, and Workday said "The
+  // field From is required and must have a value" underneath it. The text was
+  // in the DOM and the widget's own model had never heard of it: it builds that
+  // model from keystrokes, and a value written straight in arrives without any.
+  //
+  // Nothing snapped back, which is what said this was not the usual
+  // controlled-component problem. A React input rejecting a write puts its old
+  // value back; this one kept the text and disbelieved it.
+  const keys = [];
+  let blurred = false;
+  const seg = {
+    tagName: "INPUT", id: "workExperience-8--startDate-dateSectionMonth-input",
+    className: "", value: "", disabled: false, readOnly: false,
+    getAttribute: (n) => (n === "aria-label" ? "Month" : null),
+    hasAttribute: () => false, getBoundingClientRect: rect(40, 30),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: (e) => {
+      if (e.type === "keydown") keys.push(e.key);
+      if (e.type === "blur") blurred = true;
+    },
+    focus() {}, blur() {},
+  };
+  seg.parentElement = {
+    tagName: "DIV", className: "", id: "", textContent: "From* MM / YYYY",
+    getAttribute: () => null, querySelector: () => null, querySelectorAll: () => [],
+    parentElement: null,
+  };
+
+  const { window } = installWorkday();
+  const typed = await window.HIRECRAFT_FILL.setAndVerify(seg, "05", { type: true });
+
+  assert.equal(typed.ok, true);
+  assert.equal(seg.value, "05");
+  assert.deepEqual(keys, ["0", "5"], "one keystroke per character");
+  assert.equal(blurred, true, "and left, which is when such a widget commits");
+
+  // The ordinary path stays a straight assignment — a six-hundred-character
+  // role description typed one key at a time would take thirteen seconds.
+  keys.length = 0;
+  const plain = { ...seg, value: "" };
+  await window.HIRECRAFT_FILL.setAndVerify(plain, "Sunbase Data");
+  assert.deepEqual(keys, [], "nothing is typed when nothing asked for typing");
+});
