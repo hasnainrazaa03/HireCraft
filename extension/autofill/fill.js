@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.skills-in-one-session";
+const BUILD = "2026-08-27.skills-give-up-early";
 
 /**
  * When the current fill has to stop.
@@ -2644,6 +2644,14 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
 
   for (const skill of skills) {
     if (added.length >= 12 || steps.length >= 14) break;
+    // A box that answered nothing to the first three queries is not going to
+    // answer the fourth. Twenty attempts at a field that cannot be driven costs
+    // twenty seconds of every fill on this site and tells nobody anything the
+    // first three did not.
+    if (!added.length && steps.length >= 3 && steps.every((s) => s.options === 0)) {
+      steps.push({ typed: "…", options: 0, why: "gave up after three silent queries" });
+      break;
+    }
     if (outOfTime()) {
       ranOut = true;
       break;
