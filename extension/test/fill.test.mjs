@@ -1751,3 +1751,60 @@ test("a job block's questions are read from the job list, not the main one", () 
   const asForm = oneEach(rows, window.HIRECRAFT_FIELDS);
   assert.deepEqual([...asForm.keys()], ["location"]);
 });
+
+test("once a section holds a block, its Add Another is still found", () => {
+  // The heading rule works while the heading is still in front of the button.
+  // Once a section holds a block the button moves inside it and reads "Add
+  // Another" — so the second and third jobs on a résumé were never added, and
+  // the report said nothing at all, because returning false is silent.
+  //
+  // The block names its own section: its text starts "Work Experience 1 Delete
+  // Job Title…". So the fallback is the nearest ancestor that says which
+  // section this is.
+  const window = {};
+  const mk = (tag, text, extra = {}) => ({
+    tagName: tag.toUpperCase(), id: "", className: "", innerText: text, textContent: text,
+    getAttribute: () => null, hasAttribute: () => false,
+    getBoundingClientRect: rect(120, 40), closest: () => null,
+    querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, click() {}, parentElement: null, ...extra,
+  });
+
+  // One block per section, each with its own Add Another inside it — and the
+  // page heading is now "My Experience", which names neither section.
+  const jobAdd = mk("button", "Add Another");
+  const eduAdd = mk("button", "Add Another");
+  const jobBlock = mk("div", "Work Experience 1 Delete Job Title* Company* Location");
+  const eduBlock = mk("div", "Education 1 Delete School or University* Degree*");
+  const step = mk("div", "My Experience Work Experience 1 ... Education 1 ...");
+  jobAdd.parentElement = jobBlock;
+  eduAdd.parentElement = eduBlock;
+  jobBlock.parentElement = step;
+  eduBlock.parentElement = step;
+
+  const nodes = [mk("h3", "My Experience"), jobAdd, eduAdd];
+  const globals = {
+    window,
+    document: {
+      querySelectorAll: (sel) => (/h1|heading|button/.test(sel) ? nodes : []),
+      querySelector: () => null, getElementById: () => null,
+    },
+    CSS: { escape: (x) => x },
+    Event: class { constructor(t) { this.type = t; } },
+    MouseEvent: class { constructor(t) { this.type = t; } },
+    KeyboardEvent: class { constructor(t) { this.type = t; } },
+    HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
+    DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
+    setTimeout,
+  };
+  for (const file of ["autofill/options.js", "autofill/fields.js", "autofill/fill.js"]) {
+    new Function(...Object.keys(globals), read(file))(...Object.values(globals));
+  }
+  const { sectionAddButton } = window.HIRECRAFT_FILL;
+
+  assert.equal(sectionAddButton(/\bwork\s*experience\b/), jobAdd, "the job section's own button");
+  assert.equal(sectionAddButton(/\b(education|school|degree)\b/), eduAdd, "and education's own");
+  // Nearest, not any: the container holding the whole step names both sections,
+  // and reaching that far would offer Education's button for a job.
+  assert.equal(sectionAddButton(/\bcertifications?\b/), null, "a section with no button gets none");
+});

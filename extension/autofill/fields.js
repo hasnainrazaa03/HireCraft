@@ -672,7 +672,7 @@ const GROUPS = [
   {
     id: "experience",
     title: "Work experience",
-    keys: EXPERIENCE_FIELDS.map((f) => f.key).concat("skills", "resume"),
+    keys: EXPERIENCE_FIELDS.map((f) => f.key).concat("skills", "resume", "web_url"),
   },
   {
     id: "details",
@@ -709,10 +709,28 @@ function groupIdFor(label) {
   return GROUPS.find((g) => g.keys.includes(key))?.id || "details";
 }
 
+/**
+ * The questions inside one website block.
+ *
+ * Same reasoning as the experience list: a page is full of things called "URL"
+ * and "Link", and a pattern loose enough to catch this one inside its own block
+ * would answer several others outside it. Nothing reads this except the code
+ * filling a block it has just created.
+ */
+const WEBSITE_FIELDS = [
+  {
+    key: "web_url",
+    label: "Website",
+    from: (e) => e.url,
+    match: [/^url$/, /web\s*address/, /^website$/, /website\s*url/, /^link$/],
+  },
+];
+
 // Attached to window so the content script can read them; MV3 content scripts
 // share one scope per frame but are not modules.
 window.HIRECRAFT_FIELDS = FIELDS;
 window.HIRECRAFT_EXPERIENCE_FIELDS = EXPERIENCE_FIELDS;
+window.HIRECRAFT_WEBSITE_FIELDS = WEBSITE_FIELDS;
 window.HIRECRAFT_GROUPS = GROUPS;
 window.HIRECRAFT_GROUP_FOR = groupIdFor;
 window.HIRECRAFT_SKIP = SKIP;

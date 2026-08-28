@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.panel-redesign";
+const BUILD = "2026-08-27.more-blocks-and-dotted-degrees";
 
 /**
  * When the current fill has to stop.
@@ -566,12 +566,56 @@ function visibleListboxes() {
     if (optionNodes(node).length) out.push(node);
   };
   for (const node of document.querySelectorAll('[role="listbox"]')) consider(node);
-  // Not every library marks the container; some only mark the rows.
-  for (const option of document.querySelectorAll('[role="option"]')) {
+  // Not every library marks the container; some only mark the rows. And some
+  // mark neither: Workday names its suggestion rows with a data-automation-id
+  // and no ARIA at all, so twenty skills in a row reported "the dropdown never
+  // opened" about a list that was open on screen the whole time.
+  for (const option of document.querySelectorAll(OPTION_ROWS)) {
     const box = option.parentElement;
     if (box && !seen.has(box)) consider(box);
   }
   return out;
+}
+
+/**
+ * What counts as a row in an option list.
+ *
+ * The role is the durable signal and stays first. The rest are the marks used
+ * by libraries that expose no role — kept explicit rather than widened to "any
+ * list item", because a page is full of <li> elements that are not choices.
+ */
+const OPTION_ROWS =
+  '[role="option"],[data-automation-id="promptOption"],[data-automation-id="promptLeafNode"]';
+
+/**
+ * What this control is showing, when we have concluded it is showing nothing.
+ *
+ * Only built on failure. A report that says "the dropdown never opened" is
+ * making a claim about the page, and the cheapest way to check that claim next
+ * time is to have counted what was actually there.
+ */
+function whatIsOpen(el) {
+  const count = (sel) => {
+    try {
+      return document.querySelectorAll(sel).length;
+    } catch {
+      return -1;
+    }
+  };
+  return {
+    expanded: el.getAttribute?.("aria-expanded") ?? null,
+    controls: el.getAttribute?.("aria-controls") ?? null,
+    listboxes: count('[role="listbox"]'),
+    options: count('[role="option"]'),
+    promptOptions: count('[data-automation-id="promptOption"]'),
+    menuItems: count('[data-automation-id="menuItem"]'),
+    // Anything freshly on screen that looks like a popup, named by class, for
+    // the case where none of the above is how this page marks one.
+    popups: Array.from(document.querySelectorAll("[class*='popup'],[class*='Popup'],[class*='menu'],[class*='Menu']") || [])
+      .filter((n) => (n.getBoundingClientRect?.()?.height ?? 0) > 0)
+      .slice(0, 3)
+      .map((n) => pathTo(n)),
+  };
 }
 
 /** A short, readable path to an element — for the diagnostics dump. */
@@ -670,7 +714,7 @@ function optionNodes(box) {
   if (!box) return [];
   // Prefer the explicit role. Falling back to <li> as well would double-count
   // when a library marks up both, and the duplicate index picks the wrong row.
-  const byRole = Array.from(box.querySelectorAll('[role="option"]'));
+  const byRole = Array.from(box.querySelectorAll(OPTION_ROWS));
   const nodes = byRole.length ? byRole : Array.from(box.querySelectorAll("li"));
   return nodes.filter((node) => {
     if (!(node.textContent || "").trim()) return false;
@@ -901,6 +945,11 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
       why: typing ? "the dropdown never opened" : "the dropdown opened onto nothing we could type into",
       listbox: null,
       probes,
+      // What the page did have on screen at the moment we gave up. "Never
+      // opened" is a claim about the page, and twenty of them in a row about a
+      // list that was open the whole time is the kind of confident wrong answer
+      // that costs a round.
+      onScreen: whatIsOpen(el),
     };
   }
 
@@ -1401,6 +1450,41 @@ async function fillForm(
         });
         break;
       }
+    }
+  }
+
+  // Websites, which a form asks for as a section rather than as a box.
+  //
+  // The catalogue's `website` field answers a labelled box wherever there is
+  // one. Workday has no box: it has a heading, an Add button, and nothing at
+  // all until the button is pressed — so a URL that has been stored all along
+  // simply never appeared on the form.
+  const urls = [profile.website, profile.portfolio, profile.github]
+    .map((u) => String(u || "").trim())
+    .filter(Boolean)
+    .filter((u, i, all) => all.indexOf(u) === i)
+    .slice(0, 2);
+  for (const [index, url] of urls.entries()) {
+    if (outOfTime()) break;
+    const button = sectionAddButton(/\bweb\s*sites?\b|\bpersonal\s*sites?\b/);
+    if (!button) break;
+    try {
+      await addBlock({
+        button,
+        what: `${ordinal[index]} website`,
+        nth: ordinal[index] || `${index + 1}th`,
+        stand_in: { url },
+        fields: window.HIRECRAFT_WEBSITE_FIELDS,
+        keys: null,
+        trace, filled, missing, onProgress, stepDelay,
+      });
+    } catch (error) {
+      trace.push({
+        label: `${ordinal[index]} website`,
+        outcome: "failed",
+        why: `adding it threw: ${error?.message || error}`,
+      });
+      break;
     }
   }
 
@@ -2148,6 +2232,7 @@ function addEducationButton() {
  * anything named.
  */
 function sectionAddButton(wanted) {
+  const found = [];
   let section = "";
   for (const node of document.querySelectorAll(
     "h1,h2,h3,h4,h5,h6,legend,[role='heading'],button,[role='button']"
@@ -2167,8 +2252,55 @@ function sectionAddButton(wanted) {
     // The heading and the button's own words together, so both "Education" over
     // "Add" and a bare "+ Add Another Education" are answered by one rule.
     if (wanted.test(normalise(`${section} ${text}`))) return node;
+    found.push({ node, section });
   }
-  return null;
+
+  // Nothing named it. The heading rule only works while the page still has the
+  // heading in front of the button, and once a section holds a block the button
+  // moves inside it and reads "Add Another" — so the second and third jobs on a
+  // résumé were never offered anywhere, silently, because the button that would
+  // have added them was no longer downstream of anything called Work Experience.
+  //
+  // The block itself says which section it is, though: its own text starts "Work
+  // Experience 1 Delete Job Title…". So the fallback is the nearest ancestor
+  // that names the section, and nearest is the point — the container holding the
+  // whole step names every section on it, and reaching that far would offer
+  // Education's button for a job.
+  let best = null;
+  for (const { node } of found) {
+    let up = node.parentElement;
+    for (let depth = 0; up && depth < 5; depth += 1, up = up.parentElement) {
+      const text = (up.textContent || "").slice(0, 220);
+      if (!wanted.test(normalise(text))) continue;
+      if (!best || depth < best.depth) best = { node, depth };
+      break;
+    }
+  }
+  return best?.node || null;
+}
+
+/**
+ * Every Add-like button on the page, with what is around it.
+ *
+ * Purely diagnostic, and only built when a section could not be found — which
+ * is exactly when the interesting question is what the page *does* offer.
+ */
+function addLikeButtons() {
+  const out = [];
+  for (const node of document.querySelectorAll("button,[role='button']") || []) {
+    if (isOurs(node)) continue;
+    const text = (node.innerText || "").replace(/\s+/g, " ").trim();
+    if (!text || text.length > 30 || !/^\+?\s*add\b/i.test(text)) continue;
+    out.push({
+      text,
+      at: pathTo(node),
+      // What the block around it calls itself, which is the thing the match
+      // failed on.
+      near: (node.parentElement?.parentElement?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 90),
+    });
+    if (out.length >= 6) break;
+  }
+  return out;
 }
 
 /** How many blocks of this kind the form already holds. */
@@ -2234,7 +2366,19 @@ async function addEducation(entry, { trace, filled, missing, onProgress, stepDel
  */
 async function addExperience(entry, { trace, filled, missing, onProgress, stepDelay, nth }) {
   const button = sectionAddButton(/\b(work\s*experience|employment|job\s*history)\b/);
-  if (!button) return false;
+  if (!button) {
+    // Said out loud. Two of three jobs went unadded and left nothing anywhere in
+    // the report — not filled, not missing, not even a failed line — because
+    // returning false is silent and a silent skip is the one outcome that gives
+    // the next round nothing to work from.
+    trace.push({
+      label: `Add ${nth} job`,
+      outcome: "failed",
+      why: "no Add button belongs to a work-experience section on this page",
+      buttons: addLikeButtons(),
+    });
+    return false;
+  }
 
   return addBlock({
     button,
@@ -2451,7 +2595,7 @@ async function fillSkills(skills, { trace, filled, onProgress }) {
     // sentence for the lot said "none of them were on this employer's list" for
     // a run that had simply run out of time before trying any — a guess dressed
     // as a finding, and the sort that sends the next round to the wrong place.
-    else refused.push({ skill, why: result.why, listbox: result.listbox ?? null });
+    else refused.push({ skill, why: result.why, listbox: result.listbox ?? null, onScreen: result.onScreen ?? null });
   }
 
   trace.push({

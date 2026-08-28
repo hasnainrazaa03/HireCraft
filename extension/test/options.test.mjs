@@ -421,3 +421,32 @@ test("a state that isn't on the list is refused, not approximated", () => {
   assert.equal(index, -1);
   assert.match(why, /no option means/);
 });
+
+test("a degree written only as a dotted abbreviation still finds its level", () => {
+  // The one from the form: "B.E. in Aerospace Engineering" against Workday's
+  // list, which offers "Bachelor's Degree". Nothing in "be in aerospace
+  // engineering" says bachelor, so the second education block was left with its
+  // required Degree box empty.
+  const OFFERED = [
+    "Select One", "High School Diploma/GED", "Associate's Degree",
+    "Bachelor's Degree", "Master's Degree", "Doctorate Degree",
+  ];
+  const pick = (want) => OFFERED[chooseOption(want, OFFERED, { kind: "degree" }).index];
+
+  assert.equal(pick("B.E. in Aerospace Engineering"), "Bachelor's Degree");
+  assert.equal(pick("B.Tech"), "Bachelor's Degree");
+  assert.equal(pick("M.S. in Computer Science"), "Master's Degree");
+  assert.equal(pick("M.Tech"), "Master's Degree");
+});
+
+test("a dotted abbreviation inside a longer one is not read on its own", () => {
+  // "M.B.A." contains "B.A.", and the first version of the dotted rule read a
+  // Master of Business Administration as a bachelor's — on the very test
+  // written to stop degrees collapsing into each other.
+  assert.equal(degreeLevel("Master of Business Administration (M.B.A.)"), "mba");
+  assert.equal(degreeLevel("M.B.A."), "mba");
+  // And the word "be" is the commonest verb in English, which is why the dotted
+  // patterns require the dot and the spelled-out list is tried first.
+  assert.equal(degreeLevel("Degree to be awarded"), null);
+  assert.equal(degreeLevel("Select One"), null);
+});

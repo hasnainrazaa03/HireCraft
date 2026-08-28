@@ -72,11 +72,53 @@ const DEGREE_LEVELS = [
  */
 const BROADER = { mba: "master", jd: "doctorate", md: "doctorate" };
 
+/**
+ * Abbreviations that are only safe to read with their dots still on.
+ *
+ * "B.E." is a Bachelor of Engineering, and the résumé says exactly that — but
+ * normText drops the dots, and `\bbe\b` against the result would read "Degree
+ * to be awarded" as a bachelor's. So these are matched before normalising and
+ * every pattern requires a literal dot, which prose does not have.
+ *
+ * Left out of the list below rather than added to it, because that list is
+ * matched against the employer's option text too, where the words are spelled
+ * out and these would only add risk.
+ */
+/**
+ * Each pattern is bounded on both sides by "not a letter and not a dot".
+ *
+ * Without the left bound, `b\.\s*a\.?` finds "B.A." inside "M.B.A." and reads a
+ * Master of Business Administration as a bachelor's — which the first version
+ * of this did, on the very test written to stop degrees collapsing into each
+ * other.
+ */
+const EDGE = "(?<![A-Za-z.])";
+const DOTTED_LEVELS = [
+  [new RegExp(`${EDGE}b\\.\\s*e\\.?(?![A-Za-z])`, "i"), "bachelor"],
+  [new RegExp(`${EDGE}b\\.\\s*tech\\.?(?![A-Za-z])`, "i"), "bachelor"],
+  [new RegExp(`${EDGE}b\\.\\s*sc?\\.?(?![A-Za-z])`, "i"), "bachelor"],
+  [new RegExp(`${EDGE}b\\.\\s*a\\.?(?![A-Za-z])`, "i"), "bachelor"],
+  [new RegExp(`${EDGE}b\\.\\s*com\\.?(?![A-Za-z])`, "i"), "bachelor"],
+  [new RegExp(`${EDGE}m\\.\\s*e\\.?(?![A-Za-z])`, "i"), "master"],
+  [new RegExp(`${EDGE}m\\.\\s*tech\\.?(?![A-Za-z])`, "i"), "master"],
+  [new RegExp(`${EDGE}m\\.\\s*sc?\\.?(?![A-Za-z])`, "i"), "master"],
+  [new RegExp(`${EDGE}m\\.\\s*a\\.?(?![A-Za-z])`, "i"), "master"],
+  [new RegExp(`${EDGE}m\\.\\s*com\\.?(?![A-Za-z])`, "i"), "master"],
+];
+
 function degreeLevel(text) {
   const t = normText(text);
   if (!t) return null;
+  // The spelled-out list first. It is the one matched against the employer's
+  // own option text, where the words are written out, and running it first
+  // means the dotted patterns below are only ever reached by a string that
+  // named no degree in words — which is what a résumé's "B.E." is.
   for (const [level, patterns] of DEGREE_LEVELS) {
     if (patterns.some((re) => re.test(t))) return level;
+  }
+  const raw = String(text || "");
+  for (const [pattern, level] of DOTTED_LEVELS) {
+    if (pattern.test(raw)) return level;
   }
   return null;
 }
