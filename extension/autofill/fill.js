@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-08-27.more-blocks-and-dotted-degrees";
+const BUILD = "2026-08-27.skills-are-typed-not-assigned";
 
 /**
  * When the current fill has to stop.
@@ -843,7 +843,64 @@ async function openListbox(el) {
       await pause(70);
     }
   }
+
+  // The little icon beside the box, which on some widgets is the only thing
+  // that opens the menu. Workday's skills field carries one — `promptIcon` in
+  // its own markup — and clicking the input itself does nothing: twenty skills
+  // in a row reported a dropdown that never opened, and the counters taken at
+  // the moment of giving up showed no menu had appeared anywhere on the page.
+  const icon = nearbyPromptIcon(el);
+  if (icon) {
+    clickLike(icon);
+    for (let tries = 0; tries < 10; tries += 1) {
+      const box = mine();
+      if (box || isOpen()) return { box, find: mine };
+      await pause(70);
+    }
+  }
   return { box: mine(), find: mine };
+}
+
+/** The affordance beside a box that opens its menu, if it has one. */
+function nearbyPromptIcon(el) {
+  let node = el.parentElement;
+  for (let depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+    const icon = node.querySelector?.(
+      "[data-automation-id='promptIcon'],[class*='menu-icon'],[class*='promptIcon'],[class*='indicator']"
+    );
+    if (icon && (icon.getBoundingClientRect?.()?.width ?? 0) > 0) return icon;
+  }
+  return null;
+}
+
+/**
+ * Type, rather than assign.
+ *
+ * `setValue` puts the whole string in at once and announces it, which is right
+ * for a box that holds an answer and wrong for one that runs a search. A field
+ * that builds its query from keystrokes sees a single synthetic keydown
+ * carrying the last character of the word and searches for that; a field that
+ * reads its own value sees the value either way. Going character by character
+ * satisfies both, and the difference between them is invisible from out here.
+ */
+async function typeText(el, text) {
+  setValue(el, "");
+  let so_far = "";
+  for (const ch of String(text)) {
+    so_far += ch;
+    try {
+      el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: ch }));
+    } catch {
+      /* no KeyboardEvent in a bare test DOM */
+    }
+    setValue(el, so_far);
+    try {
+      el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: ch }));
+    } catch {
+      /* same */
+    }
+    await pause(22);
+  }
 }
 
 /**
@@ -915,8 +972,7 @@ async function chooseFromComboboxInner(el, value, kind, unit, context) {
   if ((!nodes.length || nodes.length > 60) && typing) {
     for (const probe of probesFor(value, kind)) {
       if (outOfTime()) break;
-      setValue(typing, probe);
-      pressKey(typing, probe.slice(-1) || "a");
+      await typeText(typing, probe);
       // Poll rather than wait once: these lists are fetched, and a single
       // 180ms guess was shorter than the round trip on every one of them.
       for (let tries = 0; tries < 12 && !outOfTime(); tries += 1) {
@@ -2759,6 +2815,8 @@ window.HIRECRAFT_FILL = {
   // whose accessible name carries its own prompt.
   wantsDigits,
   asDigits,
+  typeText,
+  nearbyPromptIcon,
   withoutPrompt,
   oneEach,
 };

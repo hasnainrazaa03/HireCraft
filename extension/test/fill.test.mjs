@@ -109,7 +109,9 @@ function install(controls) {
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {},
     HTMLTextAreaElement: class {},
     HTMLSelectElement: class {},
@@ -621,7 +623,9 @@ function installRadios(group) {
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {},
     HTMLTextAreaElement: class {},
     HTMLSelectElement: class {},
@@ -814,7 +818,9 @@ test("a yes/no asked with buttons is answered", async () => {
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -886,7 +892,9 @@ test("a second education block is filled from the next degree", async () => {
     window, document, CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -962,7 +970,9 @@ test("a second education block is not added when the form already has one", asyn
     window, document, CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -1244,7 +1254,9 @@ function installWorkday({ text = "Select One", value = "" } = {}) {
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -1379,7 +1391,9 @@ test("a list that never named itself is still found after typing", async () => {
     window, document, CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -1441,7 +1455,9 @@ function installUploads(boxes) {
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -1535,7 +1551,9 @@ function installSections(order) {
     CSS: { escape: (s) => s },
     Event: class { constructor(type) { this.type = type; } },
     MouseEvent: class { constructor(type) { this.type = type; } },
-    KeyboardEvent: class { constructor(type) { this.type = type; } },
+    // Carries its init dict, because the engine reads event.key — a stub that
+    // drops it reports "no keystrokes" for code that sent seven.
+    KeyboardEvent: class { constructor(type, init) { this.type = type; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -1792,7 +1810,7 @@ test("once a section holds a block, its Add Another is still found", () => {
     CSS: { escape: (x) => x },
     Event: class { constructor(t) { this.type = t; } },
     MouseEvent: class { constructor(t) { this.type = t; } },
-    KeyboardEvent: class { constructor(t) { this.type = t; } },
+    KeyboardEvent: class { constructor(t, init) { this.type = t; Object.assign(this, init); } },
     HTMLInputElement: class {}, HTMLTextAreaElement: class {}, HTMLSelectElement: class {},
     DataTransfer: class { constructor() { this.items = { add() {} }; this.files = []; } },
     setTimeout,
@@ -1807,4 +1825,62 @@ test("once a section holds a block, its Add Another is still found", () => {
   // Nearest, not any: the container holding the whole step names both sections,
   // and reaching that far would offer Education's button for a job.
   assert.equal(sectionAddButton(/\bcertifications?\b/), null, "a section with no button gets none");
+});
+
+test("a search box is typed into, not assigned to", () => {
+  // setValue puts the whole string in at once, which is right for a box that
+  // holds an answer and wrong for one that runs a search. A field that builds
+  // its query from keystrokes sees one synthetic keydown carrying the last
+  // letter of the word and searches for that.
+  const keys = [];
+  const values = [];
+  const box = {
+    tagName: "INPUT", id: "", className: "", value: "",
+    getAttribute: () => null, hasAttribute: () => false,
+    getBoundingClientRect: rect(200, 30), closest: () => null,
+    querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: (e) => {
+      if (e.type === "keydown") keys.push(e.key);
+      if (e.type === "input") values.push(box.value);
+    },
+    focus() {},
+  };
+  const { window } = installWorkday();
+  return window.HIRECRAFT_FILL.typeText(box, "PyTorch").then(() => {
+    assert.equal(keys.join(""), "PyTorch", "one keystroke per character");
+    assert.deepEqual(
+      values.slice(-3),
+      ["PyTor", "PyTorc", "PyTorch"],
+      "and the value grows under them, for a field that reads the value instead"
+    );
+  });
+});
+
+test("the icon beside a box counts as a way to open it", () => {
+  // Workday's skills field opens from its promptIcon and not from the input:
+  // clicking the box did nothing, and twenty skills in a row reported a
+  // dropdown that never opened while no menu existed anywhere on the page.
+  const icon = {
+    tagName: "SPAN", className: "menu-icon css-gvnnq4", id: "",
+    getAttribute: () => null, getBoundingClientRect: rect(16, 16),
+    querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, click() {},
+  };
+  const shell = {
+    tagName: "DIV", className: "", id: "", getAttribute: () => null,
+    querySelector: (sel) => (/menu-icon|promptIcon|indicator/.test(sel) ? icon : null),
+    querySelectorAll: () => [], parentElement: null,
+  };
+  const input = {
+    tagName: "INPUT", id: "skills--skills", className: "", value: "",
+    getAttribute: () => null, hasAttribute: () => false,
+    getBoundingClientRect: rect(300, 34), closest: () => null,
+    querySelector: () => null, querySelectorAll: () => [],
+    dispatchEvent: () => {}, focus() {}, parentElement: shell,
+  };
+  const { window } = installWorkday();
+  assert.equal(window.HIRECRAFT_FILL.nearbyPromptIcon(input), icon);
+  // An icon that is not on screen is not an affordance.
+  icon.getBoundingClientRect = rect(0, 0);
+  assert.equal(window.HIRECRAFT_FILL.nearbyPromptIcon(input), null);
 });
