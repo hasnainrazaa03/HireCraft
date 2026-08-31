@@ -66,6 +66,10 @@ greenhouse:
   - modernhealth
   - truelayer
   - imbue
+  # Added 2026-08-31. Probed live; the rest of the large-employer candidates
+  # tried that day answered 404 and are not listed, since an unreachable token
+  # is a silent zero every run rather than an error anybody sees.
+  - linkedin
 
 lever:
   - palantir
@@ -75,6 +79,11 @@ lever:
   # Probed 2026-08-23. Lever's public postings API rejected every other
   # candidate tried, so the list stays short by evidence rather than by choice.
   - ro
+  # Added 2026-08-31. Match Group is the only new Lever board that answered —
+  # and the check that found it also found that Lever returns
+  # {"ok": false, "error": ...} for an unknown token, which a naive length
+  # count reads as two postings. Five dead boards nearly went in on that.
+  - matchgroup
 
 ashby:
   - openai
@@ -121,6 +130,9 @@ ashby:
   - greptile
   - runway
   - tldraw
+  # Added 2026-08-31, probed live.
+  - clickhouse
+  - temporal
 
 workday:
   - {tenant: nvidia,     host: wd5,  site: NVIDIAExternalCareerSite}
@@ -140,6 +152,21 @@ workday:
   - {tenant: medtronic,  host: wd1,  site: MedtronicCareers}
   - {tenant: intel,      host: wd1,  site: External}
   - {tenant: target,     host: wd5,  site: targetcareers}
+  # Added 2026-08-31. Every one probed live against the cxs API; the tenants
+  # that answered 404 (qualcomm, amd, cisco, dell, visa, intuit, servicenow,
+  # ibm, uber and a dozen more) are left out rather than guessed at — a wrong
+  # site name is indistinguishable from a company with no jobs.
+  - {tenant: micron,     host: wd1,  site: External}
+  - {tenant: kla,        host: wd1,  site: Search}
+  - {tenant: hp,         host: wd5,  site: ExternalCareerSite}
+  - {tenant: mastercard, host: wd1,  site: CorporateCareers}
+  - {tenant: marvell,    host: wd1,  site: MarvellCareers}
+  - {tenant: broadcom,   host: wd1,  site: External_Career}
+  - {tenant: ebay,       host: wd5,  site: apply}
+  - {tenant: zoom,       host: wd5,  site: Zoom}
+  - {tenant: blueorigin, host: wd5,  site: BlueOrigin}
+  - {tenant: stryker,    host: wd1,  site: StrykerCareers}
+  - {tenant: cvshealth,  host: wd1,  site: CVS_Health_Careers}
 
 # Aggregators (no config needed; toggle here)
 simplify_internships: true     # github.com/SimplifyJobs/Summer2027-Internships
