@@ -128,3 +128,54 @@ def test_nothing_applied_to_means_nothing_hidden(db, user):
     db.commit()
     assert _applied_keys(db, user.id) == set()
     assert _is_applied(row, set()) is False
+
+
+def test_an_aggregator_copy_under_a_different_title_drops_out_too(db, user):
+    """The one that was still on screen after the first version of this.
+
+    Simplify lists the Allen Control Systems role as "Junior Computer Vision &
+    Machine Learning Engineer" at .../<uuid>/application?embed=true; SpeedyApply
+    lists the same posting as "Computer Vision & Machine Learning - Associate"
+    at .../<uuid>. Different title, different URL, one Ashby uuid — so neither
+    the exact-URL nor the exact-title test caught the second one.
+    """
+    from app.api.routes.jobs import _applied_keys, _is_applied
+
+    uuid = "cfb348d0-ab31-4fa5-9bd5-def1de764ca9"
+    row = _row(
+        user,
+        company="Allen Control Systems",
+        title="Computer Vision & Machine Learning - Associate",
+        url=f"https://jobs.ashbyhq.com/allen-control-systems/{uuid}",
+    )
+    db.add(row)
+    _tracked(
+        db, user,
+        company="Allen Control Systems",
+        title="Junior Computer Vision & Machine Learning Engineer",
+        url=f"https://jobs.ashbyhq.com/allen-control-systems/{uuid}/application?embed=true",
+    )
+
+    assert _is_applied(row, _applied_keys(db, user.id)) is True
+
+
+def test_another_posting_at_the_same_company_still_shows(db, user):
+    """Allen Control Systems has four roles in the feed. Applying to one must
+    not take the other three with it."""
+    from app.api.routes.jobs import _applied_keys, _is_applied
+
+    row = _row(
+        user,
+        company="Allen Control Systems",
+        title="Software Engineer - Robotics - Motion (New Grad)",
+        url="https://jobs.ashbyhq.com/allen-control-systems/4495957d-f4af-493d-ba92-2c7e72e618db",
+    )
+    db.add(row)
+    _tracked(
+        db, user,
+        company="Allen Control Systems",
+        title="Junior Computer Vision & Machine Learning Engineer",
+        url="https://jobs.ashbyhq.com/allen-control-systems/cfb348d0-ab31-4fa5-9bd5-def1de764ca9",
+    )
+
+    assert _is_applied(row, _applied_keys(db, user.id)) is False

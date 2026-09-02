@@ -144,6 +144,49 @@ def posting_key(url: str, fallback: str) -> str:
     return hashlib.sha1(canonical.encode()).hexdigest()[:24]
 
 
+#: How each board names a posting inside its own URL.
+#:
+#: The whole URL is not the identity. One Kyndryl requisition reaches the feed
+#: three times — /en-US/KyndrylProfessionalCareers/…_R-66739-2 from one
+#: aggregator, /KyndrylEarlyCareers/…_R-66739 from another, and the same path
+#: lowercased from a third — under three different titles. What does not vary is
+#: R-66739. Allen Control Systems arrives twice under one Ashby uuid, once with
+#: ?embed=true on the end.
+_IDENTITY = (
+    ("ashby", re.compile(r"ashbyhq\.com/([^/]+)/([0-9a-f-]{16,})", re.I)),
+    ("lever", re.compile(r"lever\.co/([^/]+)/([0-9a-f-]{16,})", re.I)),
+    # Greenhouse writes the same posting three ways: /<org>/jobs/<id>,
+    # ?gh_jid=<id>, and the embedded form job_app?for=<org>&token=<id>.
+    ("greenhouse", re.compile(r"greenhouse\.io/embed/job_app\?for=([^&]+)&token=(\d{6,})", re.I)),
+    ("greenhouse", re.compile(r"greenhouse\.io/(?:embed/)?([^/?]+)/jobs/(\d{6,})", re.I)),
+    ("greenhouse", re.compile(r"greenhouse\.io/([^/?]+)\b.*?[?&]gh_jid=(\d{6,})", re.I)),
+    ("workday", re.compile(r"([a-z0-9]+)\.wd\d+\.myworkdayjobs\.com/.*?_((?:JR|R-?)\d+)", re.I)),
+)
+
+#: A trailing "-1"/"-2" on a Workday requisition is which site it was posted to,
+#: not which job it is. Kyndryl's R-66739 and R-66739-2 are one role.
+_WORKDAY_INSTANCE = re.compile(r"-\d{1,2}$")
+
+
+def posting_identity(url: str) -> str:
+    """The board's own name for this posting, or "" when it has none.
+
+    Stronger than `posting_key`, which canonicalises a URL and so still tells
+    two spellings of one posting apart. This reaches for the requisition or job
+    id inside the URL — the one thing every source copying that posting has to
+    carry, because it is what the employer's own system calls it.
+    """
+    for board, pattern in _IDENTITY:
+        found = pattern.search(url or "")
+        if not found:
+            continue
+        org, ident = found.group(1).lower(), found.group(2).lower()
+        if board == "workday":
+            ident = _WORKDAY_INSTANCE.sub("", ident)
+        return f"{board}:{org}:{ident}"
+    return ""
+
+
 def persist(
     db,  # noqa: ANN001 - Session; typed loosely to avoid an import cycle
     user_id,  # noqa: ANN001 - uuid.UUID

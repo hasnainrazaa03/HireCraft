@@ -24,6 +24,7 @@ from app.models.scraped_job import ScrapedJob
 from app.schemas.jobsearch import JobSearchResult
 from app.schemas.resume import MasterResume
 from app.services import feature_flags
+from app.services.jobfeed import posting_identity
 from app.services.degrees import (
     GRADUATE_STATED,
     MASTERS_ELIGIBLE,
@@ -288,14 +289,24 @@ def _applied_keys(db: DbSession, user_id) -> set[str]:
     for url, company, title in rows:
         if url:
             keys.add(f"url:{url}")
+            # The board's own name for the posting, which is the only thing every
+            # source copying it has to carry. One Kyndryl requisition reached the
+            # feed three times — two aggregators and two spellings of the site
+            # name, under three different titles — and neither the URL nor the
+            # title matched across them. R-66739 did.
+            identity = posting_identity(url)
+            if identity:
+                keys.add(f"id:{identity}")
         if company and title:
             keys.add(f"role:{company.strip().lower()}|{title.strip().lower()}")
     return keys
 
 
 def _is_applied(row: ScrapedJob, keys: set[str]) -> bool:
+    identity = posting_identity(row.url or "")
     return (
         f"url:{row.url}" in keys
+        or (bool(identity) and f"id:{identity}" in keys)
         or f"role:{(row.company or '').strip().lower()}|{(row.title or '').strip().lower()}" in keys
     )
 
