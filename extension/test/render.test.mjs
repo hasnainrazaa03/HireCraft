@@ -427,9 +427,13 @@ test("readiness counts what was filled against what was asked", () => {
   Object.assign(window.__panel.state, { report: REPORT });
   render();
 
-  assert.ok(find(built, "Application readiness"));
-  assert.ok(find(built, "6 of 7 filled"), "the chip states both halves");
-  assert.ok(find(built, "1 required"), "and what will bounce the form is its own chip");
+  // Six filled, one required question still open — so seven things the form
+  // wants, six done. "6 of 6" beside "1 required" said full and not-done at
+  // once, which is the shape the ring used to have.
+  assert.ok(find(built, "Almost there"), "the headline says where this stands");
+  assert.ok(find(built, "6 filled"), "what went in");
+  assert.ok(find(built, "1 still required"), "and what will bounce the form");
+  assert.ok(find(built, "of 7"), "the ring counts the outstanding question into its total");
   assert.ok(find(built, "Needs your input"), "with the questions themselves in their own card");
 });
 

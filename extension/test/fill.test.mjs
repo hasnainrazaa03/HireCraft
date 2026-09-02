@@ -2113,3 +2113,37 @@ test("three questions in one wrapper get three different labels", () => {
   });
   assert.deepEqual(keys, ["authorized_to_work", "requires_sponsorship", "(skipped)"]);
 });
+
+test("a required dropdown that is not a form control still counts as a gap", () => {
+  // Phone Device Type is marked required on the page, was left empty, and
+  // appeared in no list at all — because gapDetails asks the document for
+  // inputs, selects and textareas, and Workday's dropdown is a <button>. Degree
+  // had been invisible the same way on every form before it.
+  const prompt = installWorkday({ text: "Select One" });
+  const { window, button } = prompt;
+  // The page marks it required in its accessible name, which is the only place
+  // Workday says so.
+  button.getAttribute = (n) =>
+    n === "aria-label" ? "Phone Device Type Select One Required"
+    : n === "aria-haspopup" ? "listbox" : null;
+  button.hasAttribute = (n) => ["aria-label", "aria-haspopup"].includes(n);
+
+  const { normalise, withoutPrompt, displayedValue } = window.HIRECRAFT_FILL;
+  // Empty, because "Select One" is the prompt rather than an answer.
+  assert.equal(displayedValue(button), "");
+  // Required, read off the same name.
+  assert.match(button.getAttribute("aria-label"), /\brequired\b/i);
+  // And the question survives having its prompt taken off, so the row reads as
+  // the question rather than as the widget's state.
+  assert.equal(withoutPrompt(normalise("Phone Device Type Select One Required")), "phone device type");
+});
+
+test("a phone type is answered, but only when there is a phone", () => {
+  const { window } = installWorkday();
+  const field = window.HIRECRAFT_FIELDS.find((f) => f.key === "phone_type");
+  assert.ok(field, "the form asks for it on every Workday application");
+  assert.equal(field.from({ phone: "(213) 994-5086" }), "Mobile");
+  // No number stored means no phone to have a type. A field that answers from
+  // nothing is how the string "undefined" reaches an application.
+  assert.equal(field.from({}), "");
+});

@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-09-02.workday-submissions-count";
+const PANEL_BUILD = "2026-09-02.required-dropdowns-are-visible";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -285,11 +285,20 @@ function renderPanel() {
   if (state.report) {
     const { filled, missing } = state.report;
     const gaps = state.report.required ?? [];
-    const total = filled.length + missing.length;
+    // What is still owed, counted once. A question can be both a field we could
+    // not fill and a required box the form will bounce on, and counting it
+    // twice would make the ring lie in the other direction.
+    const owed = new Set([...missing.map((m) => m.label), ...gaps]);
     const done = filled.length;
+    // The denominator is everything the form needs, not everything we managed.
+    // "7 of 7" in amber beside "2 required" said two contradictory things at
+    // once: full, and not done. Counting the outstanding questions into the
+    // total makes the ring agree with its own colour.
+    const total = done + owed.size;
+
     const ring = el("div", "hc-ring");
     const sweep = total ? Math.round((done / total) * 360) : 0;
-    const colour = gaps.length ? "#fbbf24" : "#4ade80";
+    const colour = owed.size ? "#fbbf24" : "#4ade80";
     ring.style.background = `conic-gradient(${colour} ${sweep}deg, rgba(255,255,255,0.07) ${sweep}deg)`;
 
     const inner = el("div", "hc-ring-in");
@@ -298,13 +307,21 @@ function renderPanel() {
     ring.append(inner);
 
     const readyBody = el("div", "hc-ready-body");
-    readyBody.append(el("div", "hc-ready-title", "Application readiness"));
+    readyBody.append(
+      el("div", "hc-ready-title", owed.size ? "Almost there" : "Ready to submit")
+    );
+    // The chips say what the ring cannot: which half is which. Neither repeats
+    // the ring's own numbers, which is what made the old pair read as noise.
     const chips = el("div", "hc-chips");
-    chips.append(el("span", "hc-chip hc-chip-good", `${done} of ${total} filled`));
+    chips.append(el("span", "hc-chip hc-chip-good", `${done} filled`));
     if (gaps.length) {
       chips.append(
-        el("span", "hc-chip hc-chip-warn", `${gaps.length} required`)
+        el("span", "hc-chip hc-chip-warn", `${gaps.length} still required`)
       );
+    }
+    const others = owed.size - gaps.length;
+    if (others > 0) {
+      chips.append(el("span", "hc-chip hc-chip-warn", `${others} left for you`));
     }
     readyBody.append(chips);
 

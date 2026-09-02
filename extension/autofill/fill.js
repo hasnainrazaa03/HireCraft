@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-09-02.workday-submissions-count";
+const BUILD = "2026-09-02.required-dropdowns-are-visible";
 
 /**
  * When the current fill has to stop.
@@ -2221,6 +2221,28 @@ function gapDetails() {
       empty = !displayedValue(el);
     }
     if (empty) gaps.push({ label: raw.replace(/[*✱]/g, "").trim().slice(0, 70), el });
+  }
+
+  // Dropdowns that are not form controls at all.
+  //
+  // The loop above asks the document for inputs, selects and textareas, and
+  // Workday's dropdown is a <button>. So every required Workday dropdown left
+  // empty was invisible here — Phone Device Type, and Degree before it, both
+  // marked required on the page and both absent from the one list that exists
+  // to catch exactly that before you press Submit.
+  for (const { el, raw, widget } of controls()) {
+    if (!widget && !isCombobox(el)) continue;
+    const label = raw.replace(/\s+/g, " ").trim();
+    if (!label) continue;
+    const required =
+      el.hasAttribute?.("required") ||
+      el.getAttribute?.("aria-required") === "true" ||
+      /[*✱]|\brequired\b/i.test(label);
+    if (!required || displayedValue(el)) continue;
+    gaps.push({
+      label: withoutPrompt(label.replace(/[*✱]/g, "").replace(/\brequired\b/i, "").trim()).slice(0, 70),
+      el,
+    });
   }
 
   // Questions asked as a row of choices, which the loop above cannot see. The

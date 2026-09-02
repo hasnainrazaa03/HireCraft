@@ -68,6 +68,23 @@ const FIELDS = [
     type: "tel",
   },
   {
+    // Required on every Workday form and answered by nothing, so it sat empty
+    // and — being a <button> rather than a control — did not even reach the
+    // list of required questions still open.
+    //
+    // A constant rather than a stored preference: the number above it is the
+    // one number a candidate gives an employer, and it is a mobile. Wrong for
+    // nobody in practice, and one dropdown to change if it ever is.
+    key: "phone_type",
+    label: "Phone type",
+    // Tied to the number rather than constant. No phone stored means no phone
+    // to have a type, and a field that answers from nothing is how the string
+    // "undefined" gets into somebody's application — which is what the test
+    // that caught this exists to prevent.
+    from: (p) => (p.phone ? "Mobile" : ""),
+    match: [/\bphone\s*(device\s*)?type\b/, /^device\s*type$/, /\btype\s*of\s*phone\b/],
+  },
+  {
     key: "address_line1",
     label: "Address line 1",
     from: (p) => p.address_line1,
@@ -478,6 +495,18 @@ const SKIP = [
       /\bformer\s*(employee|worker|intern)\b/,
       /\bare\s*you\s*a\s*(former|current)\s*(employee|worker|intern|contractor)\b/,
       /\bhave\s*you\s*ever\s*(worked|been\s*employed|interned|applied)\b/,
+      // "Have you previously worked for NVIDIA as an employee or contractor?"
+      // puts "previously" before the verb, where the patterns above expect it
+      // after — so it matched nothing and was passed over in silence, on a
+      // question the page marks required.
+      /\bpreviously\s+(worked|been\s*employed|interned|applied)\b/,
+      /\bworked\s+(for|at)\b[^?]{0,40}\b(employee|contractor|intern)\b/,
+      // "Have you previously worked for NVIDIA as an employee or contractor?"
+      // puts "previously" before the verb, where the patterns above expect it
+      // after — so it matched nothing, was passed over in silence, and is
+      // required on the page.
+      /\bpreviously\s+(worked|been\s*employed|interned|applied)\b/,
+      /\bworked\s+(for|at)\b[^?]{0,40}\b(employee|contractor|intern)\b/,
       /\brehire\b/,
       /\bcandidate\s*is\s*previous\s*worker\b/,
     ],
