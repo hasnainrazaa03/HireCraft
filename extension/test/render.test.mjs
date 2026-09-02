@@ -471,3 +471,17 @@ test("moving to the next step clears the last one's report", () => {
   assert.ok(state.letter, "a drafted letter survives the step change");
   assert.equal(state.resumeId, "u1", "and so does the résumé you picked");
 });
+
+test("nothing in the scrolling body is allowed to shrink", () => {
+  // A column flex container hands its children flex-shrink: 1, so once the
+  // content was taller than the panel they compressed instead of scrolling —
+  // and overflow-y: auto does not stop it, because shrinking happens first.
+  // The cards holding something of a fixed size survived; the ones made only of
+  // text rows collapsed to their own borders, so a report of seven filled
+  // fields showed as two thin lines on the page.
+  //
+  // A screenshot at 1400px looked perfect and one at 900px found it at once,
+  // which is the whole argument for taking the screenshot at a real size.
+  const css = readFileSync(join(here, "..", "content.css"), "utf8");
+  assert.match(css, /\.hc-body > \* \{ flex: 0 0 auto; \}/);
+});

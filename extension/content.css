@@ -155,6 +155,20 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
 }
+/* Nothing in here shrinks.
+ *
+ * A column flex container hands its children flex-shrink: 1, so once the
+ * content is taller than the panel they compress instead of scrolling — and
+ * `overflow-y: auto` does not stop it, because shrinking happens first. The
+ * cards holding something of a fixed size survived; the ones made only of text
+ * rows collapsed to their own borders, so a report of seven filled fields
+ * showed as two thin lines between the visa card and the amber one.
+ *
+ * On a tall window there is nothing to shrink and it looked perfect, which is
+ * why a screenshot at 1400px missed it and one at 900px found it immediately.
+ */
+.hc-body > * { flex: 0 0 auto; }
+
 .hc-body::-webkit-scrollbar { width: 8px; }
 .hc-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.13);

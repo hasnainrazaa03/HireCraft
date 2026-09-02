@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-09-02.required-dropdowns-are-visible";
+const BUILD = "2026-09-02.cards-stop-collapsing";
 
 /**
  * When the current fill has to stop.

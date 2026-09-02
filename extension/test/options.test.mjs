@@ -450,3 +450,28 @@ test("a dotted abbreviation inside a longer one is not read on its own", () => {
   assert.equal(degreeLevel("Degree to be awarded"), null);
   assert.equal(degreeLevel("Select One"), null);
 });
+
+test("a phone's kind is matched by meaning, since no two tenants word it alike", () => {
+  // Applied Materials offers "Mobile". NVIDIA offers "Home" and "Home Cellular"
+  // and no Mobile at all, so an exact answer found nothing on a question the
+  // page marks required. What is asked is whether the number is a mobile; the
+  // words for that vary and the fact that a candidate's contact number is a
+  // cell does not.
+  const pick = (opts) => {
+    const { index } = chooseOption("Mobile", opts, { kind: "phone_type" });
+    return index >= 0 ? opts[index] : null;
+  };
+  assert.equal(pick(["Select One", "Home", "Home Cellular"]), "Home Cellular");
+  assert.equal(pick(["Select One", "Mobile", "Home", "Work"]), "Mobile");
+  assert.equal(pick(["Select One", "Cell Phone", "Work Phone"]), "Cell Phone");
+  // No cellular option at all: "Home" is the ordinary personal number and
+  // better than leaving a required box empty — but it is a fallback, and the
+  // reason says so rather than claiming a match.
+  assert.equal(pick(["Select One", "Landline", "Home"]), "Home");
+  assert.match(
+    chooseOption("Mobile", ["Select One", "Landline", "Home"], { kind: "phone_type" }).why,
+    /no mobile offered/
+  );
+  // And a list describing no personal phone is refused rather than guessed at.
+  assert.equal(pick(["Select One", "Fax", "Pager"]), null);
+});

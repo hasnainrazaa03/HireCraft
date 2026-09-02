@@ -77,6 +77,9 @@ const FIELDS = [
     // nobody in practice, and one dropdown to change if it ever is.
     key: "phone_type",
     label: "Phone type",
+    // Named, because the tenants do not agree on the words: "Mobile" on one
+    // board, "Home Cellular" on the next, and no exact string spans both.
+    kind: "phone_type",
     // Tied to the number rather than constant. No phone stored means no phone
     // to have a type, and a field that answers from nothing is how the string
     // "undefined" gets into somebody's application — which is what the test

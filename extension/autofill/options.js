@@ -439,6 +439,24 @@ function chooseOption(want, optionTexts, { kind = null, unit = null, context = n
   //     state cannot be compared as one string — see matchPlace.
   if (kind === "location") return matchPlace(want, options);
 
+  // 2e. A phone's kind, where every tenant words the list differently.
+  //
+  //     Applied Materials offers "Mobile". NVIDIA offers "Home" and "Home
+  //     Cellular" and no Mobile at all, so an exact answer found nothing on a
+  //     question the page marks required. What is being asked is whether the
+  //     number is a mobile, and the words for that vary; what does not vary is
+  //     that a candidate's contact number is a cell.
+  if (kind === "phone_type") {
+    const cell = options.findIndex((o) => /\b(mobile|cell|cellular)\b/i.test(o));
+    if (cell >= 0) return { index: cell, why: `mobile → "${options[cell]}"` };
+    // No cellular option offered at all. "Home" is the ordinary personal
+    // number and better than leaving a required box empty, but it is a
+    // fallback and the report should say so.
+    const home = options.findIndex((o) => /\bhome\b/i.test(o) && !/\bfax\b/i.test(o));
+    if (home >= 0) return { index: home, why: `no mobile offered, so "${options[home]}"` };
+    return { index: -1, why: "no option describes a personal phone" };
+  }
+
   // 2d. A state, which is stored abbreviated and listed in full.
   //
   //     Left to the generic matching below, "CA" is a substring of California,
