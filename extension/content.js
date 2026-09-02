@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-09-02.long-questions-wrap";
+const PANEL_BUILD = "2026-09-02.says-when-it-is-disconnected";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -60,6 +60,14 @@ const state = {
   letterError: null,
   /** Whatever has gone wrong, kept where a diagnostics dump can reach it. */
   errors: [],
+  /**
+   * True once this page has been cut off from the extension by a reload.
+   *
+   * Nothing here can recover from it — a content script cannot re-establish
+   * the connection — so the panel stops offering actions that cannot work and
+   * says the one thing that does.
+   */
+  disconnected: false,
   /**
    * Which groups of answers are open, by id.
    *
@@ -129,15 +137,54 @@ function watchForErrors() {
   });
 }
 
+/**
+ * Has this page lost its connection to the extension?
+ *
+ * Reloading an extension leaves every content script already in a page running,
+ * but severs it: `chrome.runtime` goes undefined, or survives with no `id` and
+ * throws "Extension context invalidated" on use. The script cannot reconnect —
+ * only a page reload gets a fresh one — so this is worth naming rather than
+ * letting it surface as a TypeError about reading 'sendMessage' of undefined.
+ *
+ * It is the ordinary consequence of installing an update, which is why it has
+ * come up on nearly every page this has been tested on.
+ */
+function disconnected() {
+  try {
+    return !chrome?.runtime?.id;
+  } catch {
+    return true;
+  }
+}
+
+const RECONNECT = "HireCraft was updated — reload this page to reconnect.";
+
 function ask(message) {
+  if (disconnected()) {
+    state.disconnected = true;
+    return Promise.resolve({ ok: false, error: RECONNECT });
+  }
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(message, (reply) => {
-      if (chrome.runtime.lastError) {
-        resolve({ ok: false, error: chrome.runtime.lastError.message });
-        return;
-      }
-      resolve(reply || { ok: false, error: "No response from HireCraft." });
-    });
+    try {
+      chrome.runtime.sendMessage(message, (reply) => {
+        const failed = chrome.runtime?.lastError?.message;
+        if (failed) {
+          // The same severance can land here instead, as a lastError rather
+          // than a throw, depending on when the reload happened.
+          if (/context invalidated|receiving end does not exist/i.test(failed)) {
+            state.disconnected = true;
+            resolve({ ok: false, error: RECONNECT });
+            return;
+          }
+          resolve({ ok: false, error: failed });
+          return;
+        }
+        resolve(reply || { ok: false, error: "No response from HireCraft." });
+      });
+    } catch (error) {
+      state.disconnected = true;
+      resolve({ ok: false, error: RECONNECT });
+    }
   });
 }
 
@@ -278,6 +325,25 @@ function renderPanel() {
   // area that never scrolls, and they are written further down the file next to
   // the state they read.
   const foot = el("div", "hc-foot");
+
+  // Said before anything else, because nothing below it can work. A panel
+  // showing a Fill button that will fail is worse than one saying why.
+  if (state.disconnected) {
+    const box = el("div", "hc-visa hc-visa-warn");
+    box.append(el("span", "hc-visa-icon", "!"));
+    const text = el("div", "hc-visa-text");
+    text.append(el("div", "hc-visa-head", "Disconnected from HireCraft"));
+    text.append(
+      el("div", "hc-visa-why", "The extension was updated. This page is still running the old copy and cannot reach it.")
+    );
+    box.append(text);
+    body.append(box);
+
+    const again = el("button", "hc-btn hc-primary hc-small", "Reload this page");
+    again.onclick = () => location.reload();
+    body.append(again);
+  }
+
 
   // How much of this form is answered, before any of the detail. This is the
   // question someone opens the panel to ask, and it used to be a sentence in

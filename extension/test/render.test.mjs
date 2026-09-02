@@ -108,6 +108,10 @@ function harness({ profile, letter = null, fill = {}, reply = null } = {}) {
 
   const chrome = {
     runtime: {
+      // A live runtime has an id; a severed one does not, which is how the
+      // script tells a working page from one left behind by an extension
+      // reload. A stub without it reports every page as disconnected.
+      id: "hirecraft-test",
       sendMessage: (message, cb) => {
         sent.push(message);
         cb?.(reply?.(message) ?? { ok: true, data: {} });
@@ -497,4 +501,32 @@ test("a long label wraps rather than widening the panel", () => {
   assert.match(css, /\.hc-label \{[^}]*flex: 0 1 auto;/s, "and the label may shrink");
   assert.match(css, /\.hc-label \{[^}]*overflow-wrap: anywhere;/s);
   assert.match(css, /\.hc-body \{[^}]*overflow-x: hidden;/s, "sideways is never the answer here");
+});
+
+test("a page cut off from the extension says so, instead of throwing", async () => {
+  // Reloading an extension leaves every content script already in a page
+  // running, but severs it: chrome.runtime goes undefined, or survives with no
+  // id and throws on use. The script cannot reconnect — only a page reload gets
+  // a fresh one — so it surfaced as "Cannot read properties of undefined
+  // (reading 'sendMessage')", which names the line and not the problem.
+  //
+  // It is the ordinary consequence of installing an update, which is why it
+  // came up on nearly every page this was tested on.
+  const { window, built, render } = harness({ profile: PROFILE });
+  // What Chrome leaves behind: the object survives, the id does not.
+  delete window.__panel.chrome;
+  Object.assign(window.__panel.state, { disconnected: true });
+  render();
+
+  assert.ok(find(built, "Disconnected from HireCraft"), "the panel names it");
+  const again = find(built, "Reload this page");
+  assert.ok(again?.onclick, "and offers the one thing that fixes it");
+});
+
+test("the message names the fix rather than the line", () => {
+  const source = readFileSync(join(here, "..", "content.js"), "utf8");
+  assert.match(source, /HireCraft was updated — reload this page to reconnect\./);
+  // Both shapes of the severance: the throw, and the lastError.
+  assert.match(source, /context invalidated\|receiving end does not exist/);
+  assert.match(source, /function disconnected\(\)/);
 });
