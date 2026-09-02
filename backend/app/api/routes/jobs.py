@@ -10,9 +10,11 @@ from datetime import UTC, datetime, timedelta
 
 import redis
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
+from app.models.application import Application
+from app.models.job import Job
 from app.core.logging import get_logger
 from app.core.rate_limit import get_redis
 from app.models.llm_usage import LlmUsage
@@ -271,8 +273,35 @@ def _rerank_cache_set(key: str, data: dict) -> None:
         get_redis().setex(key, _RERANK_TTL, json.dumps(data))
 
 
+def _applied_keys(db: DbSession, user_id) -> set[str]:
+    """Every posting this user has already applied to, as matchable keys.
+
+    One query rather than an EXISTS per row: a feed page is 60 to 300 postings
+    and the tracker is a handful of rows, so the small side is the one to load.
+    """
+    rows = db.execute(
+        select(Job.url, Job.company, Job.title)
+        .join(Application, Application.job_id == Job.id)
+        .where(Job.user_id == user_id)
+    ).all()
+    keys: set[str] = set()
+    for url, company, title in rows:
+        if url:
+            keys.add(f"url:{url}")
+        if company and title:
+            keys.add(f"role:{company.strip().lower()}|{title.strip().lower()}")
+    return keys
+
+
+def _is_applied(row: ScrapedJob, keys: set[str]) -> bool:
+    return (
+        f"url:{row.url}" in keys
+        or f"role:{(row.company or '').strip().lower()}|{(row.title or '').strip().lower()}" in keys
+    )
+
+
 def _feed_row_to_result(
-    row: ScrapedJob, fit: dict | None = None, *, full: bool = False
+    row: ScrapedJob, fit: dict | None = None, *, full: bool = False, applied: bool = False
 ) -> JobSearchResult:
     """Render a stored feed posting in the same shape the job cards already use,
     plus the scraper's extras (level, term bucket, sponsorship, track pick).
@@ -314,6 +343,7 @@ def _feed_row_to_result(
         track_score=row.track_score,
         status=row.status,
         active=row.active,
+        applied=applied,
     )
 
 
@@ -377,6 +407,36 @@ def _staleness_penalty(created_at: int | None) -> float:
     return min(12.0, (days - 30) / 15.0)
 
 
+def _already_applied():
+    """Is there a tracked application for the posting this row describes?
+
+    Matched two ways because one is not enough. The URL is exact and catches
+    anything tracked from the feed itself. But an application made through the
+    extension records the page the form was on — Workday's
+    `.../apply/applyManually`, Greenhouse's `job_app?for=…&token=…` — which is
+    never the URL the scraper stored, so a URL-only test would leave every
+    extension-tracked job sitting in the search results.
+
+    So company and title as well, compared case-insensitively and trimmed. That
+    is what a person means when they say they already applied to this one, and
+    it is tight enough that two genuinely different roles are not confused: the
+    same company *and* the same exact title is the same posting.
+    """
+    same_url = Job.url == ScrapedJob.url
+    same_role = (
+        func.lower(func.trim(Job.company)) == func.lower(func.trim(ScrapedJob.company))
+    ) & (func.lower(func.trim(Job.title)) == func.lower(func.trim(ScrapedJob.title)))
+    return (
+        select(Application.id)
+        .join(Job, Job.id == Application.job_id)
+        .where(
+            Job.user_id == ScrapedJob.user_id,
+            same_url | same_role,
+        )
+        .exists()
+    )
+
+
 @router.get("/feed", response_model=list[JobSearchResult])
 def job_feed(
     user: CurrentUser,
@@ -389,6 +449,16 @@ def job_feed(
     location: str | None = None,
     remote_only: bool = False,
     status_filter: str | None = Query(default=None, alias="status"),
+    applied: str = Query(
+        default="hide",
+        pattern="^(hide|show|only)$",
+        description=(
+            "What to do with postings the tracker already holds an application "
+            "for. Hidden by default: a board you have already applied to is not "
+            "a job search result, it is something you did last week, and leaving "
+            "it in the list costs a second read every time to remember that."
+        ),
+    ),
     include_closed: bool = False,
     min_score: int = Query(default=0, ge=0, le=100),
     posted_within: int = Query(
@@ -439,6 +509,8 @@ def job_feed(
         stmt = stmt.where(ScrapedJob.source == source)
     if status_filter:
         stmt = stmt.where(ScrapedJob.status == status_filter)
+    if applied != "show":
+        stmt = stmt.where(~_already_applied() if applied == "hide" else _already_applied())
     if remote_only:
         stmt = stmt.where(ScrapedJob.remote.is_(True))
     if location:
@@ -469,6 +541,7 @@ def job_feed(
         )
 
     rows = db.execute(stmt).scalars().all()
+    applied_keys = _applied_keys(db, user.id)
 
     # Fall back to the user's default résumé rather than showing no score: fit is
     # only computed here (nothing is stored at scrape time), so without this an
@@ -493,7 +566,7 @@ def job_feed(
         score = fit["score"] if fit else None
         if min_score and (score or 0) < min_score:
             continue
-        results.append(_feed_row_to_result(row, fit))
+        results.append(_feed_row_to_result(row, fit, applied=_is_applied(row, applied_keys)))
 
     if sort == "newest":
         results.sort(key=lambda r: r.created_at or 0, reverse=True)

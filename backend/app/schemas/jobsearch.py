@@ -48,3 +48,8 @@ class JobSearchResult(BaseModel):
     track_score: int | None = None    # the scraper's own 0-100 track score
     status: str | None = None         # new | seen | saved | applied | dismissed
     active: bool = True               # False once the posting stops appearing
+    # Whether the tracker already holds an application for this posting. Kept
+    # separate from `status`, which records what the user did to the *feed row*
+    # — a job applied to through the extension, or by hand on the employer's
+    # site, never touched its feed row at all.
+    applied: bool = False

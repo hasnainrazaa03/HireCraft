@@ -1286,6 +1286,15 @@ export interface JobSearchResult {
   track_score?: number | null;
   status?: string | null;
   active?: boolean;
+  /**
+   * Whether the tracker already holds an application for this posting.
+   *
+   * Separate from `status`, which records what was done to the *feed row*: a
+   * job applied to through the extension, or by hand on the employer's site,
+   * never touched its feed row at all. These are hidden by default, so this is
+   * only ever true when they have been asked for with `applied=show`.
+   */
+  applied?: boolean;
 }
 
 export interface PublicConfig {
