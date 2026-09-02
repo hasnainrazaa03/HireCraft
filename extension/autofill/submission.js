@@ -15,7 +15,7 @@
 
 /** Paths an ATS lands on after a successful submission. */
 const CONFIRMATION_URL =
-  /\/(?:thank[-_]?you|confirmation|confirmed|submitted|success)(?:\b|\/|$)|\/apply\/complete\b/i;
+  /\/(?:thank[-_]?you|confirmation|confirmed|submitted|success)(?:\b|\/|$)|\/apply\/complete\b|\bapplication[-_]?submitted\b|\bsubmission[-_]?(?:complete|received)\b/i;
 
 /**
  * Wording that means the application went through.
@@ -23,9 +23,21 @@ const CONFIRMATION_URL =
  * Anchored on the completed act — "has been submitted", "we received" — rather
  * than on the words "application" or "submit", which appear all over a form
  * that has not been sent yet ("Submit your application when ready").
+ *
+ * Both word orders, because they are not interchangeable to a regex and the
+ * boards do not agree. Greenhouse says "Your application has been submitted";
+ * Workday says "You have successfully submitted your application", which put
+ * the verb first and matched nothing — so an application that really was sent
+ * went unrecorded, which is the exact hole this feature exists to close.
+ *
+ * The reversed form insists on "successfully". Without it, "once you have
+ * submitted your application we will be in touch" — ordinary wording on a form
+ * that has not been sent — would mark the job as applied, and a false record in
+ * a tracker is worse than a missing one: a missing row gets noticed the next
+ * time you look for it, and a wrong row never does.
  */
 const CONFIRMATION_TEXT =
-  /\b(?:application\s+(?:was\s+|has\s+been\s+)?(?:successfully\s+)?(?:submitted|received)|thank(?:s|\s+you)\s+for\s+applying|thank(?:s|\s+you)\s+for\s+your\s+application|we(?:'ve|\s+have)\s+received\s+your\s+application|your\s+application\s+is\s+complete)\b/i;
+  /\b(?:application\s+(?:was\s+|has\s+been\s+)?(?:successfully\s+)?(?:submitted|received)|thank(?:s|\s+you)\s+for\s+applying|thank(?:s|\s+you)\s+for\s+your\s+application|we(?:'ve|\s+have)\s+received\s+your\s+application|your\s+application\s+is\s+complete|successfully\s+(?:submitted|sent)\s+your\s+application)\b/i;
 
 /** Does this path look like a post-submission confirmation? */
 function isConfirmationUrl(pathname) {

@@ -83,3 +83,35 @@ test("page furniture is not a submission", () => {
     assert.ok(!isConfirmationText(text), `false positive: ${text}`);
   }
 });
+
+test("both word orders count, and only one of them needs 'successfully'", () => {
+  // Applied Materials was applied to and never reached the tracker. Greenhouse
+  // says "Your application has been submitted"; Workday says "You have
+  // successfully submitted your application", which puts the verb first and
+  // matched nothing — so the moment this feature exists to catch went by
+  // unrecorded on a real application.
+  assert.equal(isConfirmationText("You have successfully submitted your application."), true);
+  assert.equal(isConfirmationText("Your application has been submitted"), true);
+
+  // The reversed form insists on "successfully". Without it, ordinary wording
+  // on a form that has not been sent would mark the job as applied — and a
+  // false row in a tracker is worse than a missing one, because a missing row
+  // gets noticed the next time you look for it and a wrong one never does.
+  assert.equal(
+    isConfirmationText("Once you have submitted your application we will be in touch."),
+    false
+  );
+  assert.equal(isConfirmationText("Submit your application when ready"), false);
+  assert.equal(isConfirmationText("Please review before you submit your application"), false);
+});
+
+test("a camelCase confirmation path is still a confirmation path", () => {
+  // Workday lands on .../apply/applicationSubmitted, where the old rule looked
+  // for "/submitted" as a segment of its own and found none.
+  assert.equal(isConfirmationUrl("/en-US/External/job/x/apply/applicationSubmitted"), true);
+  assert.equal(isConfirmationUrl("/careers/submission-complete"), true);
+  // Candidate Home is reachable at any time and says nothing about this
+  // application, so it must not count.
+  assert.equal(isConfirmationUrl("/candidateHome"), false);
+  assert.equal(isConfirmationUrl("/en-US/External/job/x/apply/applyManually"), false);
+});
