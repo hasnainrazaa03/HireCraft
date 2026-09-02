@@ -485,3 +485,16 @@ test("nothing in the scrolling body is allowed to shrink", () => {
   const css = readFileSync(join(here, "..", "content.css"), "utf8");
   assert.match(css, /\.hc-body > \* \{ flex: 0 0 auto; \}/);
 });
+
+test("a long label wraps rather than widening the panel", () => {
+  // A skipped question carries the question itself as its label — "Have you
+  // previously worked for NVIDIA as an employee or contractor?" — and the label
+  // was flex: 0 0 auto. A label that can neither shrink nor wrap makes its row
+  // as wide as its text, the row makes the card, and the card made the whole
+  // 348px panel scroll sideways.
+  const css = readFileSync(join(here, "..", "content.css"), "utf8");
+  assert.match(css, /\.hc-row \{[^}]*flex-wrap: wrap;/s, "the row wraps");
+  assert.match(css, /\.hc-label \{[^}]*flex: 0 1 auto;/s, "and the label may shrink");
+  assert.match(css, /\.hc-label \{[^}]*overflow-wrap: anywhere;/s);
+  assert.match(css, /\.hc-body \{[^}]*overflow-x: hidden;/s, "sideways is never the answer here");
+});
