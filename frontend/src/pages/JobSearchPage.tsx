@@ -1,4 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import {
+  NOTHING_HIDDEN, activeFilters, withoutFilter,
+  loadFilters, saveFilters, loadSkipped, saveSkipped,
+} from "../lib/feedPrefs";
 import { useNavigate } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { api, type JobSearchResult, type ResumeProfileSummary } from "../lib/api";
@@ -193,30 +197,64 @@ export default function JobSearchPage() {
   const [exclude, setExclude] = useState("");
   const [mustHave, setMustHave] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [sort, setSort] = useState<Sort>("match");
   const [saved, setSaved] = useState<Set<string>>(loadSaved);
   const [modal, setModal] = useState<JobSearchResult | null>(null);
   // "live" searches the boards on demand; "feed" reads the postings the
   // scheduled ATS scraper has accumulated (persisted, so it fills up over time).
   const [mode, setMode] = useState<Mode>("feed");
-  const [bucket, setBucket] = useState("");
+
   // Which résumé the feed is scored against. The stored score was computed at
   // scrape time against whichever résumé was default then, so it goes stale as
   // soon as you add or edit one — picking here re-scores every card live.
   const [feedResume, setFeedResume] = useState("");
-  const [feedLevel, setFeedLevel] = useState("");
-  const [feedSource, setFeedSource] = useState("");
-  const [feedLocation, setFeedLocation] = useState("");
-  const [feedRemote, setFeedRemote] = useState(false);
-  const [feedMinScore, setFeedMinScore] = useState(0);
+  // One object rather than eleven useStates: it is saved, restored and cleared
+  // as a unit, and eleven separate effects writing to one storage key would
+  // race each other on every keystroke.
+  const [filters, setFilters] = useState(loadFilters);
+  const setFilter = <K extends keyof typeof filters>(key: K, value: (typeof filters)[K]) =>
+    setFilters((f) => ({ ...f, [key]: value }));
+  useEffect(() => { saveFilters(filters); }, [filters]);
+
+  // Roles pushed to the bottom. Kept out of `filters` because clearing the
+  // filters must not un-skip anything — those are two different decisions.
+  const [skipped, setSkipped] = useState<Set<string>>(loadSkipped);
+  useEffect(() => { saveSkipped(skipped); }, [skipped]);
+
+  // The rest of this page still speaks in individual filters. These are the one
+  // place that translates, so a rename never has to be chased through the JSX.
+  const bucket = filters.bucket;
+  const setBucket = (v: string) => setFilter("bucket", v);
+  const feedLevel = filters.level;
+  const setFeedLevel = (v: string) => setFilter("level", v);
+  const feedSource = filters.source;
+  const setFeedSource = (v: string) => setFilter("source", v);
+  const feedLocation = filters.location;
+  const setFeedLocation = (v: string) => setFilter("location", v);
+  const feedRemote = filters.remote;
+  const setFeedRemote = (v: boolean) => setFilter("remote", v);
+  const feedMinScore = filters.minScore;
+  const setFeedMinScore = (v: number) => setFilter("minScore", v);
+  const feedPostedWithin = filters.postedWithin;
+  const setFeedPostedWithin = (v: number) => setFilter("postedWithin", v);
+  const feedDegree = filters.degree;
+  const setFeedDegree = (v: string) => setFilter("degree", v);
+  const feedVisa = filters.visa;
+  const setFeedVisa = (v: string) => setFilter("visa", v);
+  const feedQuery = filters.query;
+  const setFeedQuery = (v: string) => setFilter("query", v);
+  // Sort is a filter in every way that matters here: chosen once, it says what
+  // you want to see first, and resetting it each visit is the same annoyance.
+  const sort = (filters.sort || "match") as Sort;
+  const setSort = (v: Sort) => setFilter("sort", v);
+  const applied = activeFilters(filters);
   // Age cutoff in days; 0 = any age.
-  const [feedPostedWithin, setFeedPostedWithin] = useState(0);
+
   // Defaults to what a master's candidate can actually apply to — see the
   // control's help text for what that does and doesn't exclude.
-  const [feedDegree, setFeedDegree] = useState("masters_eligible");
+
   // Defaults to hiding what a candidate needing sponsorship cannot get.
-  const [feedVisa, setFeedVisa] = useState("open");
-  const [feedQuery, setFeedQuery] = useState("");
+
+
 
   const live = useQuery({
     queryKey: ["job-search", query, remoteOnly, exclude, mustHave],
@@ -303,11 +341,23 @@ export default function JobSearchPage() {
   // Mirrors the server's ordering, including its recency tiebreak — without it
   // an unscored feed (no résumé yet) ties on every comparison and "best match"
   // renders in arbitrary order while looking like a ranking.
-  const sorted = [...(jobs ?? [])].sort((a, b) =>
-    sort === "match"
-      ? (b.match_score ?? 0) - (a.match_score ?? 0) || (b.created_at ?? 0) - (a.created_at ?? 0)
-      : (b.created_at ?? 0) - (a.created_at ?? 0),
-  );
+  // Skipped roles sink rather than vanish.
+  //
+  // Hiding them would be the other obvious choice and the wrong one: a skip is
+  // a quick judgement made on a card, and quick judgements are sometimes wrong.
+  // At the bottom it can be reconsidered; gone, it cannot, and there would be
+  // no way to tell a list that has nothing left from one that has been skipped
+  // empty.
+  const sorted = useMemo(() => {
+    const rank = (j: JobSearchResult) => (skipped.has(jobKey(j)) ? 1 : 0);
+    return [...(jobs ?? [])].sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        (sort === "match"
+          ? (b.match_score ?? 0) - (a.match_score ?? 0) || (b.created_at ?? 0) - (a.created_at ?? 0)
+          : (b.created_at ?? 0) - (a.created_at ?? 0)),
+    );
+  }, [jobs, sort, skipped]);
 
   const detail = modal && (
     <JobDetail
@@ -502,20 +552,45 @@ export default function JobSearchPage() {
                     {b} ({n})
                   </FilterPill>
                 ))}
-                {(bucket || feedLevel || feedSource || feedLocation || feedRemote || feedMinScore || feedPostedWithin || feedQuery || feedDegree !== "masters_eligible" || feedVisa !== "open") && (
+              </div>
+            )}
+
+            {/* What is actually being applied, spelled out.
+                Filters used to be a set of pills whose state you had to read
+                off their shading, so "why am I seeing so few of these?" was
+                answered by hunting for the one that was on. Each active filter
+                is a chip that says what it does and comes off with one click,
+                and the whole set clears with one more. */}
+            {applied.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-subtle">
+                  {applied.length} filter{applied.length === 1 ? "" : "s"} on
+                </span>
+                {applied.map(({ key, label }) => (
                   <button
-                    onClick={() => {
-                      setBucket(""); setFeedLevel(""); setFeedSource("");
-                      setFeedLocation(""); setFeedRemote(false); setFeedMinScore(0);
-                      setFeedPostedWithin(0); setFeedQuery("");
-                      setFeedDegree("masters_eligible");
-                      setFeedVisa("open");
-                    }}
-                    className="btn-ghost btn-sm text-subtle hover:text-content"
+                    key={key}
+                    onClick={() => setFilters((f) => withoutFilter(f, key))}
+                    title={`Remove ${label}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1 text-xs font-medium text-brand-100 hover:border-brand-400/60 hover:bg-brand-500/20"
                   >
-                    Clear filters
+                    {label}
+                    <span aria-hidden className="text-brand-300">×</span>
                   </button>
-                )}
+                ))}
+                <button
+                  onClick={() => setFilters({ ...NOTHING_HIDDEN })}
+                  className="btn-ghost btn-sm text-subtle hover:text-content"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+            {skipped.size > 0 && (
+              <div className="flex items-center gap-2 pt-1 text-xs text-subtle">
+                <span>{skipped.size} skipped, sorted to the bottom.</span>
+                <button onClick={() => setSkipped(new Set())} className="text-brand-300 hover:text-brand-200">
+                  Bring them back
+                </button>
               </div>
             )}
           </div>
@@ -591,6 +666,14 @@ export default function JobSearchPage() {
               <JobCard
                 scoredWith={mode === "feed" ? feedResumes.find((r) => r.id === feedResume)?.name : undefined}
                 key={jobKey(job)} job={job} saved={saved.has(jobKey(job))}
+                skipped={skipped.has(jobKey(job))}
+                onSkip={() => setSkipped((prev) => {
+                  const next = new Set(prev);
+                  const id = jobKey(job);
+                  // The same button undoes it, so a mis-click costs one click.
+                  next.has(id) ? next.delete(id) : next.add(id);
+                  return next;
+                })}
                 onSave={() => toggleSave(job)}
                 onTailor={() => handoff(job, "tailor")}
                 onTrack={() => handoff(job, "as_is")}
@@ -645,16 +728,19 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
 
 // --- card (matches the reference: logo, title, ring, meta, skills, actions) -
 
-function JobCard({ job, saved, onSave, onTailor, onTrack, onOpen, scoredWith }: {
+function JobCard({ job, saved, skipped, onSave, onSkip, onTailor, onTrack, onOpen, scoredWith }: {
   job: JobSearchResult; saved: boolean; onSave: () => void; onTailor: () => void;
   onTrack: () => void; onOpen: () => void;
+  /** Pushed to the bottom of the list — not a role for this candidate. */
+  skipped?: boolean;
+  onSkip?: () => void;
   /** Name of the résumé this card's match score was computed against. */
   scoredWith?: string;
 }) {
   const [flipped, setFlipped] = useState(false);
   const allSkills = [...job.strengths, ...job.gaps];
   return (
-    <div className="group h-[22rem] [perspective:1800px]">
+    <div className={`group h-[22rem] [perspective:1800px] ${skipped ? "opacity-45 saturate-50 hover:opacity-90" : ""}`}>
       <div className={`relative h-full w-full transition-transform duration-[600ms] [transform-style:preserve-3d] ${flipped ? "[transform:rotateY(180deg)]" : ""}`}>
         {/* FRONT */}
         <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-surface p-5 transition-all duration-300 [backface-visibility:hidden] group-hover:-translate-y-1 group-hover:border-brand-500/25 group-hover:shadow-glow">
@@ -755,6 +841,17 @@ function JobCard({ job, saved, onSave, onTailor, onTrack, onOpen, scoredWith }: 
                 View More <IconArrowRight className="h-4 w-4" />
               </button>
               <div className="flex items-center gap-1.5">
+                {onSkip && (
+                  <button
+                    onClick={onSkip}
+                    className={`btn-ghost btn-sm !px-2 ${skipped ? "!text-brand-200" : "text-subtle hover:text-content"}`}
+                    title={skipped ? "Bring this back up the list" : "Not for me — push to the bottom"}
+                    aria-label={skipped ? "Un-skip this job" : "Skip this job"}
+                    aria-pressed={!!skipped}
+                  >
+                    {skipped ? "Undo" : "Skip"}
+                  </button>
+                )}
                 <button onClick={onTrack} className="btn-secondary btn-sm" title="Add to your tracker with your résumé as it is — no AI, no cost">Track</button>
                 <button onClick={onTailor} className="btn-primary btn-sm"><IconSparkles className="h-4 w-4" /> Tailor Resume</button>
                 <button onClick={onSave} className={`btn-ghost btn-sm !px-2 ${saved ? "!bg-brand-500/20 !text-brand-200" : ""}`} title={saved ? "Saved" : "Save"} aria-label={saved ? "Remove from saved" : "Save job"} aria-pressed={saved}>

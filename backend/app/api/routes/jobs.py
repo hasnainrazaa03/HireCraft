@@ -418,36 +418,6 @@ def _staleness_penalty(created_at: int | None) -> float:
     return min(12.0, (days - 30) / 15.0)
 
 
-def _already_applied():
-    """Is there a tracked application for the posting this row describes?
-
-    Matched two ways because one is not enough. The URL is exact and catches
-    anything tracked from the feed itself. But an application made through the
-    extension records the page the form was on — Workday's
-    `.../apply/applyManually`, Greenhouse's `job_app?for=…&token=…` — which is
-    never the URL the scraper stored, so a URL-only test would leave every
-    extension-tracked job sitting in the search results.
-
-    So company and title as well, compared case-insensitively and trimmed. That
-    is what a person means when they say they already applied to this one, and
-    it is tight enough that two genuinely different roles are not confused: the
-    same company *and* the same exact title is the same posting.
-    """
-    same_url = Job.url == ScrapedJob.url
-    same_role = (
-        func.lower(func.trim(Job.company)) == func.lower(func.trim(ScrapedJob.company))
-    ) & (func.lower(func.trim(Job.title)) == func.lower(func.trim(ScrapedJob.title)))
-    return (
-        select(Application.id)
-        .join(Job, Job.id == Application.job_id)
-        .where(
-            Job.user_id == ScrapedJob.user_id,
-            same_url | same_role,
-        )
-        .exists()
-    )
-
-
 @router.get("/feed", response_model=list[JobSearchResult])
 def job_feed(
     user: CurrentUser,
@@ -520,8 +490,6 @@ def job_feed(
         stmt = stmt.where(ScrapedJob.source == source)
     if status_filter:
         stmt = stmt.where(ScrapedJob.status == status_filter)
-    if applied != "show":
-        stmt = stmt.where(~_already_applied() if applied == "hide" else _already_applied())
     if remote_only:
         stmt = stmt.where(ScrapedJob.remote.is_(True))
     if location:
@@ -577,7 +545,19 @@ def job_feed(
         score = fit["score"] if fit else None
         if min_score and (score or 0) < min_score:
             continue
-        results.append(_feed_row_to_result(row, fit, applied=_is_applied(row, applied_keys)))
+        # Filtered here, by the same function that sets the flag below.
+        #
+        # This was two implementations of one rule — an EXISTS in the query and
+        # a set lookup in Python — and they drifted the moment the posting-id
+        # match was added to one of them. The feed then returned rows marked
+        # applied: true that the query had not excluded, which is the worst of
+        # both: the work done and the answer still wrong.
+        was_applied = _is_applied(row, applied_keys)
+        if applied == "hide" and was_applied:
+            continue
+        if applied == "only" and not was_applied:
+            continue
+        results.append(_feed_row_to_result(row, fit, applied=was_applied))
 
     if sort == "newest":
         results.sort(key=lambda r: r.created_at or 0, reverse=True)
