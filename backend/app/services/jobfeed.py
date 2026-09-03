@@ -155,11 +155,23 @@ def posting_key(url: str, fallback: str) -> str:
 _IDENTITY = (
     ("ashby", re.compile(r"ashbyhq\.com/([^/]+)/([0-9a-f-]{16,})", re.I)),
     ("lever", re.compile(r"lever\.co/([^/]+)/([0-9a-f-]{16,})", re.I)),
-    # Greenhouse writes the same posting three ways: /<org>/jobs/<id>,
-    # ?gh_jid=<id>, and the embedded form job_app?for=<org>&token=<id>.
-    ("greenhouse", re.compile(r"greenhouse\.io/embed/job_app\?for=([^&]+)&token=(\d{6,})", re.I)),
-    ("greenhouse", re.compile(r"greenhouse\.io/(?:embed/)?([^/?]+)/jobs/(\d{6,})", re.I)),
-    ("greenhouse", re.compile(r"greenhouse\.io/([^/?]+)\b.*?[?&]gh_jid=(\d{6,})", re.I)),
+    # Greenhouse writes one posting at least four ways: /<org>/jobs/<id>,
+    # ?gh_jid=<id>, job_app?for=<org>&token=<id>, and job_app?token=<id> with no
+    # org at all — on two hostnames, with the query parameters in either order.
+    #
+    # The org is deliberately not captured. It is the part that *differs*
+    # between those spellings ("embed", "job-boards", the org slug, or missing),
+    # so keying on it is what let one Coinbase requisition into the tracker
+    # twice. The numeric id is a single global sequence across Greenhouse — the
+    # same number in gh_jid, token and /jobs/ — so it identifies the posting on
+    # its own.
+    # gh_jid is Greenhouse's own parameter, so it names a Greenhouse posting
+    # wherever it appears — including the employer career sites and white-label
+    # front ends (careerpuck, a company's own /careers page) that embed the
+    # board and never mention greenhouse.io in the URL.
+    ("greenhouse", re.compile(r"[?&]gh_jid=(\d{6,})", re.I)),
+    ("greenhouse", re.compile(r"greenhouse\.io/.*?[?&]token=(\d{6,})", re.I)),
+    ("greenhouse", re.compile(r"greenhouse\.io/(?:embed/)?[^/?]+/jobs/(\d{6,})", re.I)),
     ("workday", re.compile(r"([a-z0-9]+)\.wd\d+\.myworkdayjobs\.com/.*?_((?:JR|R-?)\d+)", re.I)),
 )
 
@@ -180,7 +192,10 @@ def posting_identity(url: str) -> str:
         found = pattern.search(url or "")
         if not found:
             continue
-        org, ident = found.group(1).lower(), found.group(2).lower()
+        # A one-group pattern names the posting by id alone; a two-group one
+        # scopes that id to the org because the board reuses ids between orgs.
+        groups = [g.lower() for g in found.groups()]
+        org, ident = ("", groups[0]) if len(groups) == 1 else (groups[0], groups[1])
         if board == "workday":
             ident = _WORKDAY_INSTANCE.sub("", ident)
         return f"{board}:{org}:{ident}"
