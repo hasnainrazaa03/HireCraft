@@ -21,7 +21,7 @@ const ROOT_ID = "hirecraft-root";
  * ambiguity. This ends it: a diagnostics dump either carries this string or it
  * came from a stale script.
  */
-const PANEL_BUILD = "2026-09-02.says-when-it-is-disconnected";
+const PANEL_BUILD = "2026-09-03.tracks-what-you-submit";
 
 /** The app's own logo, inline so it stays crisp at any size. */
 const LOGO_SVG = `
@@ -910,7 +910,7 @@ async function runFill() {
 async function fillOnce() {
   // Written before filling rather than after: a form that posts on the very
   // next click should still leave a trace of having been filled here.
-  rememberFilling();
+  rememberPosting();
   state.status = "Reading your HireCraft profile…";
   render();
 
@@ -1010,7 +1010,7 @@ async function draftLetter({ feedback = "" } = {}) {
   state.letter = { ...reply.data, company };
   // The note was written before the letter existed; refresh it so a submission
   // that navigates away still carries what was drafted.
-  rememberFilling();
+  rememberPosting();
   // Cleared so the box is empty for the next note rather than repeating the
   // last one, which would be applied twice.
   state.letterFeedback = "";
@@ -1139,7 +1139,7 @@ async function trackOnce(stage) {
 const PENDING_KEY = "hirecraft.pending";
 const PENDING_FOR = 2 * 60 * 60 * 1000;
 
-async function rememberFilling() {
+async function rememberPosting() {
   const { company, role } = postingIdentity();
   try {
     await chrome.storage.local.set({
@@ -1176,7 +1176,7 @@ async function pendingFill() {
 }
 
 /**
- * Did we land on a confirmation for something filled a moment ago?
+ * Did we land on a confirmation for something applied to a moment ago?
  *
  * Runs whether or not this page has a form, since a confirmation page does not.
  */
@@ -1294,6 +1294,19 @@ function mount() {
   document.body.append(root);
   render();
   console.debug("[HireCraft] panel mounted", PANEL_BUILD, location.pathname);
+  // Remembered on sight, not on Fill.
+  //
+  // The note is what the confirmation page reads to know which posting was
+  // submitted, and it used to be written only when Fill was pressed. So an
+  // application typed out by hand — which is every one on a form this cannot
+  // fill, and every one where the fill was not worth it — landed on its
+  // confirmation page with nothing to match, and went unrecorded. The tracker
+  // should hold what you applied to, not what you applied to with this.
+  //
+  // Writing it here costs nothing on a form nobody submits: the note is only
+  // ever read once a confirmation is recognised, it is scoped to this origin,
+  // it expires, and the next form overwrites it.
+  rememberPosting();
   // Only after the page has been judged an application form, so a "thank you"
   // in a careers-page footer cannot be read as a submission.
   watchForSubmission();

@@ -27,7 +27,21 @@
         "https://*.ashbyhq.com/*",
         "https://*.lever.co/*",
         "https://*.myworkdayjobs.com/*",
-        "https://*.myworkdaysite.com/*"
+        "https://*.myworkdaysite.com/*",
+        "https://*.icims.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.workable.com/*",
+        "https://*.jobvite.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.recruitee.com/*",
+        "https://*.teamtailor.com/*",
+        "https://*.oraclecloud.com/*",
+        "https://*.successfactors.com/*",
+        "https://*.avature.net/*",
+        "https://*.eightfold.ai/*",
+        "https://*.dover.com/*",
+        "https://*.rippling.com/*"
       ],
       "js": [
         "autofill/visa.js",

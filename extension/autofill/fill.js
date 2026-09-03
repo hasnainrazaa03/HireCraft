@@ -18,7 +18,7 @@
  * across a reload keeps whichever pair it started with, so a dump has to say
  * which pair that was.
  */
-const BUILD = "2026-09-02.says-when-it-is-disconnected";
+const BUILD = "2026-09-03.tracks-what-you-submit";
 
 /**
  * When the current fill has to stop.

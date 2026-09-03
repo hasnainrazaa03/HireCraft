@@ -105,3 +105,27 @@ test("a ticked box changes what Fill offers to do", () => {
   // will draft, and pressing it does.
   assert.match(source, /Fill and draft letter/);
 });
+
+test("a posting is remembered on sight, not only when Fill is pressed", () => {
+  // The note is what a confirmation page reads to know which posting was
+  // submitted, and it used to be written only by Fill. So an application typed
+  // out by hand — every one on a form this cannot fill, and every one where the
+  // fill was not worth it — reached its confirmation with nothing to match and
+  // went unrecorded. The tracker should hold what you applied to, not what you
+  // applied to with this.
+  const mount = /function mount\(\) \{([\s\S]*?)\n\}/.exec(source);
+  assert.ok(mount, "the panel's mount should be findable");
+  assert.match(mount[1], /rememberPosting\(\)/, "mounting writes the note");
+  assert.match(mount[1], /watchForSubmission\(\)/, "and starts watching for a submit");
+
+  // Still refreshed by a fill and by a draft, so the note carries the résumé
+  // and the letter when there is one.
+  assert.equal((source.match(/rememberPosting\(\)/g) || []).length, 4);
+});
+
+test("the note stays scoped to one site and one sitting", () => {
+  // Written on every application form now, so the guards that stop it being
+  // read on the wrong page matter more than they did.
+  assert.match(source, /stored\.origin !== location\.origin/, "another site's note is not ours");
+  assert.match(source, /Date\.now\(\) - stored\.at > PENDING_FOR/, "and an old one has expired");
+});
