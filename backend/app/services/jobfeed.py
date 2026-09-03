@@ -25,7 +25,7 @@ import yaml
 
 from app.core.logging import get_logger
 from app.models.scraped_job import ScrapedJob
-from app.services.degrees import classify
+from app.services.degrees import classify, classify_posting
 from app.services.sponsorship import classify as classify_visa
 from app.services.jobscraper.filters import SENIOR_RE, Filters
 from app.services.jobscraper.models import Job
@@ -256,7 +256,7 @@ def persist(
         incoming = (job.description or "")[:20000]
         if len(incoming) > len(row.description or ""):
             row.description = incoming
-            row.degree_level = classify(row.description).value
+            row.degree_level = classify_posting(row.title, row.description).value
             row.visa_verdict = classify_visa(row.description).value
         row.remote = job.remote
         row.posted_at = job.posted_at

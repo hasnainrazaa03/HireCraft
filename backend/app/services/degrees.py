@@ -55,7 +55,15 @@ _UNDERGRAD_ONLY = re.compile(
     r"|undergraduate(?:\s+students?)?\s+only"
     r"|rising\s+(?:junior|senior)"
     r"|must\s+be\s+an?\s+undergraduate"
-    r"|open\s+(?:only\s+)?to\s+undergraduate)",
+    r"|open\s+(?:only\s+)?to\s+undergraduate"
+    # How the big campus programmes name themselves. American Express posts
+    # "Campus Undergraduate Full-Time Engineer" and states a bachelor's as the
+    # minimum, so reading the requirement alone puts a master's candidate in a
+    # programme that is not open to them. The name of the programme is the
+    # ceiling; the stated degree is only the floor.
+    r"|campus\s+undergraduate"
+    r"|undergraduate\s+(?:program|programme|hiring|recruiting|cohort)"
+    r"|(?:for|to)\s+undergraduate\s+students)",
     re.IGNORECASE,
 )
 
@@ -115,6 +123,24 @@ def classify(text: str) -> DegreeLevel:
             return DegreeLevel.BACHELORS_OR_HIGHER
         return DegreeLevel.BACHELORS
     return DegreeLevel.UNSPECIFIED
+
+
+def classify_posting(title: str | None, description: str | None) -> DegreeLevel:
+    """Classify a posting from everything it says about itself.
+
+    The title is read as well as the body because it is the field that always
+    survives. Aggregators hand us a title and a URL and often no description at
+    all — 455 of the current feed's rows have nothing to read — and where the
+    body is missing the title is the only evidence there is. It also happens to
+    be where campus programmes announce who they are for: "Campus Undergraduate
+    Full-Time Engineer" is the whole story, and the body of that same posting
+    says only "Bachelor's degree required", which reads as a floor a master's
+    clears.
+
+    Order matters. The title goes first so a phrase spanning the join cannot be
+    invented out of a title's last word and a description's first.
+    """
+    return classify(f"{title or ''}\n\n{description or ''}")
 
 
 #: Levels a master's candidate can apply to.

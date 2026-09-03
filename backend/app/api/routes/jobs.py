@@ -25,10 +25,12 @@ from app.schemas.jobsearch import JobSearchResult
 from app.schemas.resume import MasterResume
 from app.services import feature_flags
 from app.services.jobfeed import posting_identity
+from app.services.locations import summarise as summarise_location
 from app.services.degrees import (
     GRADUATE_STATED,
     MASTERS_ELIGIBLE,
     classify as classify_degree,
+    classify_posting,
 )
 from app.services.sponsorship import (
     BLOCKS_VISA_HOLDER,
@@ -328,7 +330,13 @@ def _feed_row_to_result(
         id=str(row.id),
         title=row.title,
         company=row.company,
-        location=row.location or "",
+        # Summarised for the card, whole for the detail panel. Workday hands
+        # over every site a requisition is attached to as one string — one CVS
+        # posting arrives as 500 characters of work-from-home states — and the
+        # card rendered all of it, sixteen lines that pushed everything below
+        # off the bottom. The panel has room for the full list; the card does
+        # not, and "Chicago + remote (20 more)" is what the list actually says.
+        location=(row.location or "") if full else summarise_location(row.location),
         url=row.url,
         remote=bool(row.remote),
         tags=tags[:8],
@@ -661,7 +669,7 @@ def fetch_feed_description(
             scraped = None
         if scraped is not None and scraped.text:
             row.description = scraped.text[:20000]
-            row.degree_level = classify_degree(row.description).value
+            row.degree_level = classify_posting(row.title, row.description).value
             row.visa_verdict = classify_visa(row.description).value
             row.location = row.location or (scraped.location or "")
             db.commit()

@@ -18,6 +18,7 @@ from app.services.degrees import (
     MASTERS_ELIGIBLE,
     DegreeLevel,
     classify,
+    classify_posting,
 )
 
 
@@ -103,3 +104,47 @@ def test_graduate_stated_is_the_strict_subset() -> None:
     assert GRADUATE_STATED < MASTERS_ELIGIBLE
     assert DegreeLevel.UNSPECIFIED.value not in GRADUATE_STATED
     assert DegreeLevel.BACHELORS.value not in GRADUATE_STATED
+
+
+def test_a_campus_undergraduate_programme_is_a_ceiling_not_a_floor():
+    """The posting that prompted this: American Express's "Campus Undergraduate
+    Full-Time Engineer", whose stated requirement is a bachelor's — a floor a
+    master's clears — while the programme itself is not open to a master's
+    candidate at all. Reading the requirement and ignoring the programme's own
+    name is how it reached a master's candidate's feed."""
+    amex = (
+        "Campus Undergraduate Full-Time Engineer - 2027 Software Engineer I. "
+        "Minimum Qualifications: Must have earned a Bachelor's degree in Computer "
+        "Science before the full-time start date."
+    )
+    assert classify(amex) is DegreeLevel.UNDERGRAD_ONLY
+    assert classify(amex) not in MASTERS_ELIGIBLE
+
+
+def test_naming_a_programme_does_not_exclude_when_a_masters_is_also_welcome():
+    """The guard that keeps the patterns above from over-reaching: an employer
+    describing both of its campus programmes in one posting has not restricted
+    the role to undergraduates."""
+    both = "We recruit through our undergraduate program and our master's program alike."
+    assert classify(both) in MASTERS_ELIGIBLE
+
+
+def test_the_title_is_read_as_well_as_the_body():
+    """Aggregators hand over a title and no description at all — 455 rows of the
+    feed had nothing to read — so a filter that only reads the body cannot judge
+    them. PhD-only internships announce themselves in the title and said nothing
+    about it in the body; seventeen of them were passing."""
+    assert classify_posting("Research Scientist Intern - AI - PhD", None) is DegreeLevel.PHD
+    assert classify_posting("Campus Undergraduate Summer Internship", "") is DegreeLevel.UNDERGRAD_ONLY
+    # And the body still counts when the title is unremarkable.
+    assert classify_posting(
+        "Software Engineer", "Must be currently pursuing a Bachelor's degree."
+    ) is DegreeLevel.UNDERGRAD_ONLY
+    # Neither field saying anything is still not a rejection.
+    assert classify_posting("Software Engineer", "Build things.") in MASTERS_ELIGIBLE
+
+
+def test_a_phrase_cannot_be_invented_across_the_title_body_join():
+    """Title and body are separated, so the last word of one and the first of
+    the other cannot combine into a match that neither field contains."""
+    assert classify_posting("Engineer, Campus", "Undergraduate applicants welcome, master's preferred") in MASTERS_ELIGIBLE

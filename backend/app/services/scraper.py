@@ -310,6 +310,17 @@ def _read_capped(response: httpx.Response, limit: int) -> bytes:
 _ASHBY_RE = re.compile(r"ashbyhq\.com/([^/?#]+)/([0-9a-f-]{36})", re.IGNORECASE)
 _LEVER_RE = re.compile(r"lever\.co/([^/?#]+)/([0-9a-f-]{36})", re.IGNORECASE)
 _GREENHOUSE_RE = re.compile(r"greenhouse\.io/(?:embed/job_app\?for=)?([^/?#]+).*?(?:/jobs/|token=)(\d+)", re.IGNORECASE)
+
+# Oracle's hosted candidate experience — every employer on Oracle HCM, on a
+# per-tenant subdomain. The page is a JavaScript shell that fetches this same
+# posting from a REST path, so scraping the HTML gets a spinner while asking
+# the API gets the posting. 104 rows of the current feed sit behind it, and
+# they are 104 rows the degree and visa filters cannot judge.
+_ORACLE_RE = re.compile(
+    r"https://([^/]+\.oraclecloud\.com)/hcmUI/CandidateExperience/"
+    r"(?:[a-z]{2}/)?sites/([^/]+)/(?:jobs/)?job/(\d+)",
+    re.IGNORECASE,
+)
 # Workday serves the posting from a "cxs" JSON endpoint; the public page is a JS
 # shell. The optional locale segment ("/en-US/") is not part of the site id.
 _WORKDAY_RE = re.compile(
@@ -409,6 +420,34 @@ def _ats_api_result(url: str, *, timeout: int) -> ScrapeResult | None:
                                           loc.get("country")) if x)
             return _ats_result(url, clean_text("\n\n".join(parts)),
                                job.get("name"), org, where)
+
+        elif (m := _ORACLE_RE.match(url)) and host.endswith("oraclecloud.com"):
+            tenant, site, pid = m.group(1), m.group(2), m.group(3)
+            job = httpx.get(
+                f"https://{tenant}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails"
+                f'?expand=all&finder=ById;Id="{pid}",siteNumber="{site}"',
+                timeout=timeout,
+                headers={"User-Agent": settings.scrape_user_agent},
+            ).json()
+            items = job.get("items") or []
+            if not items:
+                return None
+            item = items[0]
+            # The description and the qualifications are separate fields and
+            # the qualifications are the half that says who may apply, so a
+            # scrape that took only the description would miss the degree.
+            body = "\n\n".join(
+                _html_to_text(item.get(key) or "")
+                for key in ("ExternalDescriptionStr", "ExternalQualificationsStr")
+            )
+            where = "; ".join(
+                loc.get("Name") or "" for loc in (item.get("requisitionLocation") or [])
+            ).strip("; ") or item.get("PrimaryLocation")
+            # No company name in the payload leaves the tenant subdomain, which
+            # is an opaque code ("egug" for American Express) and worse than
+            # nothing — an empty string lets the caller keep the name it has.
+            return _ats_result(url, clean_text(body), item.get("Title"),
+                               item.get("CompanyName") or "", where)
 
         elif (m := _GREENHOUSE_RE.search(url)) and host.endswith("greenhouse.io"):
             org, pid = m.group(1), m.group(2)

@@ -762,8 +762,13 @@ function JobCard({ job, saved, skipped, onSave, onSkip, onTailor, onTrack, onOpe
 
           <div className="mt-3 flex items-start justify-between gap-3">
             <div className="space-y-1.5 text-sm text-muted">
-              <div className="flex items-center gap-1.5">
-                <IconPin className="h-4 w-4 text-subtle" /> {job.location || "Location N/A"}
+              {/* Clamped as a backstop, not as the fix. The API summarises a
+                  multi-site location before it gets here, but a card must not
+                  be at the mercy of what an employer types into one field —
+                  the next surprise will be a shape nobody summarised for. */}
+              <div className="flex items-start gap-1.5" title={job.location || undefined}>
+                <IconPin className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
+                <span className="line-clamp-2 min-w-0 break-words">{job.location || "Location N/A"}</span>
               </div>
               {job.remote && (
                 <div className="flex items-center gap-1.5">
