@@ -92,6 +92,13 @@ function roleFromTitle(title) {
   const application = /\bjob application for\s+(.+?)\s+at\s+.+$/i.exec(text);
   if (application) return clean(application[1]);
 
+  // The page after pressing Apply is titled for the action, not the role.
+  // Eightfold's reads "Submit application for Software Engineering IC2", and
+  // that whole sentence was being stored as the job title of both Microsoft
+  // applications. What follows the action is the role, with the usual shapes.
+  const action = /^(?:submit(?:\s+an?)?\s+application\s+for|apply(?:\s+now)?\s+for|application\s+for)\s+(.+)$/i.exec(text);
+  if (action) return roleFromTitle(action[1]);
+
   const at = /^(.+?)\s@\s+.+$/.exec(text);
   if (at) return clean(at[1]);
 

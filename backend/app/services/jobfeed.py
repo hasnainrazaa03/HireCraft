@@ -173,6 +173,15 @@ _IDENTITY = (
     ("greenhouse", re.compile(r"greenhouse\.io/.*?[?&]token=(\d{6,})", re.I)),
     ("greenhouse", re.compile(r"greenhouse\.io/(?:embed/)?[^/?]+/jobs/(\d{6,})", re.I)),
     ("workday", re.compile(r"([a-z0-9]+)\.wd\d+\.myworkdayjobs\.com/.*?_((?:JR|R-?)\d+)", re.I)),
+    # iCIMS numbers each employer's postings from its own counter, so the id is
+    # only unique within the tenant: 4982 and 8295 each appear under more than
+    # one employer in the feed. The subdomain is part of the identity here,
+    # unlike Greenhouse. The path after the id varies — /job, /login,
+    # /<slug>/candidate on the page after submitting — and the id does not.
+    ("icims", re.compile(r"([a-z0-9-]+)\.icims\.com/jobs/(\d{2,})", re.I)),
+    # Eightfold puts the id in the path on the posting and in ?pid= on the
+    # apply and success pages, which is where the extension sees a submission.
+    ("eightfold", re.compile(r"([a-z0-9-]+)\.eightfold\.ai/careers/(?:job/|.*?[?&]pid=)(\d{6,})", re.I)),
 )
 
 #: A trailing "-1"/"-2" on a Workday requisition is which site it was posted to,

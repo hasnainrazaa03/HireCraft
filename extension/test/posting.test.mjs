@@ -89,3 +89,15 @@ test("nothing to go on gives nothing, rather than something wrong", () => {
   assert.equal(roleFromTitle(""), "");
   assert.equal(companyFrom({ host: "careers.roblox.com" }), "careers");
 });
+
+test("the page after pressing Apply is named for the action, not the role", () => {
+  // Both Microsoft applications went into the tracker under this sentence.
+  assert.equal(roleFromTitle("Submit application for Software Engineering IC2"), "Software Engineering IC2");
+  assert.equal(roleFromTitle("Apply for Data Scientist at Jerry"), "Data Scientist");
+  // Untouched: the Greenhouse form keeps its own rule, and a plain title stays whole.
+  assert.equal(
+    roleFromTitle("Job Application for 2027 Cubist Quant Academy – Developers at Point72"),
+    "2027 Cubist Quant Academy – Developers",
+  );
+  assert.equal(roleFromTitle("Software Engineer - Early Careers"), "Software Engineer - Early Careers");
+});

@@ -79,3 +79,29 @@ def test_a_url_no_board_claims_gets_no_identity():
     assert posting_identity("https://careers.example.com/apply/123") == ""
     assert posting_identity("") == ""
     assert posting_identity("not a url") == ""
+
+
+def test_icims_is_scoped_to_the_employer_because_its_ids_are_not_global():
+    """iCIMS numbers each employer's postings from its own counter — 4982 and
+    8295 each appear under more than one employer in the feed — so, unlike
+    Greenhouse, the tenant has to be part of the identity. Within one tenant,
+    the path after the id changes from page to page and the id does not."""
+    posting = posting_identity("https://non-clinical-emory.icims.com/jobs/170743/job?hub=14&mobile=true")
+    submitted = posting_identity(
+        "https://non-clinical-emory.icims.com/jobs/170743/associate-ai-engineer/candidate?resumeSubmitted=1"
+    )
+    elsewhere = posting_identity("https://careers-peraton.icims.com/jobs/170743/job")
+    assert posting == submitted == "icims:non-clinical-emory:170743"
+    assert posting != elsewhere
+
+
+def test_eightfold_names_the_posting_the_same_on_the_success_page():
+    """The extension sees a submission on /careers/apply/success?pid=…, while
+    the posting lives at /careers/job/…. One id, two places."""
+    posting = posting_identity("https://microsoft.eightfold.ai/careers/job/1970393556986737?domain=microsoft.com")
+    success = posting_identity(
+        "https://microsoft.eightfold.ai/careers/apply/success?domain=microsoft.com&pid=1970393556986737"
+    )
+    other = posting_identity("https://microsoft.eightfold.ai/careers/job/1970393556985572?domain=microsoft.com")
+    assert posting == success == "eightfold:microsoft:1970393556986737"
+    assert posting != other
